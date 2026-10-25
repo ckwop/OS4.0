@@ -1,6 +1,6 @@
 // vectors.s: AArch64 exception vectors for bare metal. Any exception prints a
-// register dump on the console, then resumes at ABORT, so a bad address typed
-// at the prompt reports itself and the system carries on.
+// register dump on the console, then throws -256 from the faulting word, so a
+// bad address typed at the prompt reports itself and the system carries on.
 
 	.include "macros.s"
 
@@ -136,7 +136,7 @@ exc_common:				// x0 kind, x1 exc_regs; x2-x30 and sp still live
 
 	ldr	x0, =exc_busy
 	str	xzr, [x0]
-	ldr	x0, =do_abort			// resume as if the faulting word had called ABORT
+	ldr	x0, =exception_throw		// resume as if the faulting word had thrown
 	msr	elr_el1, x0
 	mov	x0, #SPSR_EL1H_MASKED
 	msr	spsr_el1, x0

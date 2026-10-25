@@ -1,0 +1,21 @@
+: risky ( n -- ) dup 0= if -42 throw then . ;
+5 ' risky catch .
+0 ' risky catch . .
+: safe-div ( a b -- q | 0 ) ['] / catch if 2drop 0 then ;
+10 2 safe-div .  10 0 safe-div .
+: inner 1 throw ;  : outer ['] inner catch 100 + ;  outer .
+: lp 10 0 do i 5 = if i throw then loop ;  ' lp catch .
+: noop ;  : many 1000 0 do ['] noop catch drop loop ." done" ;  many
+0 throw 3 .
+: msg ( flag -- ) abort" custom message" ;  1 ' msg catch .
+0 msg 7 .
+1 msg
+1 0 /
+1 0 0 um/mod
+-99 throw
+: uncaught 7 throw ;  uncaught
+if
+: compiles-fine 1 if 2 then ;  compiles-fine .
+' nosuchthing
+1 2 3 drop drop drop drop
+.s

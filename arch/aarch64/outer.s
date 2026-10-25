@@ -96,9 +96,15 @@ interpret:
 	NEXT
 
 // ---------------------------------------------------------------------------
-// Errors. Each prints a message and aborts.
+// Errors. Once core.fs has installed THROW and the boot files are loaded, an
+// error throws its code to the nearest CATCH. While loading the boot files, it
+// prints the file, line and message instead, and the system stops.
 
 err_undefined:				// x24, x25: the word that was not found
+	ldr	x0, =var_errname
+	stp	x25, x24, [x0]
+	mov	x0, #THROW_UNDEFINED
+	bl	try_throw
 	bl	err_location
 	mov	x0, x24
 	mov	x1, x25
@@ -108,23 +114,46 @@ err_undefined:				// x24, x25: the word that was not found
 	b	err_message
 
 err_underflow:
-	ldr	x0, =msg_underflow
-	mov	x1, #msg_underflow_len
-	b	err_located
+	mov	x0, #THROW_UNDERFLOW
+	ldr	x1, =msg_underflow
+	mov	x2, #msg_underflow_len
+	b	err_code
 
 err_noname:
-	ldr	x0, =msg_noname
-	mov	x1, #msg_noname_len
-	b	err_located
+	mov	x0, #THROW_NONAME
+	ldr	x1, =msg_noname
+	mov	x2, #msg_noname_len
+	b	err_code
+
+err_longname:
+	mov	x0, #THROW_LONGNAME
+	ldr	x1, =msg_longname
+	mov	x2, #msg_longname_len
+	b	err_code
+
+err_divzero:
+	mov	x0, #THROW_DIVZERO
+	ldr	x1, =msg_divzero
+	mov	x2, #msg_divzero_len
+	b	err_code
+
+err_range:
+	mov	x0, #THROW_RANGE
+	ldr	x1, =msg_range
+	mov	x2, #msg_range_len
+	b	err_code
 
 err_noquit:
 	ldr	x0, =msg_noquit
 	mov	x1, #msg_noquit_len
 	b	err_located
 
-err_longname:
-	ldr	x0, =msg_longname
-	mov	x1, #msg_longname_len
+err_code:				// x0 throw code; x1, x2 message for a boot-time report
+	mov	x24, x1
+	mov	x25, x2
+	bl	try_throw
+	mov	x0, x24
+	mov	x1, x25
 
 err_located:				// x0, x1: message, printed after the location
 	mov	x24, x0
@@ -134,6 +163,35 @@ err_located:				// x0, x1: message, printed after the location
 	mov	x1, x25
 err_message:
 	bl	type_sub
+	b	do_abort
+
+// try_throw: x0 code -> throw it to the nearest CATCH, as if the running word
+// had called THROW; does not return. Returns instead while the boot files are
+// loading or before THROW exists.
+try_throw:
+	ldr	x1, =var_source
+	ldr	x1, [x1]
+	cbnz	x1, 1f
+	ldr	x2, =var_throw
+	ldr	x2, [x2]
+	cbz	x2, 1f
+	ldr	x1, =var_sp0			// Forth keeps nothing on the hardware stack
+	ldr	x1, [x1]
+	mov	sp, x1
+	PUSH	x0
+	mov	x8, x2
+	br	x8
+1:	ret
+
+// A CPU exception has printed its register dump: throw, or abort if nothing
+// can catch it. The Forth registers are as they were at the fault.
+	.global	exception_throw
+exception_throw:
+	ldr	x0, =var_sp0
+	ldr	x0, [x0]
+	mov	sp, x0
+	mov	x0, #THROW_HARDWARE
+	bl	try_throw
 	b	do_abort
 
 // Print "<file>:<line>: " if the error is in a boot file.

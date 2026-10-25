@@ -85,6 +85,9 @@ dodoes:
 	defconst "dp", w_dp, var_dp		// ( -- addr ) dictionary pointer
 	defconst "latest", w_latest, var_latest	// ( -- addr ) newest header
 	defconst "'quit", w_tickquit, var_quit	// ( -- addr ) xt of the Forth QUIT loop
+	defconst "'throw", w_tickthrow, var_throw // ( -- addr ) xt of THROW, for kernel errors
+	defconst "errname", w_errname, var_errname // ( -- addr ) ( addr len ) the word an error is about
+	defuser	"handler", w_handler, U_HANDLER	// ( -- addr ) innermost CATCH frame
 	defuser	"base", w_base, U_BASE		// ( -- addr )
 	defuser	"state", w_state, U_STATE	// ( -- addr ) true while compiling
 	defuser	">in", w_toin, U_TOIN		// ( -- addr )
@@ -230,5 +233,12 @@ set_flag:
 	defcode	"quit", w_quit			// ( -- ) ( R: i*x -- ) back to the outer interpreter
 	b	do_quit
 
-	defcode	"abort", w_abort		// ( i*x -- ) empty the stacks; next line
-	b	do_abort
+	// ( i*x -- ) empty the stacks and restart QUIT; while loading the boot
+	// files, report where and stop. core.fs redefines ABORT as -1 THROW.
+	defcode	"abort", w_abort
+	ldr	x0, =var_source
+	ldr	x0, [x0]
+	cbz	x0, do_abort
+	ldr	x0, =msg_aborted
+	mov	x1, #msg_aborted_len
+	b	err_located

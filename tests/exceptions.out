@@ -1,0 +1,22 @@
+OS 4.0
+: risky ( n -- ) dup 0= if -42 throw then . ;  ok
+5 ' risky catch . 5 0  ok
+0 ' risky catch . . -42 0  ok
+: safe-div ( a b -- q | 0 ) ['] / catch if 2drop 0 then ;  ok
+10 2 safe-div .  10 0 safe-div . 5 0  ok
+: inner 1 throw ;  : outer ['] inner catch 100 + ;  outer . 101  ok
+: lp 10 0 do i 5 = if i throw then loop ;  ' lp catch . 5  ok
+: noop ;  : many 1000 0 do ['] noop catch drop loop ." done" ;  many done ok
+0 throw 3 . 3  ok
+: msg ( flag -- ) abort" custom message" ;  1 ' msg catch . -2  ok
+0 msg 7 . 7  ok
+1 msg custom message
+1 0 / division by zero
+1 0 0 um/mod division by zero
+-99 throw error -99
+: uncaught 7 throw ;  uncaught error 7
+if if is compile-only
+: compiles-fine 1 if 2 then ;  compiles-fine . 2  ok
+' nosuchthing nosuchthing ?
+1 2 3 drop drop drop drop stack underflow
+.s <0>  ok

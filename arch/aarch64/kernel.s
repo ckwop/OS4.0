@@ -39,7 +39,17 @@
 	.equ	U_TOIN, 16		// >in: parse offset into the current line
 	.equ	U_NTIB, 24		// #tib: length of the current line
 	.equ	U_TIB, 32		// 'tib: address of the current line
+	.equ	U_HANDLER, 40		// innermost CATCH frame on the return stack, or 0
 	.equ	U_SIZE, 64
+
+	// THROW codes for errors the kernel detects (standard codes, plus -256)
+	.equ	THROW_UNDERFLOW, -4
+	.equ	THROW_DIVZERO, -10
+	.equ	THROW_RANGE, -11
+	.equ	THROW_UNDEFINED, -13
+	.equ	THROW_NONAME, -16
+	.equ	THROW_LONGNAME, -19
+	.equ	THROW_HARDWARE, -256	// a CPU exception, already reported by its register dump
 
 	.equ	SRC_TERMINAL, 0
 	.equ	SRC_BOOT, 1		// reading the embedded boot files
@@ -78,6 +88,9 @@
 	message	msg_underflow, "stack underflow\n"
 	message	msg_noname, "missing name\n"
 	message	msg_longname, "name too long\n"
+	message	msg_divzero, "division by zero\n"
+	message	msg_range, "result out of range\n"
+	message	msg_aborted, "aborted\n"
 	message	msg_noquit, "boot files ended without starting QUIT\n"
 	message	msg_colon, ": "
 
@@ -119,6 +132,8 @@ var_boot_file:	.quad	boot_files	// table entry of the boot file being loaded
 var_boot_pos:	.quad	0		// start of its next line (set by forth_cold)
 var_boot_line:	.quad	0		// its line number, for error reports
 var_quit:	.quad	0		// xt of the Forth QUIT loop, set by interpreter.fs
+var_throw:	.quad	0		// xt of THROW, set by core.fs; kernel errors throw through it
+var_errname:	.quad	0, 0		// ( addr len ) as 2! stores it: the word an error is about
 var_sp0:	.quad	0		// hardware sp at start-up, restored by abort
 
 	.bss

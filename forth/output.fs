@@ -23,7 +23,8 @@ variable hld
 : #>     ( ud -- addr u )  2drop  hld @  numbuf 128 + over - ;
 : sign   ( n -- )  0< if 45 hold then ;
 : u.     ( u -- )  0 <# #s #> type space ;
-: .      ( n -- )  dup >r abs 0 <# #s r> sign #> type space ;
+: (.)    ( n -- addr u )  dup >r abs 0 <# #s r> sign #> ;
+: .      ( n -- )  (.) type space ;
 : .s     ( -- )
   60 emit depth 0 <# #s #> type 62 emit space
   depth 0 ?do  depth i - 1- pick .  loop ;
@@ -38,8 +39,9 @@ create sbuf 256 allot
 : ."      ( "ccc<quote>" -- )
   state @ if  postpone s" postpone type  else  34 parse type  then ; immediate
 : .(      ( "ccc<paren>" -- )  41 parse type ; immediate
-: abort"  ( flag "ccc<quote>" -- )
-  postpone if postpone ." postpone cr postpone abort postpone then ; immediate
+create abort-msg 0 , 0 ,     \ ( addr u ) of the last ABORT" message
+: (abort")  ( flag addr u -- )  rot if abort-msg 2! -2 throw then 2drop ;
+: abort"  ( flag "ccc<quote>" -- )  postpone s" postpone (abort") ; immediate compile-only
 : char    ( "name" -- c )  parse-name drop c@ ;
-: [char]  ( "name" -- )  char postpone literal ; immediate
+: [char]  ( "name" -- )  char postpone literal ; immediate compile-only
 

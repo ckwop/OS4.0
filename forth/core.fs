@@ -44,27 +44,29 @@
 : c,       ( c -- )  here c! 1 allot ;
 : aligned  ( addr -- addr' )  7 + -8 and ;
 : align    ( -- )  here aligned dp ! ;
-: literal  ( x -- )  lit lit , , ; immediate   \ compiles: lit x
+\ Header flags byte: bit 7 immediate, bit 6 hidden, bit 5 compile-only, bits 0-4 length.
+: compile-only  ( -- )  latest @ cell+ dup c@ 32 or swap c! ;  \ refused outside definitions
+: literal  ( x -- )  lit lit , , ; immediate compile-only   \ compiles: lit x
 : '        ( "name" -- xt )  parse-find drop ;
-: [']      ( "name" -- )  ' [ ' literal , ] ; immediate
+: [']      ( "name" -- )  ' [ ' literal , ] ; immediate compile-only
 : name>string  ( nt -- addr len )  cell+ dup 1+ swap c@ 31 and ;
 : name>xt  ( nt -- xt )  name>string + aligned ;
-: recurse  ( -- )  latest @ name>xt , ; immediate
+: recurse  ( -- )  latest @ name>xt , ; immediate compile-only
 
 \ ---- Control flow. Branches hold absolute target addresses.
 
-: if    ( C: -- orig )  ['] 0branch , here 0 , ; immediate
-: then  ( C: orig -- )  here swap ! ; immediate
-: else  ( C: orig1 -- orig2 )  ['] branch , here 0 ,  swap here swap ! ; immediate
+: if    ( C: -- orig )  ['] 0branch , here 0 , ; immediate compile-only
+: then  ( C: orig -- )  here swap ! ; immediate compile-only
+: else  ( C: orig1 -- orig2 )  ['] branch , here 0 ,  swap here swap ! ; immediate compile-only
 
 : postpone  ( "name" -- )
-  parse-find 0< if  ['] lit , ,  ['] , ,  else  ,  then ; immediate
+  parse-find 0< if  ['] lit , ,  ['] , ,  else  ,  then ; immediate compile-only
 
-: begin   ( C: -- dest )  here ; immediate
-: until   ( C: dest -- )  postpone 0branch , ; immediate
-: again   ( C: dest -- )  postpone branch , ; immediate
-: while   ( C: dest -- orig dest )  postpone if swap ; immediate
-: repeat  ( C: orig dest -- )  postpone again postpone then ; immediate
+: begin   ( C: -- dest )  here ; immediate compile-only
+: until   ( C: dest -- )  postpone 0branch , ; immediate compile-only
+: again   ( C: dest -- )  postpone branch , ; immediate compile-only
+: while   ( C: dest -- orig dest )  postpone if swap ; immediate compile-only
+: repeat  ( C: orig dest -- )  postpone again postpone then ; immediate compile-only
 
 : ?dup    ( x -- 0 | x x )  dup if dup then ;
 : abs     ( n -- u )  dup 0< if negate then ;
@@ -77,12 +79,32 @@
 : create    ( "name" -- )  parse-name header dovar cf, ;
 : variable  ( "name" -- )  create 0 , ;
 : constant  ( x "name" -- )  parse-name header docon cf, , ;
-: does>     ( -- )  postpone (does>) does-cf, ; immediate
+: does>     ( -- )  postpone (does>) does-cf, ; immediate compile-only
 : >body     ( xt -- addr )  cell+ ;
 
 -1 constant true
 0 constant false
 32 constant bl
+
+\ ---- Exceptions. CATCH runs an xt and returns 0, or the code passed to THROW
+\ by it or anything it calls, with the data stack restored to its depth at
+\ CATCH. Each CATCH frame on the return stack holds the saved data stack
+\ pointer and the enclosing frame; HANDLER (per task) points to the innermost.
+\ Codes: -1 ABORT, -2 ABORT", -4 stack underflow, -10 division by zero,
+\ -11 result out of range, -13 undefined word, -14 compile-only word,
+\ -16 missing name, -19 name too long, -256 CPU exception (already reported).
+
+: catch  ( i*x xt -- j*x 0 | i*x n )
+  sp@ >r  handler @ >r  rp@ handler !
+  execute
+  r> handler !  r> drop  0 ;
+: throw  ( k*x n -- k*x | i*x n )
+  ?dup if
+    handler @ 0= if abort then   \ nothing to catch it: the kernel's ABORT
+    handler @ rp!  r> handler !  r> swap >r  sp! drop  r>
+  then ;
+' throw 'throw !                 \ kernel-detected errors throw from now on
+: abort  ( i*x -- )  -1 throw ;
 
 \ ---- Counted loops. ?DO and LEAVE add forward branches to a chain that
 \ LOOP and +LOOP resolve; DO saves the enclosing loop's chain.
@@ -92,12 +114,12 @@ variable leaves
 : resolve-leaves  ( -- )
   leaves @ begin ?dup while  dup @ swap  here swap !  repeat ;
 
-: do     ( C: -- leaves dest )  postpone (do)  leaves @ 0 leaves !  here ; immediate
+: do     ( C: -- leaves dest )  postpone (do)  leaves @ 0 leaves !  here ; immediate compile-only
 : ?do    ( C: -- leaves dest )
-  postpone (?do)  leaves @ 0 leaves !  here 0 , >leaves  here ; immediate
-: leave  ( -- )  postpone unloop postpone branch  here 0 , >leaves ; immediate
-: loop   ( C: leaves dest -- )  postpone (loop) ,  resolve-leaves leaves ! ; immediate
-: +loop  ( C: leaves dest -- )  postpone (+loop) ,  resolve-leaves leaves ! ; immediate
+  postpone (?do)  leaves @ 0 leaves !  here 0 , >leaves  here ; immediate compile-only
+: leave  ( -- )  postpone unloop postpone branch  here 0 , >leaves ; immediate compile-only
+: loop   ( C: leaves dest -- )  postpone (loop) ,  resolve-leaves leaves ! ; immediate compile-only
+: +loop  ( C: leaves dest -- )  postpone (+loop) ,  resolve-leaves leaves ! ; immediate compile-only
 
 \ ---- Memory
 
@@ -107,4 +129,6 @@ variable leaves
 : move    ( src dst u -- )  >r 2dup u< if r> cmove> else r> cmove then ;
 : fill    ( addr u c -- )  swap 0 ?do  2dup swap i + c!  loop 2drop ;
 : count   ( addr -- addr+1 c )  dup 1+ swap c@ ;
+: 2!      ( x1 x2 addr -- )  swap over ! cell+ ! ;
+: 2@      ( addr -- x1 x2 )  dup cell+ @ swap @ ;
 

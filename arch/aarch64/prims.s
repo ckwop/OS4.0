@@ -77,6 +77,27 @@
 	ldr	TOS, [DSP, TOS, lsl #3]
 	NEXT
 
+// Stack pointers, for CATCH and THROW. SP@ spills TOS and returns where it went,
+// so SP! of that address restores the stack exactly as it was before SP@.
+
+	defcode	"sp@", w_spfetch		// ( -- addr )
+	str	TOS, [DSP, #-8]!
+	mov	TOS, DSP
+	NEXT
+
+	defcode	"sp!", w_spstore		// ( addr -- i*x ) the stack as it was at SP@
+	add	DSP, TOS, #8
+	ldr	TOS, [TOS]
+	NEXT
+
+	defcode	"rp@", w_rpfetch		// ( -- addr )
+	PUSH	RSP
+	NEXT
+
+	defcode	"rp!", w_rpstore		// ( addr -- ) ( R: i*x -- j*x )
+	POP	RSP
+	NEXT
+
 // ---- Arithmetic and logic
 
 	defcode	"+", w_plus			// ( a b -- a+b )
@@ -95,6 +116,7 @@
 	NEXT
 
 	defcode	"/mod", w_slashmod		// ( n1 n2 -- rem quot ) floored, as gforth
+	cbz	TOS, err_divzero
 	ldr	x0, [DSP]
 	sdiv	x1, x0, TOS
 	msub	x2, x1, TOS, x0
@@ -117,7 +139,11 @@
 	// ( ud u -- urem uquot ) 128 by 64 bit restoring division. The high cell
 	// of ud must be less than u, so the quotient fits in one cell.
 	defcode	"um/mod", w_umslashmod
-	ldr	x1, [DSP], #8			// high
+	cbz	TOS, err_divzero
+	ldr	x1, [DSP]			// high
+	cmp	x1, TOS
+	b.hs	err_range
+	add	DSP, DSP, #8
 	ldr	x0, [DSP]			// low
 	mov	x3, #64
 1:	lsr	x4, x1, #63

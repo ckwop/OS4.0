@@ -37,11 +37,14 @@
 : match?  ( addr u nt -- flag )
   dup hidden? if drop 2drop false exit then
   name>string rot over <> if drop 2drop false exit then  name= ;
-: find-word  ( addr u -- 0 | xt 1 | xt -1 )  \ 1 if immediate
+: find-name  ( addr u -- nt | 0 )
   latest @ begin dup while
-    >r 2dup r@ match? if  2drop r> dup name>xt swap immediate? if 1 else -1 then exit  then
+    >r 2dup r@ match? if  2drop r> exit  then
     r> @
   repeat nip nip ;
+: find-word  ( addr u -- 0 | xt 1 | xt -1 )  \ 1 if immediate
+  find-name dup if  dup name>xt swap immediate? if 1 else -1 then  then ;
+: compile-only?  ( nt -- flag )  cell+ c@ 32 and 0<> ;
 
 \ Numbers: optional -, optional base prefix ($ hex, # decimal, % binary), digits;
 \ or a character literal such as 'A'.
@@ -66,16 +69,31 @@
   over c@ prefix-base ?dup if  base @ >r base ! 1 /string (number) r> base !  else (number) then
   if r> if negate then true else r> drop false then ;
 
-: undefined  ( addr u -- )  type ."  ?" cr abort ;
-: ?stack     ( -- )  depth 0< if ." stack underflow" cr abort then ;
+: undefined  ( addr u -- )  errname 2! -13 throw ;
+: ?stack     ( -- )  depth 0< if -4 throw then ;
 : interpret  ( -- )  \ the current line, word by word
   begin parse-name dup while
-    2dup find-word ?dup if
-      2swap 2drop  state @ if 0< if , else execute then else drop execute then
+    2dup find-name ?dup if
+      state @ 0= over compile-only? and if  drop errname 2! -14 throw  then
+      nip nip  dup immediate? state @ 0= or if name>xt execute else name>xt , then
     else
       2dup number? 0= if undefined then  nip nip  state @ if postpone literal then
     then ?stack
   repeat 2drop ;
+
+\ Errors that reach the outer interpreter are reported here.
+: .error  ( n -- )
+  dup -1 = if drop exit then
+  dup -2 = if drop abort-msg 2@ type cr exit then
+  dup -4 = if drop ." stack underflow" cr exit then
+  dup -10 = if drop ." division by zero" cr exit then
+  dup -11 = if drop ." result out of range" cr exit then
+  dup -13 = if drop errname 2@ type ."  ?" cr exit then
+  dup -14 = if drop errname 2@ type ."  is compile-only" cr exit then
+  dup -16 = if drop ." missing name" cr exit then
+  dup -19 = if drop ." name too long" cr exit then
+  dup -256 = if drop exit then
+  ." error " (.) type cr ;
 
 \ Terminal input. The Forth echoes what is typed: a serial console does not.
 variable eof
@@ -95,7 +113,9 @@ variable eof
 create tib 256 allot
 : refill  ( -- )  tib 'tib !  tib 256 accept #tib !  0 >in ! ;
 : prompt  ( -- )  state @ if ."  compiled" else ."  ok" then cr ;
-: (quit)  ( -- )  begin refill interpret prompt again ;
+: reset   ( i*x -- )  begin depth while drop repeat  0 state ! ;
+: (quit)  ( -- )  \ each line runs under CATCH: an error is reported, then the next line
+  begin refill  ['] interpret catch ?dup if .error reset else prompt then again ;
 
 ' (quit) 'quit !
 .( OS 4.0) cr
