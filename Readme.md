@@ -20,13 +20,16 @@ The image provides every other tool: cross binutils, QEMU, gforth and Limine.
 From the repo root in PowerShell:
 
 ```powershell
-docker build -t os4 .                              # build the toolchain image and the kernel
-docker run --rm -it os4                            # start the Forth prompt; type bye or Ctrl-D to leave
-docker run --rm -v "${PWD}:/src" os4 make test     # run the test suite against your working copy
-docker run --rm -it -v "${PWD}:/src" os4 make run  # run your working copy without rebuilding the image
+docker build -t os4 .                              # build the toolchain image, the kernel and the boot disk
+docker run --rm -it os4                            # boot the OS to its Forth prompt on the serial console
+docker run --rm -v "${PWD}:/src" os4 make test     # run the test suites against your working copy
+docker run --rm -it -v "${PWD}:/src" os4 make run  # boot your working copy without rebuilding the image
+docker run --rm -it -v "${PWD}:/src" os4 make run-hosted  # the same Forth as a Linux program; starts instantly
 ```
 
-Make targets (run inside the container): `build` (the default), `run`, `test`, `image` (from milestone 3) and `clean`.
+Booting takes about ten seconds: UEFI firmware, then Limine, then the OS. Leave with `bye`, Ctrl-D on an empty line, or Ctrl-A then x.
+
+Make targets (run inside the container): `build` (the default), `image`, `run`, `run-hosted`, `test`, `test-hosted`, `test-virt` and `clean`.
 
 ### Milestones
 
@@ -36,7 +39,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | --- | --- | --- |
 | 1 | Toolchain image | Done |
 | 2 | Hosted Forth (under `qemu-aarch64`) | Done |
-| 3 | Bare-metal boot | Not started |
+| 3 | Bare-metal boot | Done |
 | 4 | Blocks | Not started |
 | 5 | Multitasking and timer | Not started |
 | 6 | Network to ping | Not started |

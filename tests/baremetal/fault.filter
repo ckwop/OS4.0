@@ -1,0 +1,5 @@
+# Code addresses, flags and register contents change from build to build.
+# ESR and FAR stay: they say what kind of fault it was and where.
+s/ELR=[0-9a-f]*/ELR=<addr>/
+s/SPSR=[0-9a-f]*/SPSR=<psr>/
+s/\(x[0-9]*\|sp\)=[0-9a-f]*/\1=<reg>/g

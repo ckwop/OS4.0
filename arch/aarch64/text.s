@@ -3,6 +3,7 @@
 // Included by kernel.s.
 
 	.text
+	.global	type_sub, print_hex_sub, print_udec_sub	// for platform code, e.g. exception reports
 
 // refill_sub: make the next line of input current. Reads core.fs line by line,
 // then the terminal. Exits through hal_bye when terminal input ends.
@@ -284,6 +285,26 @@ type_sub:
 	bl	hal_emit
 	b	1b
 2:	ldp	x24, x25, [sp, #16]
+	ldp	x29, x30, [sp], #32
+	ret
+
+// print_hex_sub: x0 number -> print it as 16 hex digits.
+print_hex_sub:
+	stp	x29, x30, [sp, #-32]!	// digits are built in sp+16 .. sp+32
+	add	x2, sp, #16
+	mov	x3, #60
+1:	lsr	x4, x0, x3
+	and	x4, x4, #0xf
+	cmp	x4, #10
+	add	x5, x4, #CH_0
+	add	x6, x4, #(CH_A_LOWER - 10)
+	csel	x5, x6, x5, hs
+	strb	w5, [x2], #1
+	subs	x3, x3, #4
+	b.pl	1b
+	add	x0, sp, #16
+	mov	x1, #16
+	bl	type_sub
 	ldp	x29, x30, [sp], #32
 	ret
 

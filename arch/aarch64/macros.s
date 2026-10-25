@@ -42,6 +42,17 @@ UP	.req	x23		// user area of the current task
 	csel	\reg, \tmp, \reg, ls
 .endm
 
+// VIRT_TO_PHYS reg, tmp: translate the mapped virtual address in reg to its
+// physical address, using the MMU's own stage 1 lookup.
+.macro VIRT_TO_PHYS reg, tmp
+	at	s1e1r, \reg
+	isb
+	mrs	\tmp, par_el1
+	and	\tmp, \tmp, #0x0000fffffffff000
+	and	\reg, \reg, #0xfff
+	orr	\reg, \reg, \tmp
+.endm
+
 // SYNC_ICACHE addr: make code just written at addr visible to instruction fetch.
 // Covers one cache line, so the code written must not cross a 16-byte boundary.
 .macro SYNC_ICACHE addr

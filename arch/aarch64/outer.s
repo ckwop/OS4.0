@@ -23,7 +23,8 @@ do_quit:
 	NEXT
 
 // Reset the data stack, discard the rest of the line and resume QUIT.
-// An error while loading core.fs is fatal.
+// An error while loading core.fs is fatal. Exception handlers return here too.
+	.global	do_abort
 do_abort:
 	ldr	x0, =var_sp0
 	ldr	x0, [x0]

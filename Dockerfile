@@ -1,6 +1,6 @@
 # OS 4.0 toolchain image: builds the kernel, runs QEMU and runs the tests.
 #   docker build -t os4 .
-#   docker run --rm -it os4                          # Forth prompt (from milestone 2)
+#   docker run --rm -it os4                          # boot to the Forth prompt on the serial console
 #   docker run --rm -v "${PWD}:/src" os4 make test   # against live source
 FROM debian:trixie-slim
 
@@ -42,6 +42,6 @@ ENV LIMINE_DIR=/opt/limine \
 
 WORKDIR /src
 COPY . .
-RUN make
+RUN make build image
 
 CMD ["make", "run"]

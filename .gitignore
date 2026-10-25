@@ -10,7 +10,7 @@ build/
 *.qcow2
 
 # Test run artefacts
-tests/*.actual
+tests/**/*.actual
 
 # Editors and OS
 .vscode/

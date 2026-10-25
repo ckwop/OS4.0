@@ -26,6 +26,15 @@ A running log of choices that [docs/brief.md](docs/brief.md) leaves open. Add ne
 | 20 | 2026-10-25 | Branch cells hold absolute target addresses. | Simplest to compile and to read in a dump; no relocation needed in one flat address space. |
 | 21 | 2026-10-25 | The hosted build makes its dictionary executable with `mprotect`; bare metal gets this from its flat RWX memory. | New code fields are written at run time and must be executable. |
 | 22 | 2026-10-25 | `x24`–`x28` are free scratch registers for primitives across subroutine calls. | Subroutines preserve them under AAPCS64, and the Forth machine state uses only `x19`–`x23`. |
+| 23 | 2026-10-25 | Request Limine base revision 3; if Limine does not accept it, print a message and power off. | The highest revision Limine 9.6.7 supports. |
+| 24 | 2026-10-25 | Map MMIO ourselves: our own TTBR0 tables map virtual 0–1 GiB to physical 0–1 GiB as one Device-nGnRE block, using `MAIR_EL1` slot 2. | From revision 3 Limine maps only RAM, and only as cacheable memory. TTBR0 is ours under the protocol, Limine uses only MAIR slots 0 and 1, and QEMU virt keeps all its devices below 1 GiB. |
+| 25 | 2026-10-25 | The bare-metal kernel is linked at `0xffffffff80000000` as one RWX load segment. | Limine requires the higher half, and maps each segment with the permissions in its header; the dictionary needs code written at run time. |
+| 26 | 2026-10-25 | Every exception prints the exception kind, `ESR`, `ELR`, `FAR`, `SPSR` and all registers, then resumes at ABORT. A fault inside the handler halts. | The brief's acceptance test, plus a REPL that survives a bad address. |
+| 27 | 2026-10-25 | Bare-metal `bye` (and Ctrl-D on an empty line) powers off through PSCI `SYSTEM_OFF` over HVC. | QEMU virt provides PSCI over HVC; QEMU exits, so tests and `docker run` end cleanly. |
+| 28 | 2026-10-25 | The serial `hal_emit` sends CR before each LF; the serial test wrapper strips CRs. | Terminals need CR LF; tests stay byte-identical to the hosted build. |
+| 29 | 2026-10-25 | `tools/serial-run.py` holds test input back until the banner appears, then types it followed by Ctrl-D. | The UEFI firmware reads the serial console during boot and would swallow early input. |
+| 30 | 2026-10-25 | `boot.img` is a 64 MiB unpartitioned FAT32 disk with Limine at the removable-media path `/EFI/BOOT/BOOTAA64.EFI` and its config in `/boot/limine.conf` (timeout 0, quiet). | The simplest disk the UEFI firmware boots without a partition table or boot entry. |
+| 31 | 2026-10-25 | `make run` (the image's default command) boots bare metal; `make run-hosted` runs the Linux build. `make test` runs both suites; `tests/baremetal/` holds bare-metal-only tests. A `<name>.filter` sed script masks build-dependent values. | The brief's `docker run -it` drops into the serial console. Every test still runs on both platforms where it can. |
 
 ## Open questions (from the brief)
 
