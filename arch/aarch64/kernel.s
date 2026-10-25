@@ -46,18 +46,13 @@
 
 	.equ	DSTACK_BYTES, 4096
 	.equ	RSTACK_BYTES, 4096
-	.equ	TIB_SIZE, 256
 	.equ	DICT_BYTES, 1 << 20
 
 	.equ	INSN_NOP, 0xd503201f
 	.equ	INSN_MOV_X9_X30, 0xaa1e03e9
 	.equ	INSN_BL, 0x94000000
 
-	.equ	CH_EOT, 4
-	.equ	CH_BS, 8
-	.equ	CH_TAB, 9
 	.equ	CH_LF, 10
-	.equ	CH_CR, 13
 	.equ	CH_SPACE, 32
 	.equ	CH_HASH, 35
 	.equ	CH_DOLLAR, 36
@@ -67,7 +62,6 @@
 	.equ	CH_MINUS, 45
 	.equ	CH_0, 48
 	.equ	CH_A_LOWER, 97
-	.equ	CH_DEL, 127
 
 // ---------------------------------------------------------------------------
 // Messages and the embedded Forth source
@@ -79,13 +73,11 @@
 	.equ	\label\()_len, . - \label
 .endm
 
-	message	msg_banner, "OS 4.0\n"
-	message	msg_ok, " ok\n"
-	message	msg_compiled, " compiled\n"
 	message	msg_undefined, " ?\n"
 	message	msg_underflow, "stack underflow\n"
 	message	msg_noname, "missing name\n"
 	message	msg_longname, "name too long\n"
+	message	msg_noquit, "core.fs ended without starting QUIT\n"
 	message	msg_corefs, "core.fs:"
 	message	msg_colon, ": "
 
@@ -102,7 +94,7 @@ var_dp:		.quad	dict_space	// next free byte of the dictionary
 var_source:	.quad	SRC_BOOT
 var_boot_pos:	.quad	boot_src	// start of the next core.fs line
 var_boot_line:	.quad	0		// core.fs line number, for error reports
-var_eof:	.quad	0		// terminal input has ended
+var_quit:	.quad	0		// xt of the Forth QUIT loop, set by core.fs
 var_sp0:	.quad	0		// hardware sp at start-up, restored by abort
 
 	.bss
@@ -112,7 +104,6 @@ dstack_top:	.space	16		// guard: an underflowing word reads here, then INTERPRET
 rstack:		.space	RSTACK_BYTES
 rstack_top:
 user0:		.space	U_SIZE
-tib_buf:	.space	TIB_SIZE
 	.balign	4096
 	.global	dict_space, dict_end
 dict_space:	.space	DICT_BYTES	// the platform must make this executable: code fields live here

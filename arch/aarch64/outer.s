@@ -1,5 +1,9 @@
-// outer.s: start-up, QUIT, ABORT, the outer interpreter and error reporting.
+// outer.s: start-up, QUIT, ABORT, the bootstrap interpreter and error reporting.
 // Included by kernel.s.
+//
+// The assembly interpreter here only loads core.fs. The last line of core.fs
+// stores its Forth QUIT loop in 'quit and runs QUIT, which from then on enters
+// that loop: the REPL users see is written in Forth.
 
 	.text
 	.global	forth_cold
@@ -15,14 +19,22 @@ forth_cold:
 	bl	refill_sub		// first line of core.fs
 	b	do_quit
 
-// Reset the return stack and interpret forever.
+// Reset the return stack and interpret forever: the Forth loop in 'quit once
+// core.fs has set it, else the bootstrap interpreter.
 do_quit:
 	ldr	RSP, =rstack_top
 	str	xzr, [UP, #U_STATE]
-	ldr	IP, =quit_thread
+	ldr	x0, =var_quit
+	ldr	x0, [x0]
+	cbz	x0, 1f
+	ldr	x1, =var_source		// core.fs is loaded: input is the terminal now
+	str	xzr, [x1]
+	mov	x8, x0
+	br	x8
+1:	ldr	IP, =quit_thread
 	NEXT
 
-// Reset the data stack, discard the rest of the line and resume QUIT.
+// Reset the data stack and resume QUIT, which reads a fresh line.
 // An error while loading core.fs is fatal. Exception handlers return here too.
 	.global	do_abort
 do_abort:
@@ -33,18 +45,16 @@ do_abort:
 	mov	TOS, #0
 	ldr	x0, =var_source
 	ldr	x0, [x0]
-	cbz	x0, 1f
+	cbz	x0, do_quit
 	mov	x0, #1
 	b	hal_bye
-1:	bl	refill_sub
-	b	do_quit
 
 	.balign	8
 quit_thread:
 	.quad	interpret, w_branch, quit_thread
 
-// INTERPRET: handle one word of the current line, refilling at its end.
-// Execute or compile a word, push or compile a number, or report an error.
+// INTERPRET: handle one word of core.fs, moving to the next line at the end of
+// one. Execute or compile a word, push or compile a number, or report an error.
 // Executed words jump straight to their code, returning to quit_thread.
 interpret:
 	ldr	x0, =dstack_top
@@ -78,17 +88,7 @@ interpret:
 	NEXT
 3:	PUSH	x0
 	NEXT
-5:	ldr	x0, =var_source		// end of line: prompt only at the terminal
-	ldr	x0, [x0]
-	cbnz	x0, 6f
-	ldr	x2, [UP, #U_STATE]
-	ldr	x0, =msg_ok
-	mov	x1, #msg_ok_len
-	cbz	x2, 4f
-	ldr	x0, =msg_compiled
-	mov	x1, #msg_compiled_len
-4:	bl	type_sub
-6:	bl	refill_sub
+5:	bl	refill_sub		// end of line
 	NEXT
 
 // ---------------------------------------------------------------------------
@@ -111,6 +111,11 @@ err_underflow:
 err_noname:
 	ldr	x0, =msg_noname
 	mov	x1, #msg_noname_len
+	b	err_located
+
+err_noquit:
+	ldr	x0, =msg_noquit
+	mov	x1, #msg_noquit_len
 	b	err_located
 
 err_longname:

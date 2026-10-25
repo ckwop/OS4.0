@@ -27,7 +27,8 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 
 ## Code conventions
 
-- Prefer Forth over assembly. Assembly is only for primitives, hardware access or measured hot spots; keep a Forth reference version alongside.
+- Most of the software is built in Forth: drivers, protocol stacks, the block layer, the MUD engine and tools. Assembly is only for primitives, the thinnest hardware access (register reads and writes, barriers), the bootstrap that loads `core.fs`, and measured hot spots; keep the Forth definition as the reference.
+- The REPL is Forth (the end of `core.fs`); the assembly interpreter in `outer.s` only loads `core.fs` at boot (DECISIONS.md #33).
 - Every assembly primitive and every Forth word gets a stack-effect comment: `( n1 n2 -- n3 )`.
 - Forth source on disk uses standard screens: 16 lines of 64 characters, and line 0 is an index comment.
 - AArch64 registers: `x19` IP, `x20` data stack pointer, `x21` return stack pointer, `x22` cached TOS, `x23` user area. `x8`–`x15` are scratch, and `x24`–`x28` are scratch for primitives across subroutine calls. Hardware `sp` is reserved for exceptions and C calls and stays 16-byte aligned.

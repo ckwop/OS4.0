@@ -84,6 +84,7 @@ dodoes:
 
 	defconst "dp", w_dp, var_dp		// ( -- addr ) dictionary pointer
 	defconst "latest", w_latest, var_latest	// ( -- addr ) newest header
+	defconst "'quit", w_tickquit, var_quit	// ( -- addr ) xt of the Forth QUIT loop
 	defuser	"base", w_base, U_BASE		// ( -- addr )
 	defuser	"state", w_state, U_STATE	// ( -- addr ) true while compiling
 	defuser	">in", w_toin, U_TOIN		// ( -- addr )

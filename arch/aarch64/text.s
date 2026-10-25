@@ -1,22 +1,18 @@
-// text.s: terminal input, parsing, dictionary lookup, number conversion and
-// text output, as subroutines for the outer interpreter and compiler.
+// text.s: reading core.fs, parsing, dictionary lookup, number conversion and
+// text output, as subroutines for the bootstrap interpreter and compiler.
 // Included by kernel.s.
 
 	.text
 	.global	type_sub, print_hex_sub, print_udec_sub	// for platform code, e.g. exception reports
 
-// refill_sub: make the next line of input current. Reads core.fs line by line,
-// then the terminal. Exits through hal_bye when terminal input ends.
+// refill_sub: make the next line of core.fs current. Reaching the end of
+// core.fs is an error: its last line must start the Forth QUIT loop.
 refill_sub:
-	stp	x29, x30, [sp, #-16]!
-	ldr	x0, =var_source
-	ldr	x0, [x0]
-	cbz	x0, 4f
 	ldr	x0, =var_boot_pos
 	ldr	x1, [x0]
 	ldr	x2, =boot_src_end
 	cmp	x1, x2
-	b.hs	3f
+	b.hs	err_noquit
 	str	x1, [UP, #U_TIB]
 	mov	x3, x1
 1:	cmp	x3, x2
@@ -34,81 +30,8 @@ refill_sub:
 	ldr	x1, [x0]
 	add	x1, x1, #1
 	str	x1, [x0]
-	b	5f
-3:	ldr	x0, =var_source		// core.fs is done: read the terminal from now on
-	str	xzr, [x0]
-	ldr	x0, =msg_banner
-	mov	x1, #msg_banner_len
-	bl	type_sub
-4:	ldr	x0, =tib_buf
-	str	x0, [UP, #U_TIB]
-	mov	x1, #TIB_SIZE
-	bl	accept_sub
-	str	x0, [UP, #U_NTIB]
-5:	str	xzr, [UP, #U_TOIN]
-	ldp	x29, x30, [sp], #16
+	str	xzr, [UP, #U_TOIN]
 	ret
-
-// accept_sub: x0 buffer, x1 capacity -> x0 length. Reads a line from the terminal,
-// echoing it, since a serial console does not echo for us. Backspace rubs out;
-// Enter echoes a space. At end of input, finishes the line, then exits on the next call.
-accept_sub:
-	stp	x29, x30, [sp, #-48]!
-	stp	x24, x25, [sp, #16]
-	str	x26, [sp, #32]
-	mov	x24, x0
-	mov	x25, x1
-	mov	x26, #0
-	ldr	x0, =var_eof
-	ldr	x0, [x0]
-	cbnz	x0, 9f
-1:	bl	hal_key
-	cmn	x0, #1
-	b.eq	7f
-	cmp	x0, #CH_LF
-	b.eq	8f
-	cmp	x0, #CH_CR
-	b.eq	8f
-	cmp	x0, #CH_EOT
-	b.eq	6f
-	cmp	x0, #CH_BS
-	b.eq	5f
-	cmp	x0, #CH_DEL
-	b.eq	5f
-	cmp	x0, #CH_TAB
-	b.ne	2f
-	mov	x0, #CH_SPACE
-2:	cmp	x0, #CH_SPACE
-	b.lo	1b			// ignore other control characters
-	cmp	x26, x25
-	b.hs	1b			// line full
-	strb	w0, [x24, x26]
-	add	x26, x26, #1
-	bl	hal_emit
-	b	1b
-5:	cbz	x26, 1b			// backspace
-	sub	x26, x26, #1
-	mov	x0, #CH_BS
-	bl	hal_emit
-	mov	x0, #CH_SPACE
-	bl	hal_emit
-	mov	x0, #CH_BS
-	bl	hal_emit
-	b	1b
-6:	cbnz	x26, 1b			// Ctrl-D ends input only on an empty line
-7:	cbz	x26, 9f			// end of input
-	ldr	x0, =var_eof
-	mov	x1, #1
-	str	x1, [x0]
-8:	mov	x0, #CH_SPACE
-	bl	hal_emit
-	mov	x0, x26
-	ldr	x26, [sp, #32]
-	ldp	x24, x25, [sp, #16]
-	ldp	x29, x30, [sp], #48
-	ret
-9:	mov	x0, #0
-	b	hal_bye
 
 // parse_name_sub: -> x0 address, x1 length of the next space-delimited word
 // in the current line (length 0 at the end of the line). Advances >in.
