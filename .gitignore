@@ -1,0 +1,20 @@
+# Build outputs
+build/
+*.o
+*.elf
+*.bin
+*.efi
+
+# Disk images (the data disk holds player data; back up with tools/, never commit)
+*.img
+*.qcow2
+
+# Test run artefacts
+tests/*.actual
+
+# Editors and OS
+.vscode/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store

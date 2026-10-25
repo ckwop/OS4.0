@@ -1,0 +1,9 @@
+# Everything is consumed inside Linux (Docker/QEMU); keep LF on every platform.
+* text=auto eol=lf
+
+# Disk images and build outputs
+*.img binary
+*.bin binary
+*.elf binary
+*.efi binary
+*.o binary
