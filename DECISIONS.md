@@ -35,6 +35,7 @@ A running log of choices that [docs/brief.md](docs/brief.md) leaves open. Add ne
 | 29 | 2026-10-25 | `tools/serial-run.py` holds test input back until the banner appears, then types it followed by Ctrl-D. | The UEFI firmware reads the serial console during boot and would swallow early input. |
 | 30 | 2026-10-25 | `boot.img` is a 64 MiB unpartitioned FAT32 disk with Limine at the removable-media path `/EFI/BOOT/BOOTAA64.EFI` and its config in `/boot/limine.conf` (timeout 0, quiet). | The simplest disk the UEFI firmware boots without a partition table or boot entry. |
 | 31 | 2026-10-25 | `make run` (the image's default command) boots bare metal; `make run-hosted` runs the Linux build. `make test` runs both suites; `tests/baremetal/` holds bare-metal-only tests. A `<name>.filter` sed script masks build-dependent values. | The brief's `docker run -it` drops into the serial console. Every test still runs on both platforms where it can. |
+| 32 | 2026-10-25 | Keep `core.fs` as source embedded in the kernel and compiled at every boot; no metacompiled image for now. Speed comes from moving measured hot words into assembly primitives, with the Forth definition kept as the reference. | The user prefers it: the core Forth stays easy to read and change. Ahead-of-time compilation would only save a fraction of a second of boot time. |
 
 ## Open questions (from the brief)
 
@@ -44,4 +45,3 @@ Still unresolved; move each to the table above once decided.
 - Player cap for the first release (sizes the task pool and TCP connection table; 64 assumed).
 - MUD port number (4000 assumed), and whether to offer only a plain telnet port.
 - Password hash algorithm, implemented in Forth.
-- When to move from the assembly outer interpreter to a metacompiled image.
