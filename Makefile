@@ -18,10 +18,8 @@ all: build
 
 build: $(HOSTED)
 
-$(BUILD):
-	mkdir -p $@
-
-$(BUILD)/hosted.o: $(HOSTED_SRC) | $(BUILD)
+$(BUILD)/hosted.o: $(HOSTED_SRC)
+	@mkdir -p $(@D)
 	$(AS) $(ASFLAGS) -o $@ $<
 
 $(HOSTED): $(BUILD)/hosted.o

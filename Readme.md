@@ -11,7 +11,7 @@ A tiny bare-metal Forth operating system for 64-bit ARM, built to run a MUD: a t
 Windows 11 with:
 
 - WSL2
-- Rancher Desktop, with the container engine set to **dockerd (moby)**
+- Rancher Desktop, with the container engine set to **dockerd (moby)** and Kubernetes off. Rancher does not put `docker` on your PATH; add `C:\Program Files\Rancher Desktop\resources\resources\win32\bin` to your user PATH.
 
 The image provides every other tool: cross binutils, QEMU, gforth and Limine.
 
@@ -34,7 +34,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 
 | # | Milestone | Status |
 | --- | --- | --- |
-| 1 | Toolchain image | Written, awaiting first `docker build` |
+| 1 | Toolchain image | Done |
 | 2 | Hosted Forth (under `qemu-aarch64`) | Not started |
 | 3 | Bare-metal boot | Not started |
 | 4 | Blocks | Not started |

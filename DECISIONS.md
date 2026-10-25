@@ -13,6 +13,8 @@ A running log of choices that [docs/brief.md](docs/brief.md) leaves open. Add ne
 | 7 | 2026-10-25 | Assembly sources are `.s` files assembled with plain `as`; constants via `.equ`, reuse via `.macro`. | No cross C compiler or preprocessor in the toolchain, and none is needed. |
 | 8 | 2026-10-25 | The image copies and builds the source at `docker build` time, with `make run` as its default command; bind-mount `/src` to work on live source. | `docker run -it os4` then works with no extra arguments. |
 | 9 | 2026-10-25 | Test runner applies a per-test timeout (`TEST_TIMEOUT`, default 10 s). | A hung kernel must fail its test rather than stall the suite. |
+| 10 | 2026-10-25 | Install gforth 0.7.3 from the bookworm repository on the trixie base. | Trixie no longer packages gforth; bookworm's installs cleanly, and staying on trixie keeps QEMU 10.0 rather than 7.2. |
+| 11 | 2026-10-25 | gforth provides expected output only for tests of standard words; OS-specific tests have hand-written `.out` files. | Prompts, error text and non-standard words differ between gforth and our system by design. |
 
 ## Open questions (from the brief)
 

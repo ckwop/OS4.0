@@ -8,6 +8,10 @@ FROM debian:trixie-slim
 ARG LIMINE_REPO=https://codeberg.org/Limine/Limine.git
 ARG LIMINE_COMMIT=ee5d29cd0a8034612dcd1df3f00052480db785c5
 
+# Trixie dropped gforth; bookworm's 0.7.3 installs cleanly alongside. Every other
+# package has a newer trixie version, so apt still takes those from trixie.
+RUN echo 'deb http://deb.debian.org/debian bookworm main' > /etc/apt/sources.list.d/bookworm.list
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         binutils-aarch64-linux-gnu \
         qemu-system-arm \
