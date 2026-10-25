@@ -1,28 +1,41 @@
-// text.s: reading core.fs, parsing, dictionary lookup, number conversion and
-// text output, as subroutines for the bootstrap interpreter and compiler.
+// text.s: reading the boot files, parsing, dictionary lookup, number conversion
+// and text output, as subroutines for the bootstrap interpreter and compiler.
 // Included by kernel.s.
 
 	.text
 	.global	type_sub, print_hex_sub, print_udec_sub	// for platform code, e.g. exception reports
 
-// refill_sub: make the next line of core.fs current. Reaching the end of
-// core.fs is an error: its last line must start the Forth QUIT loop.
+// refill_sub: make the next line of the boot files current, moving on to the
+// next file at the end of one. Running out is an error: the last file must
+// start the Forth QUIT loop.
 refill_sub:
+	ldr	x5, =var_boot_file
 	ldr	x0, =var_boot_pos
+1:	ldr	x6, [x5]
 	ldr	x1, [x0]
-	ldr	x2, =boot_src_end
+	ldr	x2, [x6, #BF_END]
 	cmp	x1, x2
+	b.lo	2f
+	add	x6, x6, #BF_SIZE	// this file is done
+	ldr	x7, =boot_files_end
+	cmp	x6, x7
 	b.hs	err_noquit
-	str	x1, [UP, #U_TIB]
+	str	x6, [x5]
+	ldr	x1, [x6, #BF_START]
+	str	x1, [x0]
+	ldr	x3, =var_boot_line
+	str	xzr, [x3]
+	b	1b
+2:	str	x1, [UP, #U_TIB]
 	mov	x3, x1
-1:	cmp	x3, x2
-	b.hs	2f
+3:	cmp	x3, x2
+	b.hs	4f
 	ldrb	w4, [x3]
 	cmp	w4, #CH_LF
-	b.eq	2f
+	b.eq	4f
 	add	x3, x3, #1
-	b	1b
-2:	sub	x4, x3, x1
+	b	3b
+4:	sub	x4, x3, x1
 	str	x4, [UP, #U_NTIB]
 	add	x3, x3, #1
 	str	x3, [x0]

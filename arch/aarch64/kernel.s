@@ -1,9 +1,9 @@
 // kernel.s: the portable AArch64 Forth kernel.
 //
 // The inner interpreter, the primitives, and the bootstrap outer interpreter and
-// compiler. forth/core.fs, embedded below, builds the rest of the system in Forth
-// at start-up. Platform glue (linux.s for the hosted build) provides _start,
-// hal_key, hal_emit and hal_bye, and jumps to forth_cold.
+// compiler. The boot files (forth/*.fs), embedded below, build the rest of the
+// system in Forth at start-up. Platform glue (linux.s for the hosted build)
+// provides _start, hal_key, hal_emit and hal_bye, and jumps to forth_cold.
 //
 // This file holds the constants, memory layout and dictionary macros, and
 // includes the rest as one assembly unit:
@@ -42,7 +42,7 @@
 	.equ	U_SIZE, 64
 
 	.equ	SRC_TERMINAL, 0
-	.equ	SRC_BOOT, 1		// reading the embedded core.fs
+	.equ	SRC_BOOT, 1		// reading the embedded boot files
 
 	.equ	DSTACK_BYTES, 4096
 	.equ	RSTACK_BYTES, 4096
@@ -54,6 +54,7 @@
 
 	.equ	CH_LF, 10
 	.equ	CH_SPACE, 32
+	.equ	CH_COLON, 58
 	.equ	CH_HASH, 35
 	.equ	CH_DOLLAR, 36
 	.equ	CH_PERCENT, 37
@@ -77,13 +78,35 @@
 	message	msg_underflow, "stack underflow\n"
 	message	msg_noname, "missing name\n"
 	message	msg_longname, "name too long\n"
-	message	msg_noquit, "core.fs ended without starting QUIT\n"
-	message	msg_corefs, "core.fs:"
+	message	msg_noquit, "boot files ended without starting QUIT\n"
 	message	msg_colon, ": "
 
-boot_src:
-	.incbin	"forth/core.fs"
-boot_src_end:
+// Boot files: Forth source embedded in the kernel and loaded in this order.
+// Each table entry is start, end, name, name length.
+	.equ	BF_START, 0
+	.equ	BF_END, 8
+	.equ	BF_NAME, 16
+	.equ	BF_NAMELEN, 24
+	.equ	BF_SIZE, 32
+
+.macro bootfile path
+	.pushsection .rodata.bootsrc
+8:	.incbin	"\path"
+9:
+	.popsection
+	.pushsection .rodata.bootnames
+6:	.ascii	"\path"
+7:
+	.popsection
+	.quad	8b, 9b, 6b, 7b - 6b
+.endm
+
+	.balign	8
+boot_files:
+	bootfile "forth/core.fs"
+	bootfile "forth/output.fs"
+	bootfile "forth/interpreter.fs"	// last: ends by starting the Forth QUIT loop
+boot_files_end:
 
 // ---------------------------------------------------------------------------
 // Variables and memory
@@ -92,9 +115,10 @@ boot_src_end:
 	.balign	8
 var_dp:		.quad	dict_space	// next free byte of the dictionary
 var_source:	.quad	SRC_BOOT
-var_boot_pos:	.quad	boot_src	// start of the next core.fs line
-var_boot_line:	.quad	0		// core.fs line number, for error reports
-var_quit:	.quad	0		// xt of the Forth QUIT loop, set by core.fs
+var_boot_file:	.quad	boot_files	// table entry of the boot file being loaded
+var_boot_pos:	.quad	0		// start of its next line (set by forth_cold)
+var_boot_line:	.quad	0		// its line number, for error reports
+var_quit:	.quad	0		// xt of the Forth QUIT loop, set by interpreter.fs
 var_sp0:	.quad	0		// hardware sp at start-up, restored by abort
 
 	.bss

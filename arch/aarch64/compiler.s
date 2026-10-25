@@ -80,7 +80,7 @@ dodoes:
 	mov	IP, x30
 	NEXT
 
-// ---- Variables and constants used by core.fs
+// ---- Variables and constants used by the boot files
 
 	defconst "dp", w_dp, var_dp		// ( -- addr ) dictionary pointer
 	defconst "latest", w_latest, var_latest	// ( -- addr ) newest header

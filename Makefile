@@ -10,8 +10,8 @@ BUILD         := build
 LIMINE_DIR    ?= /opt/limine
 UEFI_FIRMWARE ?= /usr/share/qemu-efi-aarch64/QEMU_EFI.fd
 
-# The kernel embeds forth/core.fs and includes the other kernel sources.
-KERNEL_DEPS := $(wildcard $(ARCH)/*.s) forth/core.fs
+# The kernel embeds the boot files listed in kernel.s and includes the other kernel sources.
+KERNEL_DEPS := $(wildcard $(ARCH)/*.s) $(wildcard forth/*.fs)
 
 # Hosted: an AArch64 Linux binary run under qemu-aarch64 (milestone 2).
 HOSTED     := $(BUILD)/forth-hosted

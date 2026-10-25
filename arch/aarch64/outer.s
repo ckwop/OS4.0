@@ -1,9 +1,9 @@
 // outer.s: start-up, QUIT, ABORT, the bootstrap interpreter and error reporting.
 // Included by kernel.s.
 //
-// The assembly interpreter here only loads core.fs. The last line of core.fs
-// stores its Forth QUIT loop in 'quit and runs QUIT, which from then on enters
-// that loop: the REPL users see is written in Forth.
+// The assembly interpreter here only loads the boot files. The end of
+// interpreter.fs stores its Forth QUIT loop in 'quit and runs QUIT, which from
+// then on enters that loop: the REPL users see is written in Forth.
 
 	.text
 	.global	forth_cold
@@ -16,26 +16,30 @@ forth_cold:
 	str	x0, [UP, #U_BASE]
 	ldr	DSP, =dstack_top
 	mov	TOS, #0
-	bl	refill_sub		// first line of core.fs
+	ldr	x0, =boot_files		// start at the first boot file
+	ldr	x0, [x0, #BF_START]
+	ldr	x1, =var_boot_pos
+	str	x0, [x1]
+	bl	refill_sub
 	b	do_quit
 
 // Reset the return stack and interpret forever: the Forth loop in 'quit once
-// core.fs has set it, else the bootstrap interpreter.
+// the boot files have set it, else the bootstrap interpreter.
 do_quit:
 	ldr	RSP, =rstack_top
 	str	xzr, [UP, #U_STATE]
 	ldr	x0, =var_quit
 	ldr	x0, [x0]
 	cbz	x0, 1f
-	ldr	x1, =var_source		// core.fs is loaded: input is the terminal now
+	ldr	x1, =var_source		// boot files loaded: input is the terminal now
 	str	xzr, [x1]
 	mov	x8, x0
 	br	x8
 1:	ldr	IP, =quit_thread
 	NEXT
 
-// Reset the data stack and resume QUIT, which reads a fresh line.
-// An error while loading core.fs is fatal. Exception handlers return here too.
+// Reset the data stack and resume QUIT, which reads a fresh line. An error
+// while loading the boot files is fatal. Exception handlers return here too.
 	.global	do_abort
 do_abort:
 	ldr	x0, =var_sp0
@@ -53,8 +57,8 @@ do_abort:
 quit_thread:
 	.quad	interpret, w_branch, quit_thread
 
-// INTERPRET: handle one word of core.fs, moving to the next line at the end of
-// one. Execute or compile a word, push or compile a number, or report an error.
+// INTERPRET: handle one word of a boot file, moving to the next line at the end
+// of one. Execute or compile a word, push or compile a number, or report an error.
 // Executed words jump straight to their code, returning to quit_thread.
 interpret:
 	ldr	x0, =dstack_top
@@ -132,15 +136,19 @@ err_message:
 	bl	type_sub
 	b	do_abort
 
-// Print "core.fs:<line>: " if the error is in the embedded source.
+// Print "<file>:<line>: " if the error is in a boot file.
 err_location:
 	stp	x29, x30, [sp, #-16]!
 	ldr	x0, =var_source
 	ldr	x0, [x0]
 	cbz	x0, 1f
-	ldr	x0, =msg_corefs
-	mov	x1, #msg_corefs_len
+	ldr	x2, =var_boot_file
+	ldr	x2, [x2]
+	ldr	x0, [x2, #BF_NAME]
+	ldr	x1, [x2, #BF_NAMELEN]
 	bl	type_sub
+	mov	x0, #CH_COLON
+	bl	hal_emit
 	ldr	x0, =var_boot_line
 	ldr	x0, [x0]
 	bl	print_udec_sub
