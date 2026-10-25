@@ -1,0 +1,14 @@
+OS 4.0
+1 2 nosuchword 3 .s nosuchword ?
+.s <0>  ok
+drop stack underflow
+: half 2 / ; 10 half . 5  ok
+: broken 1 2 undefinedthing ; undefinedthing ?
+broken broken ?
+: check ( flag -- ) abort" check failed" ." passed" ;  ok
+0 check passed ok
+1 2 3 1 check 4 5 check failed
+.s <0>  ok
+' nosuchword nosuchword ?
+: missing name
+42 . 42  ok

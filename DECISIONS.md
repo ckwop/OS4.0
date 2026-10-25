@@ -15,6 +15,17 @@ A running log of choices that [docs/brief.md](docs/brief.md) leaves open. Add ne
 | 9 | 2026-10-25 | Test runner applies a per-test timeout (`TEST_TIMEOUT`, default 10 s). | A hung kernel must fail its test rather than stall the suite. |
 | 10 | 2026-10-25 | Install gforth 0.7.3 from the bookworm repository on the trixie base. | Trixie no longer packages gforth; bookworm's installs cleanly, and staying on trixie keeps QEMU 10.0 rather than 7.2. |
 | 11 | 2026-10-25 | gforth provides expected output only for tests of standard words; OS-specific tests have hand-written `.out` files. | Prompts, error text and non-standard words differ between gforth and our system by design. |
+| 12 | 2026-10-25 | Every non-primitive word starts with an 8-byte code field `<insn>; bl <handler>`; the handler finds the body in `x30`. `DOES>` compiles `mov x9, x30; bl dodoes` into the defining word. | The simplest direct-threaded scheme on AArch64: one uniform code field for colon, variable, constant and `DOES>` words. |
+| 13 | 2026-10-25 | Dictionary header: link cell, flags/length byte (immediate, hidden, 5-bit length), name, padding to 8 bytes, then the xt. | Minimal and 8-byte aligned; 31-character names are plenty. |
+| 14 | 2026-10-25 | The bootstrap kernel is about 75 words, more than the brief's ~30: it includes the assembly outer interpreter and compiler basics, plus hot-path primitives (`do`/`loop` runtime, `pick`, `um/mod`). | The brief starts from an assembly outer interpreter; the count falls when the metacompiler moves the interpreter and compiler into Forth. |
+| 15 | 2026-10-25 | The kernel source is split into files that `kernel.s` includes, forming one assembly unit. | The dictionary link chain (`.set link`) must run across every word; separate objects would break it. |
+| 16 | 2026-10-25 | `forth/core.fs` is embedded with `.incbin` and interpreted line by line at start-up; an error there prints `core.fs:<line>:` and exits with status 1. | One self-contained binary; a broken core.fs fails loudly rather than leaving a half-built system. |
+| 17 | 2026-10-25 | The Forth echoes its own input. The hosted build puts a terminal stdin into raw mode (restored on exit), so tests are transcripts: echoed input, output, then ` ok`. | A serial console does not echo, so bare metal must echo itself; doing the same hosted keeps tests identical across platforms. |
+| 18 | 2026-10-25 | Prompts: ` ok` after a line while interpreting, ` compiled` while compiling, nothing during core.fs. Errors print `name ?` or a message, reset both stacks and discard the line. | Classic Forth behaviour, close to gforth. |
+| 19 | 2026-10-25 | Division is floored, word lookup is case-insensitive, and numbers accept `-`, the prefixes `$` `#` `%`, and `'c'`. | Matches gforth, so gforth can check our test outputs. |
+| 20 | 2026-10-25 | Branch cells hold absolute target addresses. | Simplest to compile and to read in a dump; no relocation needed in one flat address space. |
+| 21 | 2026-10-25 | The hosted build makes its dictionary executable with `mprotect`; bare metal gets this from its flat RWX memory. | New code fields are written at run time and must be executable. |
+| 22 | 2026-10-25 | `x24`–`x28` are free scratch registers for primitives across subroutine calls. | Subroutines preserve them under AAPCS64, and the Forth machine state uses only `x19`–`x23`. |
 
 ## Open questions (from the brief)
 

@@ -1,0 +1,10 @@
+: sign? ( n -- ) dup 0< if drop ." negative" else 0= if ." zero" else ." positive" then then ;
+-5 sign?  0 sign?  5 sign?
+: countdown ( n -- ) begin dup . 1- dup 0= until drop ;
+3 countdown
+: halve ( n -- ) begin dup 1 > while 2 / dup . repeat drop ;
+100 halve
+: fib ( n -- f ) dup 2 < if exit then dup 1- recurse swap 2 - recurse + ;
+20 fib .
+: five ( -- n ) 0 begin 1+ dup 5 = if exit then again ;
+five .

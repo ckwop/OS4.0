@@ -1,0 +1,18 @@
+1 2 3 .s
+rot .s
+-rot .s
+swap .s
+over .s
+2drop 2drop .s
+5 6 nip .s
+7 tuck .s
+2drop drop
+1 2 2dup .s
+3 4 2swap .s
+2over .s
+2drop 2drop 2drop 2drop
+7 ?dup .s
+2drop 0 ?dup .s
+drop 10 20 30 2 pick .s
+depth .
+1 DUP Swap .s

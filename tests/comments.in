@@ -1,0 +1,5 @@
+\ a whole-line comment
+1 2 ( an inline comment ) + .
+: inc ( n -- n+1 ) \ the rest of this line is ignored
+  1+ ;
+5 inc .

@@ -21,7 +21,7 @@ From the repo root in PowerShell:
 
 ```powershell
 docker build -t os4 .                              # build the toolchain image and the kernel
-docker run --rm -it os4                            # start the Forth prompt (from milestone 2)
+docker run --rm -it os4                            # start the Forth prompt; type bye or Ctrl-D to leave
 docker run --rm -v "${PWD}:/src" os4 make test     # run the test suite against your working copy
 docker run --rm -it -v "${PWD}:/src" os4 make run  # run your working copy without rebuilding the image
 ```
@@ -35,7 +35,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | # | Milestone | Status |
 | --- | --- | --- |
 | 1 | Toolchain image | Done |
-| 2 | Hosted Forth (under `qemu-aarch64`) | Not started |
+| 2 | Hosted Forth (under `qemu-aarch64`) | Done |
 | 3 | Bare-metal boot | Not started |
 | 4 | Blocks | Not started |
 | 5 | Multitasking and timer | Not started |

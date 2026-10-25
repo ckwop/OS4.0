@@ -1,0 +1,13 @@
+OS 4.0
+: hi ." Hello, world!" ;  ok
+hi Hello, world! ok
+s" abc" type abc ok
+s" abcde" . drop 5  ok
+.( immediate text) immediate text ok
+char A . 65  ok
+: b [char] B emit ; b B ok
+: str s" compiled string" ; str type compiled string ok
+65 emit 66 emit AB ok
+3 spaces ." x"    x ok
+: two ." a" ." b" ; two ab ok
+s" hello" drop 1+ c@ emit e ok

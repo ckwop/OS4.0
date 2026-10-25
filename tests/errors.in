@@ -1,0 +1,13 @@
+1 2 nosuchword 3 .s
+.s
+drop
+: half 2 / ; 10 half .
+: broken 1 2 undefinedthing ;
+broken
+: check ( flag -- ) abort" check failed" ." passed" ;
+0 check
+1 2 3 1 check 4 5
+.s
+' nosuchword
+:
+42 .

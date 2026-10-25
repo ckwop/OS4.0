@@ -1,0 +1,8 @@
+hex 10 . ff . FF . decimal
+255 hex . decimal
+$10 . #10 . %101 . 'a' .
+-$10 . -%11 .
+hex -1 . -1 u. decimal
+2 base ! 1010 . decimal
+36 base ! z . decimal
+hex 1A2B decimal .

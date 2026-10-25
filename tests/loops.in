@@ -1,0 +1,10 @@
+: l1 5 0 do i . loop ; l1
+: l2 3 0 do 2 0 do j . i . loop loop ; l2
+: l3 0 10 do i . -3 +loop ; l3
+: l4 10 0 do i . 3 +loop ; l4
+: l5 0 0 ?do i . loop ." skipped" ; l5
+: l6 10 0 do i 4 = if leave then i . loop ." left" ; l6
+: l7 4 1 do 4 1 do i j = if leave then i j * . loop loop ; l7
+: sum ( n -- total ) 0 swap 1+ 1 do i + loop ; 100 sum .
+: l8 -2 2 do i . -1 +loop ; l8
+: l9 3 0 ?do i . loop ; l9

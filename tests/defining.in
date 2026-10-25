@@ -1,0 +1,13 @@
+variable x  5 x !  x @ .
+3 x +!  x @ .
+10 constant ten  ten .
+create arr 1 , 2 , 3 ,  arr cell+ @ .  arr 2 cells + @ .
+: array ( n "name" -- ) create cells allot does> ( i -- addr ) swap cells + ;
+5 array squares  16 4 squares !  4 squares @ .
+: counter ( "name" -- ) create 0 , does> ( -- n ) 1 over +! @ ;
+counter c  c . c . c .
+' ten execute .
+' ten >body @ .
+: imm ." now" ; immediate
+: uses imm ;
+here 7 , @ .

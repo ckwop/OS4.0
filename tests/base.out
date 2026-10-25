@@ -1,0 +1,9 @@
+OS 4.0
+hex 10 . ff . FF . decimal 10 FF FF  ok
+255 hex . decimal FF  ok
+$10 . #10 . %101 . 'a' . 16 10 5 97  ok
+-$10 . -%11 . -16 -3  ok
+hex -1 . -1 u. decimal -1 FFFFFFFFFFFFFFFF  ok
+2 base ! 1010 . decimal 1010  ok
+36 base ! z . decimal Z  ok
+hex 1A2B decimal . 6699  ok

@@ -1,0 +1,6 @@
+OS 4.0
+\ a whole-line comment  ok
+1 2 ( an inline comment ) + . 3  ok
+: inc ( n -- n+1 ) \ the rest of this line is ignored  compiled
+  1+ ;  ok
+5 inc . 6  ok

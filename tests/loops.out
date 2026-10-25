@@ -1,0 +1,11 @@
+OS 4.0
+: l1 5 0 do i . loop ; l1 0 1 2 3 4  ok
+: l2 3 0 do 2 0 do j . i . loop loop ; l2 0 0 0 1 1 0 1 1 2 0 2 1  ok
+: l3 0 10 do i . -3 +loop ; l3 10 7 4 1  ok
+: l4 10 0 do i . 3 +loop ; l4 0 3 6 9  ok
+: l5 0 0 ?do i . loop ." skipped" ; l5 skipped ok
+: l6 10 0 do i 4 = if leave then i . loop ." left" ; l6 0 1 2 3 left ok
+: l7 4 1 do 4 1 do i j = if leave then i j * . loop loop ; l7 2 3 6  ok
+: sum ( n -- total ) 0 swap 1+ 1 do i + loop ; 100 sum . 5050  ok
+: l8 -2 2 do i . -1 +loop ; l8 2 1 0 -1 -2  ok
+: l9 3 0 ?do i . loop ; l9 0 1 2  ok

@@ -1,0 +1,145 @@
+// outer.s: start-up, QUIT, ABORT, the outer interpreter and error reporting.
+// Included by kernel.s.
+
+	.text
+	.global	forth_cold
+forth_cold:
+	ldr	x0, =var_sp0
+	mov	x1, sp
+	str	x1, [x0]
+	ldr	UP, =user0
+	mov	x0, #10
+	str	x0, [UP, #U_BASE]
+	ldr	DSP, =dstack_top
+	mov	TOS, #0
+	bl	refill_sub		// first line of core.fs
+	b	do_quit
+
+// Reset the return stack and interpret forever.
+do_quit:
+	ldr	RSP, =rstack_top
+	str	xzr, [UP, #U_STATE]
+	ldr	IP, =quit_thread
+	NEXT
+
+// Reset the data stack, discard the rest of the line and resume QUIT.
+// An error while loading core.fs is fatal.
+do_abort:
+	ldr	x0, =var_sp0
+	ldr	x0, [x0]
+	mov	sp, x0
+	ldr	DSP, =dstack_top
+	mov	TOS, #0
+	ldr	x0, =var_source
+	ldr	x0, [x0]
+	cbz	x0, 1f
+	mov	x0, #1
+	b	hal_bye
+1:	bl	refill_sub
+	b	do_quit
+
+	.balign	8
+quit_thread:
+	.quad	interpret, w_branch, quit_thread
+
+// INTERPRET: handle one word of the current line, refilling at its end.
+// Execute or compile a word, push or compile a number, or report an error.
+// Executed words jump straight to their code, returning to quit_thread.
+interpret:
+	ldr	x0, =dstack_top
+	cmp	DSP, x0
+	b.hi	err_underflow
+	bl	parse_name_sub
+	cbz	x1, 5f
+	mov	x24, x0
+	mov	x25, x1
+	bl	find_sub
+	cbz	x0, 2f
+	ldr	x2, [UP, #U_STATE]
+	cbz	x2, 1f			// interpreting
+	cmp	x1, #1
+	b.eq	1f			// immediate
+	bl	comma_sub
+	NEXT
+1:	mov	x8, x0
+	br	x8
+2:	mov	x0, x24
+	mov	x1, x25
+	bl	number_sub
+	cbz	x1, err_undefined
+	ldr	x2, [UP, #U_STATE]
+	cbz	x2, 3f
+	mov	x24, x0
+	ldr	x0, =w_lit
+	bl	comma_sub
+	mov	x0, x24
+	bl	comma_sub
+	NEXT
+3:	PUSH	x0
+	NEXT
+5:	ldr	x0, =var_source		// end of line: prompt only at the terminal
+	ldr	x0, [x0]
+	cbnz	x0, 6f
+	ldr	x2, [UP, #U_STATE]
+	ldr	x0, =msg_ok
+	mov	x1, #msg_ok_len
+	cbz	x2, 4f
+	ldr	x0, =msg_compiled
+	mov	x1, #msg_compiled_len
+4:	bl	type_sub
+6:	bl	refill_sub
+	NEXT
+
+// ---------------------------------------------------------------------------
+// Errors. Each prints a message and aborts.
+
+err_undefined:				// x24, x25: the word that was not found
+	bl	err_location
+	mov	x0, x24
+	mov	x1, x25
+	bl	type_sub
+	ldr	x0, =msg_undefined
+	mov	x1, #msg_undefined_len
+	b	err_message
+
+err_underflow:
+	ldr	x0, =msg_underflow
+	mov	x1, #msg_underflow_len
+	b	err_located
+
+err_noname:
+	ldr	x0, =msg_noname
+	mov	x1, #msg_noname_len
+	b	err_located
+
+err_longname:
+	ldr	x0, =msg_longname
+	mov	x1, #msg_longname_len
+
+err_located:				// x0, x1: message, printed after the location
+	mov	x24, x0
+	mov	x25, x1
+	bl	err_location
+	mov	x0, x24
+	mov	x1, x25
+err_message:
+	bl	type_sub
+	b	do_abort
+
+// Print "core.fs:<line>: " if the error is in the embedded source.
+err_location:
+	stp	x29, x30, [sp, #-16]!
+	ldr	x0, =var_source
+	ldr	x0, [x0]
+	cbz	x0, 1f
+	ldr	x0, =msg_corefs
+	mov	x1, #msg_corefs_len
+	bl	type_sub
+	ldr	x0, =var_boot_line
+	ldr	x0, [x0]
+	bl	print_udec_sub
+	ldr	x0, =msg_colon
+	mov	x1, #msg_colon_len
+	bl	type_sub
+1:	ldp	x29, x30, [sp], #16
+	ret

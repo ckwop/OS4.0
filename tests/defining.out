@@ -1,0 +1,14 @@
+OS 4.0
+variable x  5 x !  x @ . 5  ok
+3 x +!  x @ . 8  ok
+10 constant ten  ten . 10  ok
+create arr 1 , 2 , 3 ,  arr cell+ @ .  arr 2 cells + @ . 2 3  ok
+: array ( n "name" -- ) create cells allot does> ( i -- addr ) swap cells + ;  ok
+5 array squares  16 4 squares !  4 squares @ . 16  ok
+: counter ( "name" -- ) create 0 , does> ( -- n ) 1 over +! @ ;  ok
+counter c  c . c . c . 1 2 3  ok
+' ten execute . 10  ok
+' ten >body @ . 10  ok
+: imm ." now" ; immediate  ok
+: uses imm ; now ok
+here 7 , @ . 7  ok

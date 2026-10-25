@@ -1,0 +1,12 @@
+: hi ." Hello, world!" ;
+hi
+s" abc" type
+s" abcde" . drop
+.( immediate text)
+char A .
+: b [char] B emit ; b
+: str s" compiled string" ; str type
+65 emit 66 emit
+3 spaces ." x"
+: two ." a" ." b" ; two
+s" hello" drop 1+ c@ emit

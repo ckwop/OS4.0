@@ -30,13 +30,17 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 - Prefer Forth over assembly. Assembly is only for primitives, hardware access or measured hot spots; keep a Forth reference version alongside.
 - Every assembly primitive and every Forth word gets a stack-effect comment: `( n1 n2 -- n3 )`.
 - Forth source on disk uses standard screens: 16 lines of 64 characters, and line 0 is an index comment.
-- AArch64 registers: `x19` IP, `x20` data stack pointer, `x21` return stack pointer, `x22` cached TOS, `x23` user area. `x8`–`x15` are scratch. Hardware `sp` is reserved for exceptions and C calls and stays 16-byte aligned.
-- Direct-threaded code: `NEXT` is `ldr x8, [x19], #8` then `br x8`.
+- AArch64 registers: `x19` IP, `x20` data stack pointer, `x21` return stack pointer, `x22` cached TOS, `x23` user area. `x8`–`x15` are scratch, and `x24`–`x28` are scratch for primitives across subroutine calls. Hardware `sp` is reserved for exceptions and C calls and stays 16-byte aligned.
+- Direct-threaded code: `NEXT` is `ldr x8, [x19], #8` then `br x8`. Non-primitive words start with an 8-byte code field `<insn>; bl <handler>` (DECISIONS.md #12).
+- Kernel layout: `arch/aarch64/kernel.s` includes `outer.s`, `text.s`, `prims.s` and `compiler.s` as one assembly unit (the dictionary link chain needs this). `linux.s` is the hosted platform glue; bare metal replaces only that file. `forth/core.fs` is embedded and interpreted at start-up.
+- Assembly subroutines follow AAPCS64 (args in `x0`–`x7`, may clobber `x0`–`x15` and `x30`) and are named `*_sub`; HAL routines are `hal_key`, `hal_emit` and `hal_bye`.
 - All text files use LF line endings (enforced by `.gitattributes`).
 
 ## Tests
 
 - Tests are `tests/*.in` (Forth fed to the serial console) paired with `tests/*.out` (expected output), run headless under QEMU.
+- `.out` files are transcripts: the banner, then each input line as the Forth echoes it, its output, and ` ok`. Generate a new one by running the `.in` file, then check every value by hand (and against gforth for standard words) before committing it.
+- Drive the REPL interactively through a pseudo-terminal with `script -qec 'qemu-aarch64 build/forth-hosted' /dev/null` inside the container.
 - Every feature adds tests, and the whole suite runs on every change.
 
 ## Workflow
