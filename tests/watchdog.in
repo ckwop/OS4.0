@@ -1,0 +1,9 @@
+300 watchdog
+task hog-task
+: hog ( -- ) begin again ;
+' hog hog-task start  pause
+.tasks
+: spin ( -- ) begin again ;
+spin
+.( the console carries on)
+0 watchdog

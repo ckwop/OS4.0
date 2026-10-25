@@ -67,7 +67,7 @@
 	NEXT
 
 	defcode	"depth", w_depth		// ( -- n )
-	ldr	x0, =dstack_top
+	ldr	x0, [UP, #U_S0]
 	sub	x0, x0, DSP
 	asr	x0, x0, #3
 	PUSH	x0
@@ -267,6 +267,67 @@
 
 	defcode	"dsb", w_dsb			// ( -- ) ... and before any later instruction, e.g. a doorbell write
 	dsb	sy
+	NEXT
+
+// ---- Tasks and time. PAUSE is the whole scheduler: cooperative round robin
+// over the ring of user areas. tasks.fs builds the rest on it.
+
+	defcode	"pause", w_pause		// ( -- ) let the next ready task run
+	RPUSH	IP
+	str	TOS, [DSP, #-8]!
+	str	DSP, [UP, #U_SP]
+	str	RSP, [UP, #U_RP]
+	mov	x28, UP				// the search ends back at this task
+1:	ldr	UP, [UP, #U_LINK]
+	ldr	x0, [UP, #U_STATUS]
+	cbz	x0, 3f				// ready
+	ldr	x1, [UP, #U_WAKE]
+	cbz	x1, 2f				// asleep until another task wakes it
+	isb
+	mrs	x2, cntvct_el0
+	cmp	x2, x1
+	b.lo	2f
+	str	xzr, [UP, #U_STATUS]		// its time has come
+	b	3f
+2:	cmp	UP, x28
+	b.ne	1b
+	isb					// nothing can run: wait for an interrupt.
+	mrs	x0, cntvct_el0			// Idling is not running too long.
+	ldr	x1, =var_task_since
+	str	x0, [x1]
+	bl	hal_idle
+	b	1b
+3:	isb
+	mrs	x0, cntvct_el0
+	ldr	x1, =var_task_since
+	str	x0, [x1]
+	ldr	DSP, [UP, #U_SP]
+	ldr	RSP, [UP, #U_RP]
+	ldr	TOS, [DSP], #8
+	RPOP	IP
+	NEXT
+pause_end:
+
+	defcode	"up@", w_upfetch		// ( -- task ) this task: its user area
+	PUSH	UP
+	NEXT
+
+	defcode	"counter", w_counter		// ( -- u ) the system counter
+	isb
+	mrs	x0, cntvct_el0
+	PUSH	x0
+	NEXT
+
+	defcode	"counter-hz", w_counterhz	// ( -- u ) counter ticks per second
+	mrs	x0, cntfrq_el0
+	PUSH	x0
+	NEXT
+
+	defcode	"key?", w_keyq			// ( -- flag ) a key is waiting, or input has ended
+	bl	hal_key_ready
+	cmp	x0, #0
+	csetm	x0, ne
+	PUSH	x0
 	NEXT
 
 // ---- Platform words. The kernel is assembled once per platform (kernel.s).

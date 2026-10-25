@@ -1,0 +1,24 @@
+OS 4.0
+task t1  task t2  ok
+: ping ( -- ) 3 0 do ." ping " pause loop ;  ok
+: pong ( -- ) 3 0 do ." pong " pause loop ;  ok
+: yield ( n -- ) 0 do pause loop ;  ok
+' ping t1 start  ' pong t2 start  10 yield ping pong ping pong ping pong  ok
+.tasks console running
+t1 stopped
+t2 stopped
+ ok
+: ticker ( -- ) 3 0 do ." tick " 100 ms loop ;  ok
+' ticker t1 start  .tasks  500 ms console running
+t1 ready
+t2 stopped
+tick tick tick  ok
+counter 200 ms counter swap - counter-hz 5 / u< 0= . -1  ok
+: oops ( -- ) 1 0 / ;  ok
+' oops t2 start  2 yield t2: division by zero
+ ok
+.tasks console running
+t1 stopped
+t2 stopped
+ ok
+' ping up@ start invalid numeric argument

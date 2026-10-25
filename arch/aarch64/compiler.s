@@ -89,6 +89,17 @@ dodoes:
 	defconst "errname", w_errname, var_errname // ( -- addr ) ( addr len ) the word an error is about
 	defuser	"handler", w_handler, U_HANDLER	// ( -- addr ) innermost CATCH frame
 	defuser	"blk", w_blk, U_BLK		// ( -- addr ) block being loaded, 0 for the terminal
+	defuser	"task-link", w_tasklink, U_LINK	// ( -- addr ) task fields of this task's user area
+	defuser	"task-status", w_taskstatus, U_STATUS
+	defuser	"task-wake", w_taskwake, U_WAKE
+	defuser	"task-sp", w_tasksp, U_SP
+	defuser	"task-rp", w_taskrp, U_RP
+	defuser	"task-s0", w_tasks0, U_S0
+	defuser	"task-r0", w_taskr0, U_R0
+	defuser	"task-name", w_taskname, U_NAME
+	defconst "main-task", w_maintask, user0	// ( -- task ) the console task
+	defconst "/user", w_usersize, U_SIZE	// ( -- n ) bytes in a user area
+	defconst "watchdog-limit", w_watchdog, var_watchdog // ( -- addr ) counter ticks; 0: off
 	defuser	"base", w_base, U_BASE		// ( -- addr )
 	defuser	"state", w_state, U_STATE	// ( -- addr ) true while compiling
 	defuser	">in", w_toin, U_TOIN		// ( -- addr )

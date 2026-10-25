@@ -11,7 +11,15 @@ forth_cold:
 	ldr	x0, =var_sp0
 	mov	x1, sp
 	str	x1, [x0]
-	ldr	UP, =user0
+	ldr	UP, =user0			// the console task: a ring of one
+	str	UP, [UP, #U_LINK]
+	ldr	x0, =dstack_top
+	str	x0, [UP, #U_S0]
+	ldr	x0, =rstack_top
+	str	x0, [UP, #U_R0]
+	ldr	x0, =msg_console
+	mov	x1, #msg_console_len
+	stp	x1, x0, [UP, #U_NAME]
 	mov	x0, #10
 	str	x0, [UP, #U_BASE]
 	ldr	DSP, =dstack_top
@@ -26,7 +34,7 @@ forth_cold:
 // Reset the return stack and interpret forever: the Forth loop in 'quit once
 // the boot files have set it, else the bootstrap interpreter.
 do_quit:
-	ldr	RSP, =rstack_top
+	ldr	RSP, [UP, #U_R0]
 	str	xzr, [UP, #U_STATE]
 	ldr	x0, =var_quit
 	ldr	x0, [x0]
@@ -45,7 +53,7 @@ do_abort:
 	ldr	x0, =var_sp0
 	ldr	x0, [x0]
 	mov	sp, x0
-	ldr	DSP, =dstack_top
+	ldr	DSP, [UP, #U_S0]
 	mov	TOS, #0
 	ldr	x0, =var_source
 	ldr	x0, [x0]
@@ -182,6 +190,46 @@ try_throw:
 	mov	x8, x2
 	br	x8
 1:	ret
+
+// watchdog_sub: x0 interrupted pc -> x0 pc to resume at instead, or 0. Called
+// on every timer tick, with interrupts off. If the running task has gone
+// var_watchdog counter ticks without pausing, it is sent to watchdog_throw.
+// Never in the middle of PAUSE, and only once the system is up.
+	.global	watchdog_sub
+watchdog_sub:
+	ldr	x1, =var_watchdog
+	ldr	x1, [x1]
+	cbz	x1, 9f
+	ldr	x2, =var_source
+	ldr	x2, [x2]
+	cbnz	x2, 9f
+	ldr	x2, =var_throw
+	ldr	x2, [x2]
+	cbz	x2, 9f
+	ldr	x2, =w_pause
+	cmp	x0, x2
+	b.lo	1f
+	ldr	x2, =pause_end
+	cmp	x0, x2
+	b.lo	9f
+1:	ldr	x3, =var_task_since
+	ldr	x4, [x3]
+	isb
+	mrs	x5, cntvct_el0
+	sub	x6, x5, x4
+	cmp	x6, x1
+	b.lo	9f
+	str	x5, [x3]			// one throw per stretch
+	ldr	x0, =watchdog_throw
+	ret
+9:	mov	x0, #0
+	ret
+
+// The watchdog sent the running task here: it throws from wherever it was.
+watchdog_throw:
+	mov	x0, #THROW_WATCHDOG
+	bl	try_throw
+	b	do_abort
 
 // A CPU exception has printed its register dump: throw, or abort if nothing
 // can catch it. The Forth registers are as they were at the fault.

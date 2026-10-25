@@ -82,21 +82,8 @@
   repeat 2drop ;
 ' interpret 'interpret !   \ for LOAD
 
-\ Errors that reach the outer interpreter are reported here.
-: .where  ( -- )  \ "block 20 line 3: " if the error was in a LOADed block
-  error-blk @ ?dup if
-    ." block " (.) type ."  line " error-in @ 1- 0 max 64 / (.) type ." : "
-  then ;
-: .error  ( n -- )
-  dup -1 = over -256 = or if drop exit then   \ ABORT; a CPU fault has its own report
-  .where
-  dup -2 = if drop abort-msg 2@ type cr exit then
-  dup -13 = if drop errname 2@ type ."  ?" cr exit then
-  dup -14 = if drop errname 2@ type ."  is compile-only" cr exit then
-  dup message if type cr drop exit then
-  ." error " (.) type cr ;
-
 \ Terminal input. The Forth echoes what is typed: a serial console does not.
+\ KEY (tasks.fs) lets other tasks run while waiting.
 variable eof
 : rubout  ( -- )  8 emit space 8 emit ;
 : accept  ( addr max -- u )  \ Enter ends the line; Ctrl-D or end of input on an empty line: bye

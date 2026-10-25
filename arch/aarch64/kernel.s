@@ -41,7 +41,16 @@
 	.equ	U_TIB, 32		// 'tib: address of the current line
 	.equ	U_HANDLER, 40		// innermost CATCH frame on the return stack, or 0
 	.equ	U_BLK, 48		// block being loaded, or 0 for the terminal
-	.equ	U_SIZE, 64
+	// Task fields. A task is its user area; tasks.fs makes them.
+	.equ	U_LINK, 56		// next task in the round-robin ring
+	.equ	U_STATUS, 64		// 0 ready to run, otherwise asleep
+	.equ	U_WAKE, 72		// counter value at which an asleep task wakes; 0: only when woken
+	.equ	U_SP, 80		// saved data stack pointer while switched out
+	.equ	U_RP, 88		// saved return stack pointer
+	.equ	U_S0, 96		// data stack pointer when empty
+	.equ	U_R0, 104		// return stack pointer when empty
+	.equ	U_NAME, 112		// ( addr len ) as 2! stores it: length, then address
+	.equ	U_SIZE, 256
 
 	// THROW codes for errors the kernel detects (standard codes, plus -256)
 	.equ	THROW_UNDERFLOW, -4
@@ -51,6 +60,7 @@
 	.equ	THROW_NONAME, -16
 	.equ	THROW_LONGNAME, -19
 	.equ	THROW_HARDWARE, -256	// a CPU exception, already reported by its register dump
+	.equ	THROW_WATCHDOG, -262	// the task ran too long without pausing
 
 	.equ	SRC_TERMINAL, 0
 	.equ	SRC_BOOT, 1		// reading the embedded boot files
@@ -94,6 +104,7 @@
 	message	msg_aborted, "aborted\n"
 	message	msg_noquit, "boot files ended without starting QUIT\n"
 	message	msg_colon, ": "
+	message	msg_console, "console"
 
 // Boot files: Forth source embedded in the kernel and loaded in this order.
 // Each table entry is start, end, name, name length.
@@ -128,6 +139,8 @@ boot_files:
 	bootfile "hal/virtio-blk.fs"
 .endif
 	bootfile "forth/blocks.fs"
+	bootfile "forth/errors.fs"
+	bootfile "forth/tasks.fs"
 	bootfile "forth/interpreter.fs"	// last: ends by starting the Forth QUIT loop
 boot_files_end:
 
@@ -144,6 +157,8 @@ var_boot_line:	.quad	0		// its line number, for error reports
 var_quit:	.quad	0		// xt of the Forth QUIT loop, set by interpreter.fs
 var_throw:	.quad	0		// xt of THROW, set by core.fs; kernel errors throw through it
 var_errname:	.quad	0, 0		// ( addr len ) as 2! stores it: the word an error is about
+var_task_since:	.quad	0		// counter value when the running task was switched in
+var_watchdog:	.quad	0		// counter ticks a task may run without pausing; 0: off
 var_sp0:	.quad	0		// hardware sp at start-up, restored by abort
 
 	.bss

@@ -28,7 +28,7 @@ HOSTED_CMD   = qemu-aarch64 $(HOSTED) $(1)
 # The boot disk is virtio-pci; the data disk is virtio-mmio, as our driver expects.
 KERNEL_ELF := $(BUILD)/kernel.elf
 BOOT_IMG   := $(BUILD)/boot.img
-VIRT_CMD    = qemu-system-aarch64 -machine virt -cpu cortex-a72 -m 256M -nographic \
+VIRT_CMD    = qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m 256M -nographic \
               -bios $(UEFI_FIRMWARE) -nic none \
               -drive file=$(BOOT_IMG),format=raw,if=virtio \
               -drive file=$(1),format=raw,if=none,id=data,cache=writeback \

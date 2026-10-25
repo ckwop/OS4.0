@@ -51,6 +51,15 @@ A running log of choices that [docs/brief.md](docs/brief.md) leaves open. Add ne
 | 45 | 2026-10-25 | Hosted, the data disk is the image named by the program's first argument. `bye` does not save buffers: only `sync` makes changes durable. | The brief's durability rules: never rely on a clean shutdown. |
 | 46 | 2026-10-25 | Tests run through `tools/console-run.py` on both platforms. A line `\ --- reboot ---` shuts the system down and boots it again on the same disks. Every test gets a fresh 1024-block disk with volume ID 42. | Lets persistence be tested; fixed IDs keep transcripts stable. |
 | 47 | 2026-10-25 | Device waits poll without a timeout for now. | Tasks, `pause` and the timer arrive in milestone 5. |
+| 48 | 2026-10-25 | A task is a 256-byte user area plus a 2 KiB data stack and a 2 KiB return stack, allotted by `task name` when it is defined; tasks form a ring, and the console is `main-task`. | The brief's fixed pool with no run-time allocation: a task costs memory once, when defined. |
+| 49 | 2026-10-25 | `pause` (assembly) is the whole scheduler: round robin, skipping asleep tasks unless their wake time has passed. When nothing can run it calls `hal_idle`: `wfi` on bare metal, a 1 ms `nanosleep` hosted. Everything else (`task start stop wake sleep ms .tasks`) is Forth in `tasks.fs`. | The brief: `pause` is the only multitasking code in assembly; wake times let idle tasks cost nothing. |
+| 50 | 2026-10-25 | `start ( xt task -- )` runs xt in the task under `catch`; an uncaught error is reported as `name: message`, then the task stops. | Safer than polyFORTH's `activate`: an xt can be caught, so a failing task cannot take the console's place. |
+| 51 | 2026-10-25 | The timer tick is 100 Hz: the EL1 virtual timer (PPI 27) through a GICv2 (`-machine virt,gic-version=2`) on bare metal, `SIGALRM` hosted. `ms` is accurate to 10 ms. | Measured idle cost under QEMU emulation: about 5% of a core at 100 Hz, 21% at 1 kHz. |
+| 52 | 2026-10-25 | The watchdog runs on every tick: a task that has gone `watchdog` milliseconds (default 5000; `0 watchdog` turns it off) without pausing is redirected, through `ELR_EL1` or the signal frame's pc, to throw -262. Never inside `pause`, and only once the system is up. | Reports the runaway task and stops it cleanly through `catch`; an endless loop typed at the console is recoverable too. |
+| 53 | 2026-10-25 | `key` waits by checking `key?` every 10 ms, so other tasks run meanwhile. | Simple; a UART receive interrupt can replace the polling when idle cost matters more. |
+| 54 | 2026-10-25 | Disk waits still spin without `pause`. | The block layer is not yet safe for another task to enter mid-request; requests take microseconds. |
+| 55 | 2026-10-25 | Boot file order: `core`, `output`, the drivers, `blocks`, `errors`, `tasks`, `interpreter`. | `tasks.fs` needs `.error`, and its pausing `key` must exist before `accept` is compiled. |
+| 56 | 2026-10-25 | `_start` switches to `SP_EL1`, keeping Limine's stack, and faults return with IRQs enabled (`SPSR` 0x345). | Exceptions and the kernel share one stack; a handled fault must not stop the timer. |
 
 ## Open questions (from the brief)
 

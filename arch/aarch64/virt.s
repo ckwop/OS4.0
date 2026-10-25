@@ -7,9 +7,12 @@
 // leaves to us.
 //
 // HAL contract, as for linux.s (AAPCS64; may clobber x0-x15, x30):
-//   hal_key   -> x0 next input character (waits)
-//   hal_emit  x0 character ->
-//   hal_bye   x0 exit status -> powers off; does not return
+//   hal_key        -> x0 next input character (waits)
+//   hal_key_ready  -> x0 nonzero if a character is waiting
+//   hal_emit       x0 character ->
+//   hal_idle       wait for an interrupt (the 10 ms timer tick at the latest)
+//   hal_bye        x0 exit status -> powers off; does not return
+// and hal_irq, called by the IRQ vector.
 
 	.include "macros.s"
 
@@ -29,6 +32,21 @@
 	.equ	PTE_TABLE, 0x3
 	// 1 GiB block at physical 0: Device memory, access flag set, never executable
 	.equ	PTE_DEVICE_BLOCK, (1 << 54) | (1 << 53) | (1 << 10) | (MAIR_IDX_DEVICE << 2) | 0x1
+
+	// GICv2 (QEMU virt with gic-version=2) and the EL1 virtual timer
+	.equ	GICD_BASE, 0x08000000		// distributor
+	.equ	GICD_CTLR, 0x000
+	.equ	GICD_ISENABLER, 0x100
+	.equ	GICD_ICENABLER, 0x180
+	.equ	GICD_IPRIORITYR, 0x400
+	.equ	GICC_BASE, 0x08010000		// CPU interface
+	.equ	GICC_CTLR, 0x000
+	.equ	GICC_PMR, 0x004
+	.equ	GICC_IAR, 0x00c
+	.equ	GICC_EOIR, 0x010
+	.equ	IRQ_VTIMER, 27			// the virtual timer's private interrupt
+	.equ	IRQ_SPURIOUS, 1023
+	.equ	TICKS_PER_SECOND, 100
 
 	.equ	CH_LF, 10
 	.equ	CH_CR, 13
@@ -53,11 +71,15 @@ msg_revision:
 	.text
 	.global	_start
 _start:
+	mov	x0, sp				// run on SP_EL1, keeping Limine's stack,
+	msr	spsel, #1			// so exceptions and the kernel share one
+	mov	sp, x0
 	ldr	x0, =vectors
 	msr	vbar_el1, x0
 	isb
 	bl	map_devices
 	bl	uart_init
+	bl	timer_init
 	ldr	x0, =limine_base_revision	// Limine zeroes the last cell if it complied
 	ldr	x0, [x0, #16]
 	cbz	x0, 1f
@@ -103,6 +125,77 @@ uart_init:
 	str	w1, [x0, #UART_CR]
 	ret
 
+// Interrupt the CPU every 10 ms (TICKS_PER_SECOND) with the virtual timer, through the GIC.
+timer_init:
+	ldr	x0, =GICD_BASE
+	mov	w1, #1
+	str	w1, [x0, #GICD_CTLR]
+	mov	w1, #0x80
+	strb	w1, [x0, #(GICD_IPRIORITYR + IRQ_VTIMER)]
+	mov	w1, #(1 << IRQ_VTIMER)
+	str	w1, [x0, #GICD_ISENABLER]
+	ldr	x0, =GICC_BASE
+	mov	w1, #0xff			// let every priority through
+	str	w1, [x0, #GICC_PMR]
+	mov	w1, #1
+	str	w1, [x0, #GICC_CTLR]
+	mrs	x0, cntfrq_el0
+	mov	x1, #TICKS_PER_SECOND
+	udiv	x0, x0, x1
+	ldr	x1, =tick_period
+	str	x0, [x1]
+	msr	cntv_tval_el0, x0
+	mov	x0, #1				// enabled, not masked
+	msr	cntv_ctl_el0, x0
+	isb
+	msr	daifclr, #2			// take IRQs
+	ret
+
+	.global	hal_irq
+hal_irq:
+	stp	x29, x30, [sp, #-16]!
+	ldr	x0, =GICC_BASE
+	ldr	w9, [x0, #GICC_IAR]
+	and	w1, w9, #0x3ff
+	cmp	w1, #IRQ_SPURIOUS
+	b.eq	9f
+	cmp	w1, #IRQ_VTIMER
+	b.eq	1f
+	ldr	x0, =GICD_BASE			// not ours: switch it off
+	lsr	w2, w1, #5
+	and	w3, w1, #31
+	mov	w4, #1
+	lsl	w4, w4, w3
+	add	x0, x0, #GICD_ICENABLER
+	str	w4, [x0, x2, lsl #2]
+	b	8f
+1:	ldr	x0, =tick_period		// the tick
+	ldr	x0, [x0]
+	msr	cntv_tval_el0, x0
+	mrs	x0, elr_el1
+	str	w9, [sp, #-16]!
+	bl	watchdog_sub
+	ldr	w9, [sp], #16
+	cbz	x0, 8f
+	msr	elr_el1, x0			// resume the running task in watchdog_throw
+8:	ldr	x0, =GICC_BASE
+	str	w9, [x0, #GICC_EOIR]
+9:	ldp	x29, x30, [sp], #16
+	ret
+
+	.global	hal_idle
+hal_idle:
+	wfi
+	ret
+
+	.global	hal_key_ready
+hal_key_ready:
+	ldr	x1, =UART_BASE
+	ldr	w2, [x1, #UART_FR]
+	mvn	w2, w2
+	ubfx	x0, x2, #FR_RXFE, #1
+	ret
+
 	.global	hal_key
 hal_key:
 	ldr	x1, =UART_BASE
@@ -134,6 +227,8 @@ hal_bye:
 	b	1b
 
 	.bss
+	.balign	8
+tick_period:	.space	8			// counter ticks per timer interrupt
 	.balign	4096
 mmio_l0:	.space	4096
 mmio_l1:	.space	4096

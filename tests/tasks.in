@@ -1,0 +1,13 @@
+task t1  task t2
+: ping ( -- ) 3 0 do ." ping " pause loop ;
+: pong ( -- ) 3 0 do ." pong " pause loop ;
+: yield ( n -- ) 0 do pause loop ;
+' ping t1 start  ' pong t2 start  10 yield
+.tasks
+: ticker ( -- ) 3 0 do ." tick " 100 ms loop ;
+' ticker t1 start  .tasks  500 ms
+counter 200 ms counter swap - counter-hz 5 / u< 0= .
+: oops ( -- ) 1 0 / ;
+' oops t2 start  2 yield
+.tasks
+' ping up@ start

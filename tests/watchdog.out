@@ -1,0 +1,13 @@
+OS 4.0
+300 watchdog  ok
+task hog-task  ok
+: hog ( -- ) begin again ;  ok
+' hog hog-task start  pause hog-task: stopped by the watchdog: it ran too long without pausing
+ ok
+.tasks console running
+hog-task stopped
+ ok
+: spin ( -- ) begin again ;  ok
+spin stopped by the watchdog: it ran too long without pausing
+.( the console carries on) the console carries on ok
+0 watchdog  ok

@@ -47,6 +47,17 @@ sync                                   \ write it to disk
 
 `tools/blocks.py` reads and writes data disks from the host: `format`, `info`, `list` and `put` (import a text file as screens).
 
+### Tasks
+
+Tasks are cooperative: each runs until it waits or calls `pause`. A watchdog stops any task, the console included, that runs for 5 seconds without pausing.
+
+```forth
+task clock                             \ a task, asleep until started
+: tick-tock ( -- ) 5 0 do ." tick " 1000 ms loop ;
+' tick-tock clock start                \ runs while you keep typing
+.tasks                                 \ who is running, ready, sleeping or stopped
+```
+
 ### Milestones
 
 Each milestone is done when its acceptance test passes in the Docker image.
@@ -57,7 +68,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 2 | Hosted Forth (under `qemu-aarch64`) | Done |
 | 3 | Bare-metal boot | Done |
 | 4 | Blocks | Done |
-| 5 | Multitasking and timer | Not started |
+| 5 | Multitasking and timer | Done |
 | 6 | Network to ping | Not started |
 | 7 | UDP | Not started |
 | 8 | TCP, many connections | Not started |
