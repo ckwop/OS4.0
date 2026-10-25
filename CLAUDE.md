@@ -12,7 +12,7 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 
 - Host is Windows 11. There is no native toolchain on the host (no make, QEMU, gforth or binutils), and none should be added.
 - Everything builds and runs inside the Docker image, via Rancher Desktop (dockerd/moby runtime) on WSL2.
-- Run `make` targets inside the container, for example `docker run --rm -it -v "${PWD}:/src" os4 make test`. Update this line once the Makefile exists.
+- Build the image with `docker build -t os4 .`, then run `make` targets in the container against live source: `docker run --rm -v "${PWD}:/src" os4 make test`. See the Readme for the full command list.
 - The repo currently lives under OneDrive. If git or bind mounts misbehave (lock files, slow I/O), suspect OneDrive sync first.
 
 ## Hard rules (from the brief)

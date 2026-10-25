@@ -15,13 +15,26 @@ Windows 11 with:
 
 The image provides every other tool: cross binutils, QEMU, gforth and Limine.
 
+### Build and run
+
+From the repo root in PowerShell:
+
+```powershell
+docker build -t os4 .                              # build the toolchain image and the kernel
+docker run --rm -it os4                            # start the Forth prompt (from milestone 2)
+docker run --rm -v "${PWD}:/src" os4 make test     # run the test suite against your working copy
+docker run --rm -it -v "${PWD}:/src" os4 make run  # run your working copy without rebuilding the image
+```
+
+Make targets (run inside the container): `build` (the default), `run`, `test`, `image` (from milestone 3) and `clean`.
+
 ### Milestones
 
 Each milestone is done when its acceptance test passes in the Docker image.
 
 | # | Milestone | Status |
 | --- | --- | --- |
-| 1 | Toolchain image | Not started |
+| 1 | Toolchain image | Written, awaiting first `docker build` |
 | 2 | Hosted Forth (under `qemu-aarch64`) | Not started |
 | 3 | Bare-metal boot | Not started |
 | 4 | Blocks | Not started |
