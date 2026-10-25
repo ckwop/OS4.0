@@ -80,19 +80,20 @@
       2dup number? 0= if undefined then  nip nip  state @ if postpone literal then
     then ?stack
   repeat 2drop ;
+' interpret 'interpret !   \ for LOAD
 
 \ Errors that reach the outer interpreter are reported here.
+: .where  ( -- )  \ "block 20 line 3: " if the error was in a LOADed block
+  error-blk @ ?dup if
+    ." block " (.) type ."  line " error-in @ 1- 0 max 64 / (.) type ." : "
+  then ;
 : .error  ( n -- )
-  dup -1 = if drop exit then
+  dup -1 = over -256 = or if drop exit then   \ ABORT; a CPU fault has its own report
+  .where
   dup -2 = if drop abort-msg 2@ type cr exit then
-  dup -4 = if drop ." stack underflow" cr exit then
-  dup -10 = if drop ." division by zero" cr exit then
-  dup -11 = if drop ." result out of range" cr exit then
   dup -13 = if drop errname 2@ type ."  ?" cr exit then
   dup -14 = if drop errname 2@ type ."  is compile-only" cr exit then
-  dup -16 = if drop ." missing name" cr exit then
-  dup -19 = if drop ." name too long" cr exit then
-  dup -256 = if drop exit then
+  dup message if type cr drop exit then
   ." error " (.) type cr ;
 
 \ Terminal input. The Forth echoes what is typed: a serial console does not.
@@ -113,7 +114,7 @@ variable eof
 create tib 256 allot
 : refill  ( -- )  tib 'tib !  tib 256 accept #tib !  0 >in ! ;
 : prompt  ( -- )  state @ if ."  compiled" else ."  ok" then cr ;
-: reset   ( i*x -- )  begin depth while drop repeat  0 state ! ;
+: reset   ( i*x -- )  begin depth while drop repeat  0 state !  0 error-blk ! ;
 : (quit)  ( -- )  \ each line runs under CATCH: an error is reported, then the next line
   begin refill  ['] interpret catch ?dup if .error reset else prompt then again ;
 

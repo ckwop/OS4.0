@@ -88,6 +88,7 @@ dodoes:
 	defconst "'throw", w_tickthrow, var_throw // ( -- addr ) xt of THROW, for kernel errors
 	defconst "errname", w_errname, var_errname // ( -- addr ) ( addr len ) the word an error is about
 	defuser	"handler", w_handler, U_HANDLER	// ( -- addr ) innermost CATCH frame
+	defuser	"blk", w_blk, U_BLK		// ( -- addr ) block being loaded, 0 for the terminal
 	defuser	"base", w_base, U_BASE		// ( -- addr )
 	defuser	"state", w_state, U_STATE	// ( -- addr ) true while compiling
 	defuser	">in", w_toin, U_TOIN		// ( -- addr )

@@ -29,7 +29,23 @@ docker run --rm -it -v "${PWD}:/src" os4 make run-hosted  # the same Forth as a 
 
 Booting takes about ten seconds: UEFI firmware, then Limine, then the OS. Leave with `bye`, Ctrl-D on an empty line, or Ctrl-A then x.
 
-Make targets (run inside the container): `build` (the default), `image`, `run`, `run-hosted`, `test`, `test-hosted`, `test-virt` and `clean`.
+Make targets (run inside the container): `build` (the default), `image`, `data`, `run`, `run-hosted`, `test`, `test-hosted`, `test-virt` and `clean`.
+
+### Blocks
+
+The OS keeps its data on a second disk of 1 KiB blocks, `build/data.img`, created on first run. With the `-v "${PWD}:/src"` mount it is kept between runs; without it, it disappears with the container. Changes are durable only after `sync`.
+
+```forth
+.disk                                  \ volume ID and size
+5 wipe                                 \ blank block 5 and edit it
+0 >line \ my first screen
+1 >line : hello ." Hello from block 5" ;
+5 list                                 \ show it
+sync                                   \ write it to disk
+5 load hello                           \ compile it, run the word it defined
+```
+
+`tools/blocks.py` reads and writes data disks from the host: `format`, `info`, `list` and `put` (import a text file as screens).
 
 ### Milestones
 
@@ -40,7 +56,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 1 | Toolchain image | Done |
 | 2 | Hosted Forth (under `qemu-aarch64`) | Done |
 | 3 | Bare-metal boot | Done |
-| 4 | Blocks | Not started |
+| 4 | Blocks | Done |
 | 5 | Multitasking and timer | Not started |
 | 6 | Network to ping | Not started |
 | 7 | UDP | Not started |

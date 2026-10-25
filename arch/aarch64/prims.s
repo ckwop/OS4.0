@@ -238,6 +238,61 @@
 	ldr	TOS, [DSP], #8
 	NEXT
 
+// ---- Device access: sized loads and stores for device registers and DMA
+// structures, and the barriers that order them. Drivers are Forth (hal/).
+
+	defcode	"l@", w_lfetch			// ( addr -- u ) 32 bits, zero-extended
+	ldr	TOSW, [TOS]
+	NEXT
+
+	defcode	"l!", w_lstore			// ( u addr -- ) low 32 bits
+	ldr	x0, [DSP], #8
+	str	w0, [TOS]
+	ldr	TOS, [DSP], #8
+	NEXT
+
+	defcode	"w@", w_wfetch			// ( addr -- u ) 16 bits, zero-extended
+	ldrh	TOSW, [TOS]
+	NEXT
+
+	defcode	"w!", w_wstore			// ( u addr -- ) low 16 bits
+	ldr	x0, [DSP], #8
+	strh	w0, [TOS]
+	ldr	TOS, [DSP], #8
+	NEXT
+
+	defcode	"dmb", w_dmb			// ( -- ) earlier memory accesses complete before later ones
+	dmb	sy
+	NEXT
+
+	defcode	"dsb", w_dsb			// ( -- ) ... and before any later instruction, e.g. a doorbell write
+	dsb	sy
+	NEXT
+
+// ---- Platform words. The kernel is assembled once per platform (kernel.s).
+
+.ifdef HOSTED
+	defcode	"syscall", w_syscall		// ( a b c d n -- r ) Linux system call n
+	mov	x8, TOS
+	ldr	x3, [DSP], #8
+	ldr	x2, [DSP], #8
+	ldr	x1, [DSP], #8
+	ldr	x0, [DSP], #8
+	svc	#0
+	mov	TOS, x0
+	NEXT
+
+	defcode	"args", w_args			// ( -- addr ) argc, then the argv pointers
+	ldr	x0, =linux_args
+	ldr	x0, [x0]
+	PUSH	x0
+	NEXT
+.else
+	defcode	">phys", w_tophys		// ( addr -- paddr ) the address a device must use for DMA
+	VIRT_TO_PHYS TOS, x0
+	NEXT
+.endif
+
 // ---- Counted loops. Loop parameters on the return stack: index on top, then limit.
 // These are hot paths, so they are primitives; DO, LOOP and friends are in core.fs.
 

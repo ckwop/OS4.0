@@ -25,6 +25,7 @@ variable hld
 : u.     ( u -- )  0 <# #s #> type space ;
 : (.)    ( n -- addr u )  dup >r abs 0 <# #s r> sign #> ;
 : .      ( n -- )  (.) type space ;
+: .r     ( n width -- )  >r (.) r> over - spaces type ;  \ right-aligned
 : .s     ( -- )
   60 emit depth 0 <# #s #> type 62 emit space
   depth 0 ?do  depth i - 1- pick .  loop ;
@@ -44,4 +45,27 @@ create abort-msg 0 , 0 ,     \ ( addr u ) of the last ABORT" message
 : abort"  ( flag "ccc<quote>" -- )  postpone s" postpone (abort") ; immediate compile-only
 : char    ( "name" -- c )  parse-name drop c@ ;
 : [char]  ( "name" -- )  char postpone literal ; immediate compile-only
+: -trailing  ( addr u -- addr u' )  \ without trailing spaces or control characters
+  begin dup while  2dup + 1- c@ bl > 0= while  1-  repeat then ;
+
+\ ---- Messages for THROW codes. Each module registers text for its own codes
+\ with MESSAGE:, and the outer interpreter's .ERROR looks them up.
+\ An entry: link, code, length, text.
+
+variable messages
+: message:  ( n "text" -- )  \ the rest of the line is the message
+  align here  messages @ ,  messages !  ,
+  0 parse  dup ,  here swap dup allot cmove  align ;
+: message  ( n -- addr u true | false )
+  messages @ begin dup while
+    2dup cell+ @ = if  nip 2 cells + dup cell+ swap @ true exit  then
+    @
+  repeat nip ;
+
+-4 message: stack underflow
+-10 message: division by zero
+-11 message: result out of range
+-16 message: missing name
+-19 message: name too long
+-24 message: invalid numeric argument
 

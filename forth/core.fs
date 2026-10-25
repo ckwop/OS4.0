@@ -131,4 +131,12 @@ variable leaves
 : count   ( addr -- addr+1 c )  dup 1+ swap c@ ;
 : 2!      ( x1 x2 addr -- )  swap over ! cell+ ! ;
 : 2@      ( addr -- x1 x2 )  dup cell+ @ swap @ ;
+: compare ( addr1 u1 addr2 u2 -- n )  \ -1, 0 or 1: byte by byte, then by length
+  rot 2dup >r >r min
+  0 ?do
+    over i + c@  over i + c@  - ?dup if
+      0< if -1 else 1 then  nip nip  unloop r> r> 2drop exit
+    then
+  loop 2drop
+  r> r> 2dup = if 2drop 0 exit then  < if 1 else -1 then ;
 

@@ -27,6 +27,9 @@
 	.text
 	.global	_start
 _start:
+	ldr	x0, =linux_args			// the kernel put argc and argv at sp
+	mov	x1, sp
+	str	x1, [x0]
 	// Code fields are written into the dictionary at run time, so it must be executable.
 	ldr	x0, =dict_space
 	ldr	x1, =dict_end
@@ -116,6 +119,8 @@ hal_bye:
 
 	.bss
 	.balign	8
+	.global	linux_args
+linux_args:	.space	8			// address of argc, then the argv pointers
 saved_termios:	.space	TERMIOS_BYTES
 raw_termios:	.space	TERMIOS_BYTES
 termios_changed: .space	8

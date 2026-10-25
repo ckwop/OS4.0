@@ -1,0 +1,9 @@
+10 wipe
+0 >line \ written, then synced, before a reboot
+1 >line : survivor ." I survived a reboot" ;
+sync
+11 wipe
+0 >line \ written but never synced
+\ --- reboot ---
+10 11 index
+10 load survivor

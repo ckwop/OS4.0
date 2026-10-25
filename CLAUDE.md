@@ -28,7 +28,8 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 ## Code conventions
 
 - Most of the software is built in Forth: drivers, protocol stacks, the block layer, the MUD engine and tools. Assembly is only for primitives, the thinnest hardware access (register reads and writes, barriers), the bootstrap that loads the boot files, and measured hot spots; keep the Forth definition as the reference.
-- Boot files: `forth/core.fs` (the language), `forth/output.fs` (output and strings), `forth/interpreter.fs` (the outer interpreter; must stay last, as it ends by starting `quit`). They are embedded in the kernel and loaded in the order of the `bootfile` lines in `kernel.s`; add a new file there. Errors while loading report `<file>:<line>:`.
+- Boot files: `forth/core.fs` (the language), `forth/output.fs` (output, strings, throw messages), the platform's drivers from `hal/`, `forth/blocks.fs` (block storage), `forth/interpreter.fs` (the outer interpreter; must stay last, as it ends by starting `quit`). `kernel.s` is assembled per platform (`HOSTED` defined for Linux) and its `bootfile` list picks the drivers.
+- Drivers are Forth in `hal/`, behind HAL words. Blocks: `blk-count blk-read blk-write blk-flush` (`virtio-blk.fs` bare metal, `linux-blk.fs` hosted). Register text for new throw codes with `n message: text`. They are embedded in the kernel and loaded in the order of the `bootfile` lines in `kernel.s`; add a new file there. Errors while loading report `<file>:<line>:`.
 - The REPL is Forth (`interpreter.fs`); the assembly interpreter in `outer.s` only loads the boot files (DECISIONS.md #33).
 - Errors are `throw`n with standard codes and caught by `catch`; the REPL catches per line (#35–37). New error conditions should `throw` a code, not print and abort. Kernel errors throw through `try_throw` in `outer.s`. Mark words that only make sense inside a definition with `compile-only`.
 - Every assembly primitive and every Forth word gets a stack-effect comment: `( n1 n2 -- n3 )`.
@@ -46,6 +47,8 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 - `.out` files are transcripts: the banner, then each input line as the Forth echoes it, its output, and ` ok`. Generate a new one by running the `.in` file, then check every value by hand (and against gforth for standard words) before committing it.
 - `make test` runs `tests/` on the hosted build, then `tests/` and `tests/baremetal/` over the serial console (`make test-hosted`, `make test-virt` for one). The serial run boots QEMU per test, about 10 s each.
 - A `<name>.filter` file next to a test is a sed script that masks build-dependent output, such as addresses in a register dump.
+- Each test gets a fresh data disk (`build/test-data.img`, 1024 blocks, volume ID 42). A line `\ --- reboot ---` in a `.in` file shuts down and boots again on the same disk (`tools/console-run.py`).
+- `tools/blocks.py` formats data disks and lists or imports screens from the host: `python3 tools/blocks.py list build/data.img 5`.
 - Drive a REPL interactively through a pseudo-terminal with `script -qec 'make -s run' /dev/null` (bare metal) or `script -qec 'make -s run-hosted' /dev/null` inside the container.
 - Every feature adds tests, and the whole suite runs on every change.
 

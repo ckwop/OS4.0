@@ -2,6 +2,7 @@
 # Feed each <dir>/*.in to a Forth system on stdin and diff its output against <dir>/*.out.
 # If <dir>/<name>.filter exists, it is a sed script applied to the output first,
 # to mask values that change from build to build (such as code addresses).
+# If TEST_SETUP is set, it is run before each test, e.g. to make a fresh disk.
 # Usage: tools/run-tests.sh "<command that runs Forth, reading stdin>" [dir ...]
 set -u
 
@@ -16,6 +17,9 @@ for dir in "$@"; do
   for input in "$dir"/*.in; do
     [ -e "$input" ] || continue
     name=${input%.in}
+    if [ -n "${TEST_SETUP:-}" ]; then
+      $TEST_SETUP > /dev/null || { echo "FAIL: $name (setup)"; fail=$((fail + 1)); continue; }
+    fi
     timeout "$timeout_secs" $cmd < "$input" > "$name.actual" 2>&1
     if [ -e "$name.filter" ]; then
       sed -i -f "$name.filter" "$name.actual"

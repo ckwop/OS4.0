@@ -40,6 +40,7 @@
 	.equ	U_NTIB, 24		// #tib: length of the current line
 	.equ	U_TIB, 32		// 'tib: address of the current line
 	.equ	U_HANDLER, 40		// innermost CATCH frame on the return stack, or 0
+	.equ	U_BLK, 48		// block being loaded, or 0 for the terminal
 	.equ	U_SIZE, 64
 
 	// THROW codes for errors the kernel detects (standard codes, plus -256)
@@ -114,10 +115,19 @@
 	.quad	8b, 9b, 6b, 7b - 6b
 .endm
 
+// The kernel is assembled once per platform: with HOSTED defined for the Linux
+// build, without it for bare metal. Only the drivers differ.
 	.balign	8
 boot_files:
 	bootfile "forth/core.fs"
 	bootfile "forth/output.fs"
+.ifdef HOSTED
+	bootfile "hal/linux-blk.fs"
+.else
+	bootfile "hal/virtio.fs"
+	bootfile "hal/virtio-blk.fs"
+.endif
+	bootfile "forth/blocks.fs"
 	bootfile "forth/interpreter.fs"	// last: ends by starting the Forth QUIT loop
 boot_files_end:
 

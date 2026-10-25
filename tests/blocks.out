@@ -1,0 +1,48 @@
+OS 4.0
+.disk volume 42, 1024 blocks ok
+0 block 8 type OS40DISK ok
+1 block c@ . 0  ok
+5 wipe  ok
+0 >line \ arithmetic helpers  ok
+1 >line : sq ( n -- n*n ) dup * ;  ok
+2 >line : cube ( n -- n^3 ) dup sq * ;  \ ends at the line's end  ok
+3 >line 3 cube .  ok
+5 list Screen 5
+ 0 \ arithmetic helpers
+ 1 : sq ( n -- n*n ) dup * ;
+ 2 : cube ( n -- n^3 ) dup sq * ;  \ ends at the line's end
+ 3 3 cube .
+ 4
+ 5
+ 6
+ 7
+ 8
+ 9
+10
+11
+12
+13
+14
+15
+ ok
+5 load 4 sq . 27 16  ok
+6 wipe  ok
+0 >line \ a second screen  ok
+1 >line : twice ( n -- 2n ) 2 * ;  ok
+5 6 index    5 \ arithmetic helpers
+   6 \ a second screen
+ ok
+5 6 thru 21 twice . 27 42  ok
+7 wipe  ok
+0 >line \ an error on line 2  ok
+2 >line 1 2 nosuchword 3  ok
+7 load block 7 line 2: nosuchword ?
+.s <0>  ok
+8 wipe  ok
+0 >line \ nested load  ok
+1 >line 5 load 10 cube .  ok
+8 load 27 1000  ok
+0 block drop update block 0 holds the disk header and cannot be written
+2000 block invalid block number
+16 >line too far invalid numeric argument
+save-buffers  ok
