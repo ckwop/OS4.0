@@ -11,11 +11,6 @@
 -265 message: datagram too large
 -266 message: no free UDP port slot
 
-\ The pseudo-header's share of a UDP checksum: both addresses, the protocol
-\ and the UDP length.
-: pseudo-sum  ( src dst len -- sum )
-  proto-udp +  swap dup 16 rshift swap $ffff and + +
-  swap dup 16 rshift swap $ffff and + + ;
 
 \ ---- Ports. Handlers take ( data len -- ) and run in the network task; while
 \ one runs, UDP-PEER-IP, UDP-PEER-PORT and UDP-REPLY refer to its datagram.
@@ -43,7 +38,7 @@ variable rx-udp                 \ the datagram being handled
   over udp-length + n16@  dup /udp <  over 3 pick > or if  2drop drop exit  then
   nip                                                    ( segment ulen )
   over udp-checksum + n16@ if
-    ip-source  rx-ip ip-dst + n32@  2 pick pseudo-sum  2 pick 2 pick sum16 fold
+    ip-source  rx-ip ip-dst + n32@  2 pick proto-udp pseudo-sum  2 pick 2 pick sum16 fold
     if 2drop exit then
   then
   over udp-dport + n16@ udp-find ?dup if
@@ -64,7 +59,7 @@ variable udp-to
   dup >r  tx-udp /udp + swap cmove
   r> /udp +  dup tx-udp udp-length + n16!
   0 tx-udp udp-checksum + n16!
-  my-ip @ udp-to @ 2 pick pseudo-sum  tx-udp 2 pick sum16 fold
+  my-ip @ udp-to @ 2 pick proto-udp pseudo-sum  tx-udp 2 pick sum16 fold
   ?dup 0= if $ffff then  tx-udp udp-checksum + n16!
   proto-udp udp-to @ ip-send ;
 

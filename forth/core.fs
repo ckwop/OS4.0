@@ -196,3 +196,8 @@ variable ref-divisor   variable ref-carry
     1 lshift over 63 rshift or  swap 1 lshift swap \ shift ud left one bit
     ref-carry @  over ref-divisor @ u< 0= or if  ref-divisor @ -  swap 1 or swap  then
   loop swap ;
+
+\ ---- Records: FIELD names an offset into a record, given the record's address.
+\ Use: 0  cell field p.x  cell field p.y  constant /point
+
+: field  ( offset size "name" -- offset' )  create over , +  does> @ + ;  \ name ( addr -- addr' )

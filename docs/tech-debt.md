@@ -15,6 +15,7 @@ Known shortcuts, gaps and risks in OS 4.0, and what we plan to do about them. Ad
 | TD-17 | The network stack ignores IP options, and drops fragmented packets. | low | Reassembly only if a real need appears; nothing we send or expect is fragmented. |
 | TD-18 | The address, netmask and gateway are set at boot to QEMU's user-networking values (variables `my-ip`, `netmask`, `gateway`). On EC2 the VPC assigns addresses by DHCP. | high for milestone 12 | A DHCP client over UDP, falling back to the static values. Before the EC2 AMI (milestone 12). |
 | TD-21 | The dictionary is capped at 128 MiB (the reach of `bl`, DECISIONS.md #72); RAM beyond it is unused, and nothing is ever freed. That holds thousands of players, but not an unbounded number. | low | If ever needed: a page allocator over the rest of RAM for bulk data such as connection buffers, or more trampolines further into memory. |
+| TD-22 | TCP hardening: initial sequence numbers are predictable (the counter), resets are accepted whatever their sequence number, a SYN flood can make connection records without limit, and a connection's lookup walks the whole list. | medium before going public | RFC 6528 sequence numbers (a keyed hash), RFC 5961 checks on RST and SYN, a cap on half-open connections, and a hash table once player counts grow. Before Fargate (milestone 11). |
 
 ## Closed
 

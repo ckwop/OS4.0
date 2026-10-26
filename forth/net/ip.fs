@@ -29,6 +29,12 @@ variable 'no-protocol  ' 2drop 'no-protocol !   \ ( payload len -- ) for the res
 /eth /ip + constant ip-payload                   \ where a payload goes in tx-frame
 : ip-source  ( -- ip )  rx-ip ip-src + n32@ ;    \ who sent the packet being handled
 
+\ The pseudo-header's share of a UDP or TCP checksum: both addresses, the
+\ protocol and the segment's length.
+: pseudo-sum  ( src dst len protocol -- sum )
+  +  swap dup 16 rshift swap $ffff and + +
+  swap dup 16 rshift swap $ffff and + + ;
+
 : ip-in  ( len -- )  \ an IPv4 packet of up to len bytes in rx-frame
   rx-ip >r
   r@ ip-ver-ihl + c@  dup 4 rshift 4 <> if  2drop r> drop exit  then

@@ -18,19 +18,34 @@
 : last-task  ( -- task )  \ the task before the console in the ring
   main-task begin dup link-of @ dup main-task <> while nip repeat drop ;
 
-: task  ( "name" -- )  \ define a task, asleep, at the end of the ring
-  create  here >r  /user /dstack + /rstack + allot
+\ Every task has a PAD: 256 bytes of scratch space of its own.
+256 constant /pad
+user 'pad
+: pad  ( -- addr )  'pad @ ;
+here /pad allot 'pad !                            \ the console's
+user pooled                                       \ true for a task from the pool (SPAWN)
+user next-free                                    \ the next task in the pool's free list
+0 pooled !
+
+/user /dstack + /rstack + /pad + constant /task
+
+: new-task  ( name len -- task )  \ a task, asleep, at the end of the ring
+  here >r  /task allot
   up@ r@ /user move                               \ start from a copy of this task's
   r@ /user + /dstack +  dup r@ task-s0 field!
-  /rstack +             r@ task-r0 field!
+  /rstack +             dup r@ task-r0 field!
+                        r@ 'pad field!
   r@ /user + 16 cells +            r@ task-slimit field!   \ room to report an overflow
   r@ task-s0 >user @ 16 cells +    r@ task-rlimit field!
   1 r@ task-status field!  0 r@ task-wake field!
-  0 r@ handler field!  0 r@ blk field!  0 r@ state field!
-  latest @ name>string  r@ task-name >user 2!
+  0 r@ handler field!  0 r@ blk field!  0 r@ state field!  0 r@ pooled field!
+  r@ task-name >user 2!
   main-task r@ task-link field!
   r@ last-task link-of !
-  r> drop ;
+  r> ;
+
+: task  ( "name" -- )  \ define a named task, asleep
+  create  latest @ name>string new-task drop ;
 
 \ ---- Running and stopping tasks
 
@@ -39,18 +54,36 @@
 : sleep  ( task -- )  dup 1 swap task-status field!  0 swap task-wake field! ;
 : ms     ( n -- )  counter-hz 1000 / *  counter +  task-wake !  1 task-status !  pause ;
 
-: run-task  ( xt -- )  \ a task's whole life: run xt, report how it ended, sleep
+variable free-tasks                                \ pooled tasks with nothing to do
+
+: run-task  ( i*x xt -- )  \ a task's whole life: run xt, report how it ended, sleep
   catch ?dup if  task-name 2@ type ." : " .error  then
+  pooled @ if  free-tasks @ next-free !  up@ free-tasks !  then   \ back to the pool
   begin stop again ;
 create task-thread  ' run-task ,                 \ where a started task begins
 
-: start  ( xt task -- )  \ run xt in task, from empty stacks
-  dup up@ = if -24 throw then
-  >r
-  r@ task-s0 >user @  2 cells -  tuck !  r@ task-sp field!      \ xt will be on top
+: (start)  ( x xt task cells -- )  \ the task's stack: x if cells is 3, then xt on top
+  over up@ = if -24 throw then
+  swap >r  r@ task-s0 >user @  swap cells -               ( x xt sp )
+  tuck !  tuck cell+ !  r@ task-sp field!   \ xt on top; x below it (unused when cells is 2)
   task-thread  r@ task-r0 >user @  1 cells -  tuck !  r@ task-rp field!
   0 r@ handler field!  0 r@ task-wake field!  0 r@ task-status field!
   r> drop ;
+: start       ( xt task -- )    \ run xt in task, from empty stacks
+  0 -rot 2 (start) ;
+: start-with  ( x xt task -- )  \ run xt in task with x on its stack
+  3 (start) ;
+
+\ ---- The pool: tasks made on demand, reused once their work is done. There is
+\ no limit but memory (DECISIONS.md #71).
+
+: spawn  ( x xt -- task )  \ run xt with x in a pooled task
+  free-tasks @ ?dup if
+    dup next-free >user @ free-tasks !
+  else
+    s" worker" new-task  true over pooled field!
+  then
+  dup >r start-with r> ;
 
 \ ---- Looking at tasks
 

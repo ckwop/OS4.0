@@ -78,6 +78,25 @@ To ping the OS from inside the container with the real `ping` (this needs extra 
 docker run --rm --cap-add NET_ADMIN --device /dev/net/tun -v "${PWD}:/src" os4 make ping-check
 ```
 
+### TCP
+
+`listen` opens a port; `accept-connection` waits for the next client; `get-line`, `send`, `send-line` and `close-connection` talk to it. Each client gets its own task. A line echo server:
+
+```forth
+: serve ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat drop close-connection ;
+: line-server ( -- ) 4000 listen begin 4000 accept-connection ['] serve spawn drop again ;
+task server  ' line-server server start
+.tcp                                   \ connections live and pooled
+```
+
+QEMU forwards port 4000 to the OS. To reach it from Windows, publish the port from the container, type the three lines above at the prompt, then connect with any telnet client to `localhost:4000`:
+
+```powershell
+docker run --rm -it -p 4000:4000 -v "${PWD}:/src" os4 make run
+```
+
+`make tcp-check` does the same with eight clients on the container's own TCP stack.
+
 ### Milestones
 
 Each milestone is done when its acceptance test passes in the Docker image.
@@ -91,7 +110,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 5 | Multitasking and timer | Done |
 | 6 | Network to ping | Done |
 | 7 | UDP | Done |
-| 8 | TCP, many connections | Not started |
+| 8 | TCP, many connections | Done |
 | 9 | Network REPL | Not started |
 | 10 | MUD engine | Not started |
 | 11 | Fargate deployment | Not started |

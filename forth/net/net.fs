@@ -9,9 +9,13 @@
   type-ipv4 = if  /eth - ip-in  else drop then ;
 
 \ Handle every waiting frame, pausing between them; when none is waiting, sleep
-\ until the next timer tick.
+\ until the next timer tick. A frame whose handling throws is dropped, and the
+\ network carries on.
 : net-loop  ( -- )
-  begin  rx-frame net-poll ?dup if frame-in pause else 10 ms then  again ;
+  begin
+    tcp-timers
+    rx-frame net-poll ?dup if  ['] frame-in catch if drop then  pause  else  10 ms  then
+  again ;
 
 task net-task
 : start-net  ( -- )  net-up? if  ['] net-loop net-task start  then ;

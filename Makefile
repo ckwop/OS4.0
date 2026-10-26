@@ -46,7 +46,7 @@ comma   := ,
 CONSOLE := python3 tools/console-run.py
 TESTS   := python3 tools/run-tests.py --setup "$(TEST_SETUP)"
 
-.PHONY: all build image data run run-hosted run-tap test test-hosted test-virt ping-check clean
+.PHONY: all build image data run run-hosted run-tap test test-hosted test-virt ping-check tcp-check clean
 
 all: build
 
@@ -119,6 +119,10 @@ run-tap: $(BOOT_IMG) $(DATA_IMG)
 # The milestone 6 acceptance test, literally: boot, ping the OS, shut down.
 ping-check: $(BOOT_IMG) $(DATA_IMG)
 	sh tools/ping-check.sh "$(call VIRT_CMD,$(DATA_IMG),$(NET_TAP))"
+
+# The OS's TCP against a real stack: the host's, through user networking.
+tcp-check: $(BOOT_IMG) $(DATA_IMG)
+	OS4_PEER="python3 tools/tcp-check.py" $(CONSOLE) $(call VIRT_CMD,$(DATA_IMG),$(NET_USER)) < tools/tcp-check.in
 
 clean:
 	rm -rf $(BUILD) tests/*.actual tests/*/*.actual

@@ -15,6 +15,11 @@ Scripts:
   udp    use the OS's UDP echo service (port 7) with several sizes, with and
          without a checksum, then send to a closed port (9) and expect ICMP
          port unreachable
+  tcp    32 clients at once of the OS's line echo server on port 4000: each
+         sends ten lines, checks every echo, and closes. One drops a segment
+         from the OS, one sends out of order, one's sequence numbers wrap, one sends
+         all its lines in a single segment. Then a SYN to closed port 4001
+         must be reset
 """
 
 import argparse
@@ -59,6 +64,7 @@ class Peer:
         self.echo_replies = queue.Queue()
         self.udp_replies = queue.Queue()
         self.unreachables = queue.Queue()
+        self.tcp_queues = {}            # our TCP port -> queue of (packet, segment)
         self.ident = 0x7E57
         threading.Thread(target=self.receive, daemon=True).start()
 
@@ -111,6 +117,11 @@ class Peer:
                     self.echo_replies.put((packet, ihl, message))
                 elif protocol == 1 and message[0] == 3:        # destination unreachable
                     self.unreachables.put((packet, ihl, message))
+                elif protocol == 6 and len(message) >= 20:
+                    dport = struct.unpack("!H", message[2:4])[0]
+                    q = self.tcp_queues.get(dport)
+                    if q:
+                        q.put((packet, message))
                 elif protocol == 17 and len(message) >= 8:
                     sport, dport = struct.unpack("!HH", message[:4])
                     if dport == 7:                             # our echo service
@@ -193,6 +204,35 @@ class Peer:
                   f"{'ok' if ok else f'wrong: code {message[1]}, port {dport}'}", flush=True)
             break
 
+    def script_tcp(self):
+        if not self.find_os():
+            print("peer: no ARP reply from 10.0.2.15", flush=True)
+            return
+        time.sleep(1)                       # let the console start the server
+        clients = [TcpClient(self, 50000 + i) for i in range(32)]
+        clients[0].drop_first_data = True   # the OS must resend what we "lost"
+        clients[1].out_of_order = True     # the OS sees a gap, then the rest
+        clients[2].iss = 0xFFFFFFF0         # sequence numbers wrap
+        clients[3].batched = True           # all lines in one segment
+        threads = [threading.Thread(target=c.run) for c in clients]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(60)
+        connected = sum(c.connected for c in clients)
+        echoed = sum(c.echoed for c in clients)
+        closed = sum(c.closed for c in clients)
+        print(f"peer: tcp: {connected} of 32 clients connected, {echoed} of 320 lines echoed, "
+              f"{closed} closed cleanly", flush=True)
+        for c in clients:
+            for problem in c.problems:
+                print(f"peer: tcp client {c.sport - 50000}: {problem}", flush=True)
+        print(f"peer: tcp: OS retransmitted a dropped segment: "
+              f"{'yes' if clients[0].saw_retransmit else 'no'}", flush=True)
+
+        refused = TcpClient(self, 49999, dport=4001)
+        print(f"peer: tcp to closed port 4001: {refused.expect_reset()}", flush=True)
+
     def script_ping(self):
         deadline = time.time() + 20
         while self.os_mac is None and time.time() < deadline:
@@ -232,11 +272,205 @@ class Peer:
             print(f"peer: echo reply {seq} from {ip_text(packet[12:16])}: {verdict}", flush=True)
 
 
+MOD32 = 1 << 32
+FIN, SYN, RST, PSH, ACK = 1, 2, 4, 8, 16
+
+
+class TcpClient:
+    """One scripted client of the OS's line echo server: connect, send ten
+    lines and check each comes back, then close. Sequence numbers are kept as
+    unbounded counts and wrapped only on the wire. Retransmits go-back-N after a
+    second without progress."""
+
+    def __init__(self, peer, sport, dport=4000):
+        self.peer, self.sport, self.dport = peer, sport, dport
+        self.q = queue.Queue()
+        peer.tcp_queues[sport] = self.q
+        self.iss = (sport * 7919 * 65537) % MOD32
+        self.drop_first_data = self.out_of_order = self.batched = False
+        self.saw_retransmit = False
+        self.connected = self.closed = False
+        self.echoed = 0
+        self.problems = []
+        self.received = b""
+        self.fin_received = False
+        self.reset = False
+        self.seen_seqs = set()
+        self.peer_mss = None
+
+    # ---- segments
+
+    def send_seg(self, flags, seq, data=b"", options=b""):
+        hlen = 20 + len(options)
+        ack = self.rcv_nxt % MOD32 if flags & ACK else 0
+        seg = struct.pack("!HHIIHHHH", self.sport, self.dport, seq % MOD32, ack,
+                          (hlen // 4) << 12 | flags, 65535, 0, 0) + options + data
+        pseudo = PEER_IP + OS_IP + struct.pack("!BBH", 0, 6, len(seg))
+        seg = seg[:16] + struct.pack("!H", checksum(pseudo + seg)) + seg[18:]
+        self.peer.send_ip(6, seg)
+
+    def handle(self, packet, seg):
+        """Take in one segment from the OS."""
+        pseudo = packet[12:16] + packet[16:20] + struct.pack("!BBH", 0, 6, len(seg))
+        if checksum(pseudo + seg):
+            self.problems.append("bad TCP checksum")
+            return
+        seq, ack, off_flags, wnd = struct.unpack("!IIHH", seg[4:16])
+        flags, hlen = off_flags & 0x3F, (off_flags >> 12) * 4
+        data = seg[hlen:]
+        if flags & RST:
+            self.reset = True
+            return
+        if flags & ACK:
+            delta = (ack - self.snd_una) % MOD32
+            if delta < 1 << 31:
+                self.snd_una += delta
+        if flags & SYN:
+            return
+        if data:
+            if seq in self.seen_seqs:
+                self.saw_retransmit = True
+            self.seen_seqs.add(seq)
+            if self.drop_first_data:
+                self.drop_first_data = False  # pretend it never arrived
+                return
+        offset = (seq - self.rcv_nxt) % MOD32
+        if data and offset == 0:
+            self.received += data
+            self.rcv_nxt += len(data)
+        if flags & FIN and (seq + len(data) - self.rcv_nxt) % MOD32 == 0 and not self.fin_received:
+            self.fin_received = True
+            self.rcv_nxt += 1
+        if data or flags & FIN:
+            self.send_seg(ACK, self.snd_nxt)
+
+    def pump(self, timeout):
+        try:
+            packet, seg = self.q.get(timeout=timeout)
+        except queue.Empty:
+            return False
+        self.handle(packet, seg)
+        return True
+
+    # ---- the script
+
+    def connect(self):
+        self.snd_una = self.snd_nxt = self.iss
+        self.rcv_nxt = 0
+        for _ in range(5):
+            self.send_seg(SYN, self.iss, options=struct.pack("!BBH", 2, 4, 1460))
+            deadline = time.time() + 1
+            while time.time() < deadline:
+                try:
+                    packet, seg = self.q.get(timeout=max(0.01, deadline - time.time()))
+                except queue.Empty:
+                    break
+                seq, ack, off_flags = struct.unpack("!IIH", seg[4:14])
+                if off_flags & (SYN | ACK) == SYN | ACK and ack == (self.iss + 1) % MOD32:
+                    hlen = (off_flags >> 12) * 4
+                    if hlen >= 24 and seg[20:22] == b"\x02\x04":
+                        self.peer_mss = struct.unpack("!H", seg[22:24])[0]
+                    self.rcv_nxt = seq + 1
+                    self.snd_una = self.snd_nxt = self.iss + 1
+                    self.send_seg(ACK, self.snd_nxt)
+                    return True
+        return False
+
+    def send_reliably(self, data):
+        """Send data, resending until the OS acknowledges it."""
+        start = self.snd_nxt
+        self.snd_nxt += len(data)
+        if self.out_of_order:               # the second half first: it must be dropped
+            self.out_of_order = False
+            half = len(data) // 2
+            self.send_seg(ACK | PSH, start + half, data[half:])
+        tries = 0
+        while self.snd_una < self.snd_nxt and not self.reset:
+            if tries == 8:
+                self.problems.append(f"no ACK for data at {start - self.iss - 1}")
+                return False
+            self.send_seg(ACK | PSH, start, data)
+            tries += 1
+            deadline = time.time() + 1
+            while self.snd_una < self.snd_nxt and time.time() < deadline:
+                self.pump(0.05)
+        return not self.reset
+
+    def wait_for(self, predicate, seconds):
+        deadline = time.time() + seconds
+        while not predicate() and time.time() < deadline and not self.reset:
+            self.pump(0.05)
+        return predicate()
+
+    def run(self):
+        try:
+            self.script()
+        except Exception as e:                  # report, don't hang the test
+            self.problems.append(f"exception {e!r}")
+
+    def script(self):
+        if not self.connect():
+            self.problems.append("no SYN-ACK")
+            return
+        self.connected = True
+        if self.peer_mss != 1460:
+            self.problems.append(f"MSS option {self.peer_mss}")
+        n = self.sport - 50000
+        lines = [f"client {n} line {j}: " + "x" * (j * 3) for j in range(10)]
+        expected = b""
+        if self.batched:
+            batch = b"".join(line.encode() + b"\r\n" for line in lines)
+            if not self.send_reliably(batch):
+                return
+            expected = batch
+            if self.wait_for(lambda: self.received.startswith(expected), 10):
+                self.echoed = 10
+        else:
+            for line in lines:
+                if not self.send_reliably(line.encode() + b"\r\n"):
+                    break
+                expected += line.encode() + b"\r\n"
+                if not self.wait_for(lambda: len(self.received) >= len(expected), 10):
+                    self.problems.append(f"no echo of {line!r}")
+                    break
+                if self.received != expected:
+                    self.problems.append(f"echo of {line!r} was {self.received[-60:]!r}")
+                    break
+                self.echoed += 1
+        if self.received != expected:
+            self.problems.append("extra or wrong data")
+        # Close: our FIN, then theirs.
+        fin_seq = self.snd_nxt
+        self.snd_nxt += 1
+        for _ in range(8):
+            self.send_seg(FIN | ACK, fin_seq)
+            if self.wait_for(lambda: self.snd_una == self.snd_nxt and self.fin_received, 1):
+                break
+        if self.reset:
+            self.problems.append("reset by the OS")
+        elif self.snd_una == self.snd_nxt and self.fin_received:
+            self.closed = True
+        else:
+            self.problems.append("did not close")
+
+    def expect_reset(self):
+        self.snd_una = self.snd_nxt = self.iss
+        self.rcv_nxt = 0
+        self.send_seg(SYN, self.iss)
+        try:
+            packet, seg = self.q.get(timeout=5)
+        except queue.Empty:
+            return "no reply"
+        seq, ack, off_flags = struct.unpack("!IIH", seg[4:14])
+        ok = off_flags & (RST | ACK) == RST | ACK and ack == (self.iss + 1) % MOD32
+        return "reset ok" if ok else f"wrong reply: flags {off_flags & 0x3F:#x}, ack {ack:#x}"
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--os-port", type=int, required=True)
-    p.add_argument("script", choices=["ping", "udp"])
+    p.add_argument("script", choices=["ping", "udp", "tcp"])
     args = p.parse_args()
     peer = Peer(args.port, args.os_port)
     getattr(peer, "script_" + args.script)()

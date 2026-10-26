@@ -1,0 +1,4 @@
+: serve ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat drop close-connection ;
+: line-server ( -- ) 4000 listen begin 4000 accept-connection ['] serve spawn drop again ;
+task server  ' line-server server start
+15000 ms .tcp
