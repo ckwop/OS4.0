@@ -9,13 +9,15 @@ Known shortcuts, gaps and risks in OS 4.0, and what we plan to do about them. Ad
 | ID | Debt | Impact | Plan |
 | --- | --- | --- | --- |
 | TD-7 | The block layer is not safe for two tasks at once: a task that paused mid-request could have its buffer reused. Disk waits therefore spin without `pause` (DECISIONS.md #54). | high, once a second task uses blocks | Add a lock around block requests, then let disk waits pause. Before the MUD's saver task (milestone 10). |
-| TD-8 | Device waits (`vq-wait`) have no timeout: a device that never answers hangs its task. | medium | Use timed waits with the network driver (milestone 6), then apply them to the disk. |
-| TD-9 | Idle costs about 5% of a core under QEMU emulation: the 100 Hz tick and the console's 10 ms key polling keep waking the CPU (DECISIONS.md #51, #53). | medium on Fargate | Tickless idle (program the timer for the next wake time) and a UART receive interrupt. Before Fargate (milestone 11). |
+| TD-9 | Idle costs about 5% of a core under QEMU emulation: the 100 Hz tick, the console's 10 ms key polling and the network task's 10 ms interface polling keep waking the CPU (DECISIONS.md #51, #53, #67). Polling also adds up to 10 ms to every ping. | medium on Fargate | Tickless idle (program the timer for the next wake time), and UART and virtio interrupts to wake the waiting task. Before Fargate (milestone 11). |
 | TD-10 | Magic numbers in more than one place: header flag bits (32, 64, 128) are written out in several Forth files, and kernel throw codes appear both as `.equ` lines and as `message:` lines. | low | Named constants for the flag bits; keep each throw code's number and message together. Tidy when next touching those files. |
 | TD-11 | The kernel has about 110 assembly words, against the brief's ~30. Most are constants, user variables, the bootstrap interpreter and device access; the bootstrap duplicates parsing and lookup that the Forth side also has (boot-only since TD-5). | low | Accepted by DECISIONS.md #14, #32 and #33. Revisit only if metacompilation comes back. |
 | TD-12 | Assembly hot spots have no Forth reference definition beside them, although CLAUDE.md asks for one: the loop runtime (`(do)` `(loop)` `(+loop)` `i` `j`), `pick`, `um/mod`. | low | Add the Forth versions as comments in `core.fs`. |
 | TD-13 | Stack overflow is checked at calls, branches and loops. A straight run of more than 16 pushes with none of those in between could pass the limit undetected. | low | Accepted: such code is unusual. A guard page would close it if tasks ever get their own mappings. |
 | TD-14 | The repository lives under OneDrive, which syncs `build/` (a 64 MB boot image, data disks) on every build. | low (environment) | The user's call: exclude `build/` from sync, or move the repository out of OneDrive. |
+| TD-15 | Outgoing packets share one `tx-frame`. That is safe only because building and sending a packet never pauses; a task that paused in between would have its packet overwritten. | medium, from milestone 8 | Before TCP, which will wait mid-conversation: one frame per sender, or a lock. |
+| TD-16 | `ip` reads dotted addresses without checking them: `ip 300.1` gives a wrong address, not an error. | low | Check four octets of 0-255; throw otherwise. |
+| TD-17 | The network stack sends no ICMP errors (port or protocol unreachable) and ignores IP options and fragments. | low | Add destination-unreachable replies with UDP (milestone 7); fragments only if a real need appears. |
 
 ## Closed
 
@@ -27,3 +29,4 @@ Known shortcuts, gaps and risks in OS 4.0, and what we plan to do about them. Ad
 | TD-4 | On the hosted build a bad address killed the program; bare metal recovered. | `SIGSEGV`, `SIGBUS` and `SIGILL` handlers report and throw -256 (#61). |
 | TD-5 | Two lookup paths after boot: `'`, `[']` and `postpone` used the kernel's lookup, which future wordlists would not govern. | Rebuilt on the Forth `find-word` (#59). |
 | TD-6 | The serial test suite ran one VM at a time, about 10 s per test. | `tools/run-tests.py` runs tests in parallel with a disk each; 18 serial tests in under a minute (#62). |
+| TD-8 | Device waits (`vq-wait`) had no timeout: a device that never answered hung its task. | 5-second timeout throwing -263 (#70). |

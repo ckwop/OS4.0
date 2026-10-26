@@ -5,7 +5,6 @@
 \ ---- Tools
 
 : source  ( -- addr u )  'tib @ #tib @ ;
-: /string ( addr u n -- addr+n u-n )  tuck - >r + r> ;
 : lower   ( c -- c' )  dup [char] A [char] Z 1+ within if 32 + then ;
 : hidden?    ( nt -- flag )  cell+ c@ 64 and 0<> ;
 : immediate? ( nt -- flag )  cell+ c@ 128 and 0<> ;

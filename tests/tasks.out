@@ -5,11 +5,13 @@ task t1  task t2  ok
 : yield ( n -- ) 0 do pause loop ;  ok
 ' ping t1 start  ' pong t2 start  10 yield ping pong ping pong ping pong  ok
 .tasks console running
+net-task sleeping
 t1 stopped
 t2 stopped
  ok
 : ticker ( -- ) 3 0 do ." tick " 100 ms loop ;  ok
 ' ticker t1 start  .tasks  500 ms console running
+net-task sleeping
 t1 ready
 t2 stopped
 tick tick tick  ok
@@ -18,6 +20,7 @@ counter 200 ms counter swap - counter-hz 5 / u< 0= . -1  ok
 ' oops t2 start  2 yield t2: division by zero
  ok
 .tasks console running
+net-task sleeping
 t1 stopped
 t2 stopped
  ok

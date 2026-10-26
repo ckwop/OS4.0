@@ -5,6 +5,7 @@ task hog-task  ok
 ' hog hog-task start  pause hog-task: stopped by the watchdog: it ran too long without pausing
  ok
 .tasks console running
+net-task sleeping
 hog-task stopped
  ok
 : spin ( -- ) begin again ;  ok

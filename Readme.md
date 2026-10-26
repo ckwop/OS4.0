@@ -59,6 +59,21 @@ task clock                             \ a task, asleep until started
 .tasks                                 \ who is running, ready, sleeping or stopped
 ```
 
+### Network
+
+The OS is 10.0.2.15 on QEMU's user network, with the gateway at 10.0.2.2. It answers ARP and ping, and can ping out:
+
+```forth
+.net                                   \ address, MAC and gateway
+ip 10.0.2.2 ping                       \ three echo requests
+```
+
+To ping the OS from inside the container with the real `ping` (this needs extra privileges for a TAP device):
+
+```powershell
+docker run --rm --cap-add NET_ADMIN --device /dev/net/tun -v "${PWD}:/src" os4 make ping-check
+```
+
 ### Milestones
 
 Each milestone is done when its acceptance test passes in the Docker image.
@@ -70,7 +85,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 3 | Bare-metal boot | Done |
 | 4 | Blocks | Done |
 | 5 | Multitasking and timer | Done |
-| 6 | Network to ping | Not started |
+| 6 | Network to ping | Done |
 | 7 | UDP | Not started |
 | 8 | TCP, many connections | Not started |
 | 9 | Network REPL | Not started |

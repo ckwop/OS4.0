@@ -146,13 +146,20 @@ boot_files:
 	bootfile "forth/output.fs"
 .ifdef HOSTED
 	bootfile "hal/linux-blk.fs"
+	bootfile "hal/linux-net.fs"
 .else
 	bootfile "hal/virtio.fs"
 	bootfile "hal/virtio-blk.fs"
+	bootfile "hal/virtio-net.fs"
 .endif
 	bootfile "forth/blocks.fs"
 	bootfile "forth/errors.fs"
 	bootfile "forth/tasks.fs"
+	bootfile "forth/net/eth.fs"
+	bootfile "forth/net/arp.fs"
+	bootfile "forth/net/ip.fs"
+	bootfile "forth/net/icmp.fs"
+	bootfile "forth/net/net.fs"
 	bootfile "forth/interpreter.fs"	// last: ends by starting the Forth QUIT loop
 boot_files_end:
 

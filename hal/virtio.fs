@@ -99,9 +99,20 @@ $74726976 constant virtio-magic
   dsb                                              \ all of it, then the doorbell
   swap vm-queue-notify vm! ;
 
-\ Wait until the device has used one more chain. Polls for now: tasks and a
-\ timeout arrive with the timer (milestone 5).
+\ The used ring: the device hands back chains, with the length it wrote.
+: vq-used?  ( vq -- flag )  \ a used chain is waiting
+  dup vq-used 2 + w@  swap vq-seen @ <> ;
+: vq-take   ( vq -- id len )  \ the next used chain: its head and length
+  dmb                                              \ the index, then the entry
+  dup vq-seen @  dup 1+ $ffff and  2 pick vq-seen !
+  vq-size 1- and 8 * 4 +  swap vq-used +  dup l@ swap 4 + l@ ;
+
+-263 message: a device did not respond in time
+5000 constant device-timeout          \ ms
+
+\ Wait for the device to use one more chain. Spins: the block layer cannot yet
+\ let other tasks in mid-request (docs/tech-debt.md TD-7).
 : vq-wait  ( vq -- )
-  dup vq-seen @ 1+ $ffff and >r
-  begin dup vq-used 2 + w@ r@ = until
-  r> swap vq-seen !  dmb ;
+  device-timeout deadline >r
+  begin dup vq-used? 0= while  r@ expired? if  r> 2drop -263 throw  then  repeat
+  r> drop  vq-take 2drop ;

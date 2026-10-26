@@ -1,0 +1,16 @@
+OS 4.0
+.net ip 10.0.2.15 mac 52:54:00:12:34:56 gateway 10.0.2.2 ok
+3000 ms  ok
+ip 10.0.2.2 ping reply 1 from 10.0.2.2
+reply 2 from 10.0.2.2
+reply 3 from 10.0.2.2
+ ok
+ip 10.0.2.99 ping no reply 1
+no reply 2
+no reply 3
+ ok
+--- peer ---
+peer: 10.0.2.15 is at 52:54:00:12:34:56
+peer: echo reply 1 from 10.0.2.15: data and checksums ok
+peer: echo reply 2 from 10.0.2.15: data and checksums ok
+peer: echo reply 3 from 10.0.2.15: data and checksums ok

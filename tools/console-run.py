@@ -12,10 +12,15 @@ system shuts down and the command runs again, on the same disks.
 Writes the console output from each banner onwards to stdout with CRs removed,
 so transcripts are the same for every platform.
 
+If OS4_PEER is set, it is a command (a network peer, tools/netpeer.py) started
+once the first banner appears and stopped when the OS has shut down; what it
+printed is added to the end of the transcript.
+
 Usage: console-run.py command [args ...]
 """
 
 import os
+import shlex
 import subprocess
 import sys
 import threading
@@ -25,7 +30,7 @@ CTRL_D = b"\x04"
 REBOOT_MARKER = b"\\ --- reboot ---"
 
 
-def run_once(command, data):
+def run_once(command, data, on_banner=None):
     """Boot, type data, shut down. Returns (exit status, console output)."""
     if data and not data.endswith(b"\n"):
         data += b"\n"
@@ -44,6 +49,8 @@ def run_once(command, data):
             break
         output += chunk.replace(b"\r", b"")
         if typing is None and BANNER in output:
+            if on_banner:
+                on_banner()
             typing = threading.Thread(target=type_input, daemon=True)
             typing.start()
     status = proc.wait()
@@ -62,13 +69,25 @@ def main():
         else:
             parts[-1].append(line)
 
+    peer = None
+
+    def start_peer():
+        nonlocal peer
+        if peer is None and os.environ.get("OS4_PEER"):
+            peer = subprocess.Popen(shlex.split(os.environ["OS4_PEER"]),
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    status = 0
     for part in parts:
-        status, output = run_once(sys.argv[1:], b"".join(part))
+        status, output = run_once(sys.argv[1:], b"".join(part), start_peer)
         sys.stdout.buffer.write(output)
         sys.stdout.buffer.flush()
         if status:
-            return status
-    return 0
+            break
+    if peer:
+        peer.terminate()
+        sys.stdout.buffer.write(b"--- peer ---\n" + peer.communicate()[0])
+    return status
 
 
 if __name__ == "__main__":

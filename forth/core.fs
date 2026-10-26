@@ -108,6 +108,10 @@
 
 \ The dictionary is a fixed size: growing it past the end throws -8.
 \ (The kernel's , and HEADER check for themselves.)
+\ Deadlines, for timeouts: a counter value some milliseconds from now.
+: deadline  ( ms -- u )  counter-hz 1000 / *  counter + ;
+: expired?  ( u -- flag )  counter - 0< ;
+
 : unused  ( -- u )  dict-end here - ;
 : allot   ( n -- )  dup unused > if -8 throw then  allot ;
 : c,      ( c -- )  here c! 1 allot ;
@@ -135,6 +139,7 @@ variable leaves
 : move    ( src dst u -- )  >r 2dup u< if r> cmove> else r> cmove then ;
 : fill    ( addr u c -- )  swap 0 ?do  2dup swap i + c!  loop 2drop ;
 : count   ( addr -- addr+1 c )  dup 1+ swap c@ ;
+: /string ( addr u n -- addr+n u-n )  tuck - >r + r> ;
 : 2!      ( x1 x2 addr -- )  swap over ! cell+ ! ;
 : 2@      ( addr -- x1 x2 )  dup cell+ @ swap @ ;
 : compare ( addr1 u1 addr2 u2 -- n )  \ -1, 0 or 1: byte by byte, then by length

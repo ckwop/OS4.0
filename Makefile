@@ -12,7 +12,7 @@ UEFI_FIRMWARE ?= /usr/share/qemu-efi-aarch64/QEMU_EFI.fd
 
 # The kernel embeds the boot files listed in kernel.s and includes the other
 # kernel sources. It is assembled once per platform, choosing the drivers.
-KERNEL_DEPS := $(wildcard $(ARCH)/*.s) $(wildcard forth/*.fs) $(wildcard hal/*.fs)
+KERNEL_DEPS := $(wildcard $(ARCH)/*.s) $(wildcard forth/*.fs forth/*/*.fs) $(wildcard hal/*.fs)
 
 # Data disks: DATA_IMG for running; every test gets a fresh one of its own.
 DATA_IMG    ?= $(BUILD)/data.img
@@ -20,8 +20,15 @@ BLOCKS_TOOL := python3 tools/blocks.py
 TEST_SETUP  := $(BLOCKS_TOOL) format --force {disk} --blocks 1024 --volume-id 42
 
 # Hosted: an AArch64 Linux binary run under qemu-aarch64 (milestone 2).
+# Arguments: the data disk, then optionally our UDP port and the peer's, which
+# carry network frames (hal/linux-net.fs).
 HOSTED      := $(BUILD)/forth-hosted
-HOSTED_CMD   = qemu-aarch64 $(HOSTED) $(1)
+HOSTED_CMD   = qemu-aarch64 $(HOSTED) $(1) $(2)
+
+# Network backends for the bare-metal NIC: QEMU's user networking (NAT, with the
+# MUD port forwarded) to run; for tests, frames as UDP to the test's own peer.
+NET_USER := -netdev user,id=net,hostfwd=tcp::4000-:4000
+NET_TEST := -netdev dgram,id=net,local.type=inet,local.host=127.0.0.1,local.port={port},remote.type=inet,remote.host=127.0.0.1,remote.port={peerport}
 
 # Bare metal: Limine boots the kernel on QEMU's virt machine (milestone 3).
 # The boot disk is virtio-pci and read-only (the OS never writes it, and tests
@@ -29,15 +36,17 @@ HOSTED_CMD   = qemu-aarch64 $(HOSTED) $(1)
 KERNEL_ELF := $(BUILD)/kernel.elf
 BOOT_IMG   := $(BUILD)/boot.img
 VIRT_CMD    = qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m 256M -nographic \
-              -bios $(UEFI_FIRMWARE) -nic none \
+              -bios $(UEFI_FIRMWARE) \
               -drive file=$(BOOT_IMG),format=raw,if=virtio,readonly=on \
               -drive file=$(1),format=raw,if=none,id=data,cache=writeback \
-              -device virtio-blk-device,drive=data -global virtio-mmio.force-legacy=false
+              -device virtio-blk-device,drive=data -global virtio-mmio.force-legacy=false \
+              $(2) -device virtio-net-device,netdev=net
 
+comma   := ,
 CONSOLE := python3 tools/console-run.py
 TESTS   := python3 tools/run-tests.py --setup "$(TEST_SETUP)"
 
-.PHONY: all build image data run run-hosted test test-hosted test-virt clean
+.PHONY: all build image data run run-hosted test test-hosted test-virt ping-check clean
 
 all: build
 
@@ -83,7 +92,7 @@ $(DATA_IMG):
 # Boot the bare-metal kernel with the serial console on this terminal.
 # Leave with bye, Ctrl-D, or Ctrl-A then x.
 run: $(BOOT_IMG) $(DATA_IMG)
-	@$(call VIRT_CMD,$(DATA_IMG))
+	@$(call VIRT_CMD,$(DATA_IMG),$(NET_USER))
 
 run-hosted: $(HOSTED) $(DATA_IMG)
 	@$(call HOSTED_CMD,$(DATA_IMG))
@@ -92,10 +101,15 @@ test: test-hosted test-virt
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)
-	$(TESTS) --timeout 30 --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk})" tests tests/hosted
+	$(TESTS) --timeout 30 --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk},{port} {peerport})" tests tests/hosted
 
 test-virt: $(BOOT_IMG)
-	$(TESTS) --timeout 120 --cmd "$(CONSOLE) $(call VIRT_CMD,{disk})" tests tests/baremetal
+	$(TESTS) --timeout 120 --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST))" tests tests/baremetal
+
+# The milestone 6 acceptance test, literally: boot on a TAP device and ping the
+# OS from this container. Needs: docker run --cap-add NET_ADMIN --device /dev/net/tun
+ping-check: $(BOOT_IMG) $(DATA_IMG)
+	sh tools/ping-check.sh "$(call VIRT_CMD,$(DATA_IMG),-netdev tap$(comma)id=net$(comma)ifname=tap0$(comma)script=no$(comma)downscript=no)"
 
 clean:
 	rm -rf $(BUILD) tests/*.actual tests/*/*.actual
