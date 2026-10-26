@@ -18,23 +18,18 @@
 : last-task  ( -- task )  \ the task before the console in the ring
   main-task begin dup link-of @ dup main-task <> while nip repeat drop ;
 
-\ Every task has a PAD: 256 bytes of scratch space of its own.
-256 constant /pad
-user 'pad
-: pad  ( -- addr )  'pad @ ;
-here /pad allot 'pad !                            \ the console's
 user pooled                                       \ true for a task from the pool (SPAWN)
 user next-free                                    \ the next task in the pool's free list
 0 pooled !
 
-/user /dstack + /rstack + /pad + constant /task
+/user /dstack + /rstack + /buffers + constant /task
 
 : new-task  ( name len -- task )  \ a task, asleep, at the end of the ring
-  here >r  /task allot
+  /task reserve >r                                \ not from the dictionary: see CLAIM
   up@ r@ /user move                               \ start from a copy of this task's
   r@ /user + /dstack +  dup r@ task-s0 field!
   /rstack +             dup r@ task-r0 field!
-                        r@ 'pad field!
+                        r@ task-buffers field!    \ PAD and the rest (output.fs)
   r@ /user + 16 cells +            r@ task-slimit field!   \ room to report an overflow
   r@ task-s0 >user @ 16 cells +    r@ task-rlimit field!
   1 r@ task-status field!  0 r@ task-wake field!
@@ -44,8 +39,8 @@ user next-free                                    \ the next task in the pool's 
   r@ last-task link-of !
   r> ;
 
-: task  ( "name" -- )  \ define a named task, asleep
-  create  latest @ name>string new-task drop ;
+: task  ( "name" -- )  \ define a named task, asleep; name ( -- task )
+  create  latest @ name>string new-task ,  does> @ ;
 
 \ ---- Running and stopping tasks
 
@@ -56,8 +51,10 @@ user next-free                                    \ the next task in the pool's 
 
 variable free-tasks                                \ pooled tasks with nothing to do
 
+: report  ( n -- )  task-name 2@ type ." : " .error ;
 : run-task  ( i*x xt -- )  \ a task's whole life: run xt, report how it ended, sleep
-  catch ?dup if  task-name 2@ type ." : " .error  then
+  catch ?dup if  ['] report catch if drop then  then   \ its terminal may be gone
+  unclaim  0 state !
   pooled @ if  free-tasks @ next-free !  up@ free-tasks !  then   \ back to the pool
   begin stop again ;
 create task-thread  ' run-task ,                 \ where a started task begins
@@ -104,4 +101,5 @@ create task-thread  ' run-task ,                 \ where a started task begins
 \ would not help; a receive interrupt could replace the polling later. It
 \ always pauses once, so a burst of typed or pasted input still lets other
 \ tasks run, and never looks to the watchdog like a task that will not pause.
-: key  ( -- c )  pause  begin key? 0= while 10 ms repeat key ;
+: console-key  ( -- c )  pause  begin console-key? 0= while 10 ms repeat (console-key) ;
+' console-key 'key !

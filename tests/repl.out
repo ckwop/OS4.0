@@ -1,0 +1,30 @@
+OS 4.0
+: sessions-done? ( -- flag ) conns @ 0= free-conns @ count-list 4 = and ;  ok
+: wait-sessions ( -- ) 60000 deadline begin 200 ms sessions-done? over expired? or until drop ;  ok
+wait-sessions .tcp connections 0, pooled 4 ok
+1000 ms  ok
+--- peer ---
+peer: sandbox A| OS 4.0 sandbox. Type bye to leave.
+peer: sandbox A| 2 3 + . 5  ok
+peer: sandbox A| hex ff . FF  ok
+peer: sandbox A| decimal 1 2 3  ok
+peer: sandbox A| .s <3> 1 2 3  ok
+peer: sandbox A| here . here ?
+peer: sandbox A| : sq dup * ; : ?
+peer: sandbox A| words bye words decimal hex \ ( .( ." spaces space emit cr .s u. . depth 2drop 2dup tuck nip rot over swap drop dup u< 0< 0= > < <> = rshift lshift invert xor or and 2* 1- 1+ max min abs negate /mod mod / * - + 
+peer: sandbox A|  ok
+peer: sandbox A| bye  ok
+peer: sandbox A: closed
+peer: sandbox B| OS 4.0 sandbox. Type bye to leave.
+peer: sandbox B| ff . ff ?
+peer: sandbox B| .s <0>  ok
+peer: sandbox B| bye  ok
+peer: sandbox B: closed
+peer: full Forth| OS 4.0 full Forth. Type bye to leave.
+peer: full Forth| : sq dup * ; 7 sq . 49  ok
+peer: full Forth| here 0<> . -1  ok
+peer: full Forth| bye  ok
+peer: full Forth: closed
+peer: hang-up| OS 4.0 sandbox. Type bye to leave.
+peer: hang-up| 1 2 + . 3  ok
+peer: hang-up: closed

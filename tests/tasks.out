@@ -6,12 +6,16 @@ task t1  task t2  ok
 ' ping t1 start  ' pong t2 start  10 yield ping pong ping pong ping pong  ok
 .tasks console running
 net-task sleeping
+sandbox-listener stopped
+admin-listener stopped
 t1 stopped
 t2 stopped
  ok
 : ticker ( -- ) 3 0 do ." tick " 100 ms loop ;  ok
 ' ticker t1 start  .tasks  500 ms console running
 net-task sleeping
+sandbox-listener stopped
+admin-listener stopped
 t1 ready
 t2 stopped
 tick tick tick  ok
@@ -21,6 +25,8 @@ counter 200 ms counter swap - counter-hz 5 / u< 0= . -1  ok
  ok
 .tasks console running
 net-task sleeping
+sandbox-listener stopped
+admin-listener stopped
 t1 stopped
 t2 stopped
  ok

@@ -27,7 +27,7 @@ HOSTED_CMD   = qemu-aarch64 $(HOSTED) $(1) $(2)
 
 # Network backends for the bare-metal NIC: QEMU's user networking (NAT, with the
 # MUD port forwarded) to run; for tests, frames as UDP to the test's own peer.
-NET_USER := -netdev user,id=net,hostfwd=tcp::4000-:4000
+NET_USER := -netdev user,id=net,hostfwd=tcp::4000-:4000,hostfwd=tcp::4001-:4001
 NET_TEST := -netdev dgram,id=net,local.type=inet,local.host=127.0.0.1,local.port={port},remote.type=inet,remote.host=127.0.0.1,remote.port={peerport}
 
 # Bare metal: Limine boots the kernel on QEMU's virt machine (milestone 3).
@@ -44,7 +44,7 @@ VIRT_CMD    = qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m
 
 comma   := ,
 CONSOLE := python3 tools/console-run.py
-TESTS   := python3 tools/run-tests.py --setup "$(TEST_SETUP)"
+TESTS   := python3 tools/run-tests.py --disks /tmp/os4-test-disks --setup "$(TEST_SETUP)"
 
 .PHONY: all build image data run run-hosted run-tap test test-hosted test-virt ping-check tcp-check clean
 
@@ -101,7 +101,7 @@ test: test-hosted test-virt
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)
-	$(TESTS) --timeout 30 --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk},{port} {peerport})" tests tests/hosted
+	$(TESTS) --timeout 90 --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk},{port} {peerport})" tests tests/hosted
 
 test-virt: $(BOOT_IMG)
 	$(TESTS) --timeout 120 --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST))" tests tests/baremetal

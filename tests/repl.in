@@ -1,0 +1,4 @@
+: sessions-done? ( -- flag ) conns @ 0= free-conns @ count-list 4 = and ;
+: wait-sessions ( -- ) 60000 deadline begin 200 ms sessions-done? over expired? or until drop ;
+wait-sessions .tcp
+1000 ms

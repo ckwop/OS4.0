@@ -1,6 +1,8 @@
 \ errors.fs: reporting errors that reach the outer interpreter, or the top of a
 \ task. Codes without special handling print the text registered with MESSAGE:.
 
+2 user-cells errname          \ ( addr len ) the word an error is about; per task
+
 : .where  ( -- )  \ "block 20 line 3: " if the error was in a LOADed block
   error-blk @ ?dup if
     ." block " (.) type ."  line " error-in @ 1- 0 max 64 / (.) type ." : "

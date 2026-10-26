@@ -89,7 +89,7 @@ variable free-conns            \ recycled ones
 : wake-owner  ( conn -- )  c.owner @ ?dup if wake then ;
 
 : new-conn  ( -- conn )  \ from the free list, or new: there is no fixed limit
-  free-conns @ ?dup if  dup c.link @ free-conns !  else  here /conn allot  then
+  free-conns @ ?dup if  dup c.link @ free-conns !  else  /conn reserve  then
   dup /conn-header 0 fill
   base-rto over c.rto !
   conns @ over c.link !  dup conns ! ;

@@ -78,24 +78,30 @@ To ping the OS from inside the container with the real `ping` (this needs extra 
 docker run --rm --cap-add NET_ADMIN --device /dev/net/tun -v "${PWD}:/src" os4 make ping-check
 ```
 
+### Network REPL
+
+The OS serves Forth over telnet. Port 4000 is a sandbox: arithmetic, the stack and printing, but no compiling and no access to memory or the rest of the dictionary. Port 4001 is the full Forth, as on the console. Each session runs in its own task with its own stack, number base and buffers, and `bye` ends it.
+
+To try it from Windows, boot with both ports published to your machine only:
+
+```powershell
+docker run --rm -it -p 127.0.0.1:4000:4000 -p 127.0.0.1:4001:4001 -v "${PWD}:/src" os4 make run
+```
+
+Then, from another terminal, `telnet localhost 4000` (or 4001). Windows ships its telnet client switched off; turn it on once from an administrator PowerShell with `dism /online /Enable-Feature /FeatureName:TelnetClient`, or use PuTTY with the connection type set to Telnet.
+
+Port 4001 has no login yet, so it must never be reachable from the internet (docs/tech-debt.md TD-23). `make tcp-check` runs eight sandbox sessions and a full-Forth one from the container's own TCP stack.
+
 ### TCP
 
-`listen` opens a port; `accept-connection` waits for the next client; `get-line`, `send`, `send-line` and `close-connection` talk to it. Each client gets its own task. A line echo server:
+`listen` opens a port; `accept-connection` waits for the next client; `get-line`, `send`, `send-line` and `close-connection` talk to it. Each client gets its own task. A line echo server on port 5000:
 
 ```forth
 : serve ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat drop close-connection ;
-: line-server ( -- ) 4000 listen begin 4000 accept-connection ['] serve spawn drop again ;
+: line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;
 task server  ' line-server server start
 .tcp                                   \ connections live and pooled
 ```
-
-QEMU forwards port 4000 to the OS. To reach it from Windows, publish the port from the container, type the three lines above at the prompt, then connect with any telnet client to `localhost:4000`:
-
-```powershell
-docker run --rm -it -p 4000:4000 -v "${PWD}:/src" os4 make run
-```
-
-`make tcp-check` does the same with eight clients on the container's own TCP stack.
 
 ### Milestones
 
@@ -111,7 +117,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 6 | Network to ping | Done |
 | 7 | UDP | Done |
 | 8 | TCP, many connections | Done |
-| 9 | Network REPL | Not started |
+| 9 | Network REPL | Done |
 | 10 | MUD engine | Not started |
 | 11 | Fargate deployment | Not started |
 | 12 | EC2 AMI | Not started |

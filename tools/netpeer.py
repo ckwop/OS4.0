@@ -15,11 +15,14 @@ Scripts:
   udp    use the OS's UDP echo service (port 7) with several sizes, with and
          without a checksum, then send to a closed port (9) and expect ICMP
          port unreachable
-  tcp    32 clients at once of the OS's line echo server on port 4000: each
+  tcp    32 clients at once of the OS's line echo server on port 5000: each
          sends ten lines, checks every echo, and closes. One drops a segment
          from the OS, one sends out of order, one's sequence numbers wrap, one sends
-         all its lines in a single segment. Then a SYN to closed port 4001
+         all its lines in a single segment. Then a SYN to closed port 4999
          must be reset
+  repl   telnet sessions with the network REPL: two sandbox sessions at once
+         on port 4000, a full-Forth session on 4001, and a client that hangs
+         up in the middle of a line. Prints what each session showed
 """
 
 import argparse
@@ -209,7 +212,7 @@ class Peer:
             print("peer: no ARP reply from 10.0.2.15", flush=True)
             return
         time.sleep(1)                       # let the console start the server
-        clients = [TcpClient(self, 50000 + i) for i in range(32)]
+        clients = [TcpClient(self, 50000 + i, dport=5000) for i in range(32)]
         clients[0].drop_first_data = True   # the OS must resend what we "lost"
         clients[1].out_of_order = True     # the OS sees a gap, then the rest
         clients[2].iss = 0xFFFFFFF0         # sequence numbers wrap
@@ -230,8 +233,50 @@ class Peer:
         print(f"peer: tcp: OS retransmitted a dropped segment: "
               f"{'yes' if clients[0].saw_retransmit else 'no'}", flush=True)
 
-        refused = TcpClient(self, 49999, dport=4001)
-        print(f"peer: tcp to closed port 4001: {refused.expect_reset()}", flush=True)
+        refused = TcpClient(self, 49999, dport=4999)
+        print(f"peer: tcp to closed port 4999: {refused.expect_reset()}", flush=True)
+
+    def script_repl(self):
+        if not self.find_os():
+            print("peer: no ARP reply from 10.0.2.15", flush=True)
+            return
+        time.sleep(1)
+        a, b = TcpClient(self, 51000, dport=4000), TcpClient(self, 51001, dport=4000)
+        admin = TcpClient(self, 51002, dport=4001)
+        quitter = TcpClient(self, 51003, dport=4000)
+        sessions = [("sandbox A", a), ("sandbox B", b), ("full Forth", admin), ("hang-up", quitter)]
+        for _, c in sessions[:2]:
+            if c.connect():
+                c.connected = True
+                c.wait_for_text("leave.\r\n")
+            else:
+                c.problems.append("no SYN-ACK")
+        steps = [(a, "2 3 + .", "ok"), (a, "hex ff .", "ok"), (b, "ff .", "?"),
+                 (a, "decimal 1 2 3", "ok"), (b, ".s", "ok"), (a, ".s", "ok"),
+                 (a, "here .", "?"), (a, ": sq dup * ;", "?"), (a, "words", "ok"),
+                 (a, "bye", "ok"), (b, "bye", "ok")]
+        for c, line, end in steps:
+            if c.connected and not c.problems:
+                c.send_reliably(line.encode() + b"\r\n")
+                c.wait_for_text(end + "\r\n")
+        if admin.connect():
+            admin.wait_for_text("leave.\r\n")
+            for line in [": sq dup * ; 7 sq .", "here 0<> .", "bye"]:
+                admin.send_reliably(line.encode() + b"\r\n")
+                admin.wait_for_text("ok\r\n")
+        if quitter.connect():                   # a partial line, then hang up
+            quitter.wait_for_text("leave.\r\n")
+            quitter.send_reliably(b"1 2 + .")
+            time.sleep(0.5)
+        for _, c in sessions:
+            c.wait_for(lambda: c.fin_received, 10)
+            c.close()
+        for name, c in sessions:
+            for line in c.transcript().rstrip("\n").split("\n"):
+                print(f"peer: {name}| {line}", flush=True)
+            print(f"peer: {name}: {'closed' if c.closed else 'not closed'}", flush=True)
+            for problem in c.problems:
+                print(f"peer: {name}: {problem}", flush=True)
 
     def script_ping(self):
         deadline = time.time() + 20
@@ -439,7 +484,10 @@ class TcpClient:
                 self.echoed += 1
         if self.received != expected:
             self.problems.append("extra or wrong data")
-        # Close: our FIN, then theirs.
+        self.close()
+
+    def close(self):
+        """Our FIN, then wait for it to be acknowledged and for theirs."""
         fin_seq = self.snd_nxt
         self.snd_nxt += 1
         for _ in range(8):
@@ -452,6 +500,34 @@ class TcpClient:
             self.closed = True
         else:
             self.problems.append("did not close")
+
+    # ---- a terminal session
+
+    def wait_for_text(self, marker, seconds=10):
+        """Wait until marker arrives after the last one waited for."""
+        m = marker.encode()
+        start = getattr(self, "mark", 0)
+        if not self.wait_for(lambda: m in self.received[start:], seconds):
+            self.problems.append(f"no {marker!r}")
+            return False
+        self.mark = self.received.index(m, start) + len(m)
+        return True
+
+    def transcript(self):
+        """What the OS sent, without telnet commands, with LF line ends."""
+        out, data, i = bytearray(), self.received, 0
+        while i < len(data):
+            if data[i] != 255:
+                out.append(data[i])
+                i += 1
+            elif i + 1 < len(data) and data[i + 1] == 255:
+                out.append(255)
+                i += 2
+            elif i + 1 < len(data) and 251 <= data[i + 1] <= 254:
+                i += 3
+            else:
+                i += 2
+        return out.replace(b"\r\n", b"\n").decode(errors="replace")
 
     def expect_reset(self):
         self.snd_una = self.snd_nxt = self.iss
@@ -470,7 +546,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--os-port", type=int, required=True)
-    p.add_argument("script", choices=["ping", "udp", "tcp"])
+    p.add_argument("script", choices=["ping", "udp", "tcp", "repl"])
     args = p.parse_args()
     peer = Peer(args.port, args.os_port)
     getattr(peer, "script_" + args.script)()

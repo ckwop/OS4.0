@@ -69,6 +69,19 @@
 : while   ( C: dest -- orig dest )  postpone if swap ; immediate compile-only
 : repeat  ( C: orig dest -- )  postpone again postpone then ; immediate compile-only
 
+\ ---- Claiming the dictionary. Tasks share one dictionary, and a definition can
+\ span lines with pauses between them, so the first word that extends the
+\ dictionary claims it for its task and other tasks wait. The REPL gives it up
+\ at the end of a line once nothing is being compiled (interpreter.fs). Memory
+\ for running tasks and connections comes from RESERVE instead, never from here.
+
+: claim    ( -- )
+  begin dict-owner @ dup up@ <> and while pause repeat  up@ dict-owner ! ;
+: unclaim  ( -- )  dict-owner @ up@ = if 0 dict-owner ! then ;
+: header   ( addr len -- )  claim header ;
+: ,        ( x -- )  claim , ;
+: :        ( "name" -- )  claim : ;
+
 : ?dup    ( x -- 0 | x x )  dup if dup then ;
 : abs     ( n -- u )  dup 0< if negate then ;
 : min     ( n1 n2 -- n )  2dup > if swap then drop ;
@@ -114,17 +127,21 @@
 : expired?  ( u -- flag )  counter - 0< ;
 
 : unused  ( -- u )  dict-end here - ;
-: allot   ( n -- )  dup unused > if -8 throw then  allot ;
-: c,      ( c -- )  here c! 1 allot ;
+: allot   ( n -- )  claim  dup unused > if -8 throw then  allot ;
+: c,      ( c -- )  claim  here c! 1 allot ;
+: align   ( -- )  claim  here aligned dp ! ;
+: reserve ( n -- addr )  \ memory from the top of the dictionary's space, for pools
+  aligned  dup unused > if -8 throw then  'dict-end @ swap -  dup 'dict-end ! ;
 
 \ ---- User variables: one per task, in its user area. A new task starts with
 \ a copy of its creator's values.
 
 variable next-user   user-free next-user !
-: user  ( "name" -- )  \ name ( -- addr ) gives this task's cell
-  next-user @  dup cell+ /user > if -267 throw then
-  create ,  1 cells next-user +!
+: user-cells  ( n "name" -- )  \ name ( -- addr ) gives this task's n cells
+  cells next-user @  2dup + /user > if -267 throw then
+  create ,  next-user +!
   does> @ up@ + ;
+: user  ( "name" -- )  1 user-cells ;
 
 \ ---- Semaphores: a lock that a task can hold across pauses; others wanting it
 \ pause until it is free. Re-entrant: the holder may GET it again, and must

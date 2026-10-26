@@ -115,6 +115,8 @@ dodoes:
 	ldr	x0, [x0]
 	PUSH	x0
 	NEXT
+	defconst "'dict-end", w_tickdictend, var_dict_end // ( -- addr ) holds DICT-END; pools take memory from the top
+	defconst "dict-owner", w_dictowner, var_dict_owner // ( -- addr ) the task extending the dictionary, or 0
 	defconst "main-task", w_maintask, user0	// ( -- task ) the console task
 	defconst "/user", w_usersize, U_SIZE	// ( -- n ) bytes in a user area
 	defconst "user-free", w_userfree, U_FREE // ( -- n ) the first offset free for USER
@@ -147,6 +149,17 @@ dodoes:
 	defcode	",", w_comma			// ( x -- )
 	POP	x0
 	bl	comma_sub
+	NEXT
+
+	// ( addr u nt -- nt' | 0 ) the newest word named addr u from nt back, ignoring
+	// case and hidden words. A measured hot spot: interpreter.fs has
+	// SEARCH-LIST-REF, the Forth definition, which tests/reference checks.
+	defcode	"search-list", w_searchlist
+	POP	x2
+	POP	x1
+	POP	x0
+	bl	search_sub
+	PUSH	x2
 	NEXT
 
 	defcode	"header", w_header		// ( addr len -- ) lay down a header for that name

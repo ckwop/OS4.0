@@ -6,6 +6,8 @@ task hog-task  ok
  ok
 .tasks console running
 net-task sleeping
+sandbox-listener stopped
+admin-listener stopped
 hog-task stopped
  ok
 : spin ( -- ) begin again ;  ok

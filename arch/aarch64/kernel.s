@@ -54,7 +54,7 @@
 	.equ	U_SLIMIT, 128		// lowest safe data stack pointer: below it is overflow
 	.equ	U_RLIMIT, 136		// lowest safe return stack pointer (keep after U_SLIMIT)
 	.equ	U_FREE, 144		// the rest is for user variables defined in Forth (USER)
-	.equ	U_SIZE, 256
+	.equ	U_SIZE, 512
 	.equ	STACK_MARGIN, 16 * 8	// room left below a limit for reporting the overflow
 
 	// THROW codes for errors the kernel detects (standard codes, plus -256). Their
@@ -177,8 +177,12 @@ boot_files:
 	bootfile "forth/net/icmp.fs"
 	bootfile "forth/net/udp.fs"
 	bootfile "forth/net/tcp.fs"
+	bootfile "forth/net/telnet.fs"
 	bootfile "forth/net/net.fs"
-	bootfile "forth/interpreter.fs"	// last: ends by starting the Forth QUIT loop
+	bootfile "forth/interpreter.fs"
+	bootfile "forth/sandbox.fs"
+	bootfile "forth/net/repl.fs"
+	bootfile "forth/start.fs"	// last: starts the Forth QUIT loop
 boot_files_end:
 
 // ---------------------------------------------------------------------------
@@ -199,6 +203,7 @@ var_errname:	.quad	0, 0		// ( addr len ) as 2! stores it: the word an error is a
 var_task_since:	.quad	0		// counter value when the running task was switched in
 var_watchdog:	.quad	0		// counter ticks a task may run without pausing; 0: off
 var_sp0:	.quad	0		// hardware sp at start-up, restored by abort
+var_dict_owner:	.quad	0		// the task extending the dictionary, or 0 (core.fs CLAIM)
 
 	.bss
 	.balign	16

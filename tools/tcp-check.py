@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""The TCP client side of `make tcp-check`: real sockets, so the host's own TCP
-stack talks to the OS through QEMU's user networking, which forwards port 4000.
-Several clients at once each send lines to the OS's echo server and check the
-echoes, then close. Prints one summary line; run by console-run.py as a peer.
+"""The client side of `make tcp-check`: real sockets, so the host's own TCP
+stack talks to the OS through QEMU's user networking, which forwards ports 4000
+and 4001. Eight sandbox sessions at once on 4000 each send fifty lines of
+arithmetic and check every answer; one full-Forth session on 4001 defines and
+runs a word. Each session ends with bye, and the OS must close it. Prints a
+summary; run by console-run.py as a peer.
 """
 
 import socket
@@ -12,56 +14,86 @@ import time
 CLIENTS, LINES = 8, 50
 
 
-def client(n, results):
-    for _ in range(20):                         # the server may not be up yet
+def open_session(port):
+    """Connect and read the greeting; None if the OS does not answer."""
+    for _ in range(20):                         # the OS may still be starting
         try:
-            s = socket.create_connection(("127.0.0.1", 4000), timeout=10)
-            s.sendall(b"hello\r\n")
-            reply = b""
-            while not reply.endswith(b"\n"):
-                chunk = s.recv(64)
+            s = socket.create_connection(("127.0.0.1", port), timeout=10)
+            got = b""
+            while b"leave.\r\n" not in got:
+                chunk = s.recv(4096)
                 if not chunk:
                     break
-                reply += chunk
-            if reply == b"hello\r\n":
-                break
+                got += chunk
+            if b"leave.\r\n" in got:
+                return s
             s.close()
         except OSError:
             pass
         time.sleep(1)
-    else:
-        results[n] = "could not connect"
-        return
-    lines = [f"client {n} line {j} ".encode() + b"y" * (j * 4) for j in range(LINES)]
-    s.sendall(b"".join(line + b"\r\n" for line in lines))     # all at once: many segments
-    expected = b"".join(line + b"\r\n" for line in lines)
+    return None
+
+
+def read_until(s, count, marker=b"ok\r\n"):
     got = b""
-    while len(got) < len(expected):
+    while got.count(marker) < count:
         chunk = s.recv(65536)
         if not chunk:
             break
         got += chunk
-    s.shutdown(socket.SHUT_WR)
-    rest = s.recv(64)                           # the server closes after our FIN
-    s.close()
-    results[n] = "ok" if got == expected and rest == b"" else "wrong echo"
+    return got
+
+
+def closed_by_os(s):
+    try:
+        while s.recv(4096):
+            pass
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def sandbox_client(n, results):
+    s = open_session(4000)
+    if s is None:
+        results[n] = "could not connect"
+        return
+    s.sendall(b"".join(f"{j} {n + 2} * .\r\n".encode() for j in range(LINES)))
+    got = read_until(s, LINES)
+    wrong = [j for j in range(LINES) if f" * . {j * (n + 2)}  ok\r\n".encode() not in got]
+    s.sendall(b"bye\r\n")
+    closed = closed_by_os(s)
+    results[n] = "ok" if not wrong and closed else f"wrong answers {wrong[:3]}" if wrong else "not closed"
+
+
+def admin_client():
+    s = open_session(4001)
+    if s is None:
+        return "could not connect"
+    s.sendall(b": cube dup dup * * ;\r\n5 cube .\r\nbye\r\n")
+    got = read_until(s, 3)
+    closed = closed_by_os(s)
+    return "ok" if b"125  ok" in got and closed else repr(got[-80:])
 
 
 def main():
     time.sleep(2)
-    results = {}
     t0 = time.time()
-    threads = [threading.Thread(target=client, args=(n, results)) for n in range(CLIENTS)]
+    results = {}
+    threads = [threading.Thread(target=sandbox_client, args=(n, results)) for n in range(CLIENTS)]
     for t in threads:
         t.start()
     for t in threads:
         t.join(60)
     ok = sum(r == "ok" for r in results.values())
-    print(f"tcp-check: took {time.time() - t0:.1f}s", flush=True)
-    print(f"tcp-check: {ok} of {CLIENTS} clients echoed {LINES} lines and closed", flush=True)
+    print(f"tcp-check: {ok} of {CLIENTS} sandbox sessions answered {LINES} lines and closed", flush=True)
     for n, r in sorted(results.items()):
         if r != "ok":
-            print(f"tcp-check: client {n}: {r}", flush=True)
+            print(f"tcp-check: session {n}: {r}", flush=True)
+    print(f"tcp-check: full-Forth session: {admin_client()}", flush=True)
+    print(f"tcp-check: took {time.time() - t0:.1f}s", flush=True)
 
 
 if __name__ == "__main__":

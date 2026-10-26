@@ -104,11 +104,10 @@ parse_sub:
 	mov	x0, x5
 	ret
 
-// find_sub: x0 name, x1 length -> x0 xt (0 if not found), x1 1 if immediate,
-// else -1. Case-insensitive; skips hidden words.
-find_sub:
-	ldr	x2, =var_latest
-	ldr	x2, [x2]
+// search_sub: x0 name, x1 length, x2 the header to start from -> x2 the header
+// of the newest word of that name from there back (0 if none), x3 its flags
+// byte. Case-insensitive; skips hidden words. Uses x3-x10.
+search_sub:
 1:	cbz	x2, 9f
 	ldrb	w3, [x2, #8]
 	tst	w3, #F_HIDDEN
@@ -119,7 +118,7 @@ find_sub:
 	add	x5, x2, #9
 	mov	x6, #0
 2:	cmp	x6, x1
-	b.hs	3f
+	b.hs	9f
 	ldrb	w7, [x0, x6]
 	ldrb	w9, [x5, x6]
 	TOLOWER	w7, w10
@@ -128,7 +127,21 @@ find_sub:
 	b.ne	8f
 	add	x6, x6, #1
 	b	2b
-3:	add	x0, x5, x1		// the xt follows the name, 8-byte aligned
+8:	ldr	x2, [x2]
+	b	1b
+9:	ret
+
+// find_sub: x0 name, x1 length -> x0 xt (0 if not found), x1 1 if immediate,
+// else -1. Searches from LATEST: only the boot files use it.
+find_sub:
+	mov	x11, x30
+	ldr	x2, =var_latest
+	ldr	x2, [x2]
+	bl	search_sub
+	mov	x30, x11
+	cbz	x2, 9f
+	add	x0, x2, #9		// the xt follows the name, 8-byte aligned
+	add	x0, x0, x1
 	add	x0, x0, #7
 	and	x0, x0, #-8
 	mov	x1, #-1
@@ -136,8 +149,6 @@ find_sub:
 	tst	w3, #F_IMMED
 	csel	x1, x6, x1, ne
 	ret
-8:	ldr	x2, [x2]
-	b	1b
 9:	mov	x0, #0
 	mov	x1, #0
 	ret

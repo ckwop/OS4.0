@@ -8,8 +8,38 @@
 : lower   ( c -- c' )  dup [char] A [char] Z 1+ within if 32 + then ;
 : hidden?    ( nt -- flag )  cell+ c@ f-hidden and 0<> ;
 : immediate? ( nt -- flag )  cell+ c@ f-immediate and 0<> ;
-: words   ( -- )
-  latest @ begin ?dup while
+
+\ ---- Wordlists. A wordlist is a cell holding its newest word. New definitions
+\ go into the CURRENT wordlist, whose newest word is kept in the kernel's
+\ LATEST while it is current. Each task has its own search order: lookups try
+\ its wordlists first to last, and see nothing else.
+
+create forth-wordlist  0 ,
+variable current   forth-wordlist current !
+8 constant max-order
+-49 message: search order full
+user #order
+max-order user-cells context                     \ the search order, first one first
+forth-wordlist context !  1 #order !             \ the console's; new tasks copy it
+
+: wid-latest   ( wid -- nt | 0 )  dup current @ = if drop latest @ else @ then ;
+: get-current  ( -- wid )  current @ ;
+: set-current  ( wid -- )  claim  latest @ current @ !  dup current !  @ latest ! ;
+: wordlist     ( -- wid )  here 0 , ;
+: order@       ( i -- wid )  cells context + @ ;
+: get-order    ( -- widn ... wid1 n )  #order @ 0 ?do  #order @ i - 1- order@  loop  #order @ ;
+: set-order    ( widn ... wid1 n -- )  \ -1: the minimum, FORTH-WORDLIST alone
+  dup -1 = if drop forth-wordlist 1 then
+  dup max-order u> if -49 throw then
+  dup #order !  0 ?do  i cells context + !  loop ;
+: only         ( -- )  -1 set-order ;
+: also         ( -- )  get-order over swap 1+ set-order ;
+: previous     ( -- )  get-order nip 1- set-order ;
+: forth        ( -- )  get-order nip forth-wordlist swap set-order ;
+: definitions  ( -- )  context @ set-current ;
+: words  ( -- )  \ the first wordlist in the search order
+  #order @ 0= if exit then
+  context @ wid-latest begin ?dup while
     dup hidden? 0= if dup name>string type space then  @
   repeat cr ;
 
@@ -36,13 +66,20 @@
 : match?  ( addr u nt -- flag )
   dup hidden? if drop 2drop false exit then
   name>string rot over <> if drop 2drop false exit then  name= ;
-: find-name  ( addr u -- nt | 0 )
-  latest @ begin dup while
+\ SEARCH-LIST ( addr u nt -- nt | 0 ) is in the kernel for speed; this is its
+\ definition. It looks from nt back to the oldest word of its wordlist.
+: search-list-ref  ( addr u nt -- nt | 0 )
+  begin dup while
     >r 2dup r@ match? if  2drop r> exit  then
     r> @
   repeat nip nip ;
-: find-word  ( addr u -- 0 | xt 1 | xt -1 )  \ 1 if immediate
-  find-name dup if  dup name>xt swap immediate? if 1 else -1 then  then ;
+: find-name  ( addr u -- nt | 0 )  \ in the search order
+  #order @ 0 ?do
+    2dup i order@ wid-latest search-list ?dup if  nip nip unloop exit  then
+  loop 2drop 0 ;
+: >found  ( nt | 0 -- 0 | xt 1 | xt -1 )  dup if  dup name>xt swap immediate? if 1 else -1 then  then ;
+: find-word  ( addr u -- 0 | xt 1 | xt -1 )  find-name >found ;  \ 1 if immediate
+: search-wordlist  ( addr u wid -- 0 | xt 1 | xt -1 )  wid-latest search-list >found ;
 : compile-only?  ( nt -- flag )  cell+ c@ f-compile-only and 0<> ;
 
 \ Numbers: optional -, optional base prefix ($ hex, # decimal, % binary), digits;
@@ -93,29 +130,40 @@
 : postpone  ( "name" -- )
   parse-find 0< if  postpone literal  ['] , ,  else  ,  then ; immediate compile-only
 
-\ Terminal input. The Forth echoes what is typed: a serial console does not.
-\ KEY (tasks.fs) lets other tasks run while waiting.
-variable eof
+\ Terminal input. The Forth echoes what is typed: neither a serial console nor
+\ a telnet session in character mode does. KEY lets other tasks run while waiting.
+user eof                        \ the terminal's input has ended
 : rubout  ( -- )  8 emit space 8 emit ;
-: accept  ( addr max -- u )  \ Enter ends the line; Ctrl-D or end of input on an empty line: bye
-  eof @ if bye then
+: accept  ( addr max -- u )  \ Enter ends the line; Ctrl-D on an empty line ends input
   >r 0 begin key
     dup 10 = over 13 = or if drop space nip r> drop exit then
-    dup -1 = if drop dup 0= if bye then true eof ! space nip r> drop exit then
-    dup 4 = if drop dup 0= if bye then 0 then
+    dup -1 = if drop true eof ! dup if space then nip r> drop exit then
+    dup 4 = if drop dup 0= if true eof ! nip r> drop exit then 0 then
     dup 9 = if drop bl then
     dup 8 = over 127 = or if drop dup if 1- rubout then 0 then
     dup bl < if drop else
       over r@ < if  >r 2dup + r@ swap c! 1+ r> emit  else drop then
     then
   again ;
-create tib 256 allot
-: refill  ( -- )  tib 'tib !  tib 256 accept #tib !  0 >in ! ;
+-271 message: end of input
+: refill  ( -- flag )  \ the next line from the terminal; false at the end of input
+  eof @ if false exit then
+  tib 'tib !  tib /tib accept  dup #tib !  0 >in !
+  0= eof @ and 0= ;
 : prompt  ( -- )  state @ if ."  compiled" else ."  ok" then cr ;
-: reset   ( i*x -- )  begin depth while drop repeat  0 state !  0 error-blk ! ;
-: (quit)  ( -- )  \ each line runs under CATCH: an error is reported, then the next line
-  begin refill  ['] interpret catch ?dup if .error reset else prompt then again ;
+: reset   ( i*x -- )  begin depth while drop repeat  0 state !  0 error-blk !  unclaim ;
 
+\ The REPL. Each line runs under CATCH: an error is reported, then the next
+\ line. The dictionary is given up between lines unless a definition is open.
+: repl  ( -- )  \ until the end of input
+  unclaim
+  begin refill while
+    ['] interpret catch ?dup if .error reset else prompt then
+    state @ 0= if unclaim then
+  repeat reset ;
+
+\ BYE ends this task's terminal session: on the console it shuts the system down.
+user 'bye   ' bye 'bye !
+: bye  ( -- )  'bye @ execute ;
+: (quit)  ( -- )  repl bye ;
 ' (quit) 'quit !
-.( OS 4.0) cr
-quit

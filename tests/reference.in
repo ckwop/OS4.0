@@ -2,3 +2,6 @@
 : same ( lo hi u -- flag ) >r 2dup r@ um/mod-ref 2swap r> um/mod rot = -rot = and ;
 100 0 7 same .  -1 0 10 same .  0 1 2 same .  -1 5 6 same .  12345678901234 9876 99999 same .
 100 0 7 um/mod-ref . .  0 1 2 um/mod-ref u. .
+: agree ( addr u -- flag ) 2dup latest @ search-list >r latest @ search-list-ref r> = ;
+s" dup" agree .  s" DUP" agree .  s" no-such-word" agree .  s" agree" agree .
+s" Swap" latest @ search-list 0<> .  s" no-such-word" latest @ search-list .

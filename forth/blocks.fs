@@ -20,7 +20,7 @@ semaphore blocks-lock       \ one task at a time in the buffers and on the disk
 \ ---- The disk header
 
 1 constant disk-version
-create header b/buf allot
+create disk-header b/buf allot
 variable mounted        \ the header has been read
 variable disk-ok        \ ... and is valid
 variable #blocks        \ blocks usable on this disk
@@ -29,9 +29,9 @@ variable volume-id
 : mount  ( -- )  \ read the header, once
   mounted @ if exit then
   blk-count dup 0= if -257 throw then  #blocks !
-  header 0 blk-read
-  header 8 s" OS40DISK" compare 0=  header 8 + @ disk-version = and  disk-ok !
-  disk-ok @ if  header 16 + @ volume-id !  header 24 + @ #blocks @ min #blocks !  then
+  disk-header 0 blk-read
+  disk-header 8 s" OS40DISK" compare 0=  disk-header 8 + @ disk-version = and  disk-ok !
+  disk-ok @ if  disk-header 16 + @ volume-id !  disk-header 24 + @ #blocks @ min #blocks !  then
   true mounted ! ;
 
 : ?block     ( u -- u )  mount  dup #blocks @ u< 0= if -35 throw then ;
@@ -112,8 +112,8 @@ variable next-buf                         \ where the search for a free one star
 
 \ ---- Loading source from blocks. A block is 16 lines of 64 characters.
 
-variable error-blk      \ where an error in a LOADed block happened, for .ERROR
-variable error-in
+user error-blk          \ where an error in a LOADed block happened, for .ERROR
+user error-in
 variable 'interpret     \ xt of INTERPRET, set by interpreter.fs
 
 : load  ( i*x u -- j*x )

@@ -1,12 +1,12 @@
 OS 4.0
 : serve ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat drop close-connection ;  ok
-: line-server ( -- ) 4000 listen begin 4000 accept-connection ['] serve spawn drop again ;  ok
+: line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;  ok
 task server  ' line-server server start  ok
 : settled? ( -- flag ) conns @ 0= free-conns @ count-list 32 = and ;  ok
-: settle ( -- ) 20000 deadline begin 200 ms settled? over expired? or until drop ;  ok
+: settle ( -- ) 60000 deadline begin 200 ms settled? over expired? or until drop ;  ok
 settle .tcp connections 0, pooled 32 ok
 1000 ms  ok
 --- peer ---
 peer: tcp: 32 of 32 clients connected, 320 of 320 lines echoed, 32 closed cleanly
 peer: tcp: OS retransmitted a dropped segment: yes
-peer: tcp to closed port 4001: reset ok
+peer: tcp to closed port 4999: reset ok
