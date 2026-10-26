@@ -74,12 +74,12 @@ A running log of choices that [docs/brief.md](docs/brief.md) leaves open. Add ne
 | 68 | 2026-10-26 | Network tests use `tools/netpeer.py`, a host at 10.0.2.2 on the test's private LAN, named in a `<name>.peer` file. The runner gives each test its own UDP ports; the peer starts at the banner and its findings are added to the transcript. | Unprivileged and deterministic, and the peer checks every byte of the OS's replies. |
 | 69 | 2026-10-26 | `make run` uses QEMU's user networking with port 4000 forwarded. `make ping-check` boots on a TAP device and pings the OS with the real `ping`; it needs `docker run --cap-add NET_ADMIN --device /dev/net/tun`. | User networking needs no privileges; TAP makes the milestone's acceptance test literal. |
 | 70 | 2026-10-26 | Device waits time out after 5 s with -263. | A device that never answers no longer hangs its task (TD-8). |
+| 71 | 2026-10-26 | No fixed player cap. Player tasks and TCP connection records come from pools that grow on demand and recycle through free lists: allocated when a connection arrives and none is free, returned when it closes. An optional limit (default: none) lets an operator cap connections. This changes the brief's "fixed task pool (start with 64)". | The user does not want a fixed limit. Same-sized pool entries keep the brief's goals (no fragmentation, predictable memory); only available RAM bounds the count. The optional limit is the safety valve against connection floods. |
 
 ## Open questions (from the brief)
 
 Still unresolved; move each to the table above once decided.
 
 - Fargate container architecture: one x86 image everywhere, or an ARM64 build for cheaper Graviton tasks?
-- Player cap for the first release (sizes the task pool and TCP connection table; 64 assumed).
 - MUD port number (4000 assumed), and whether to offer only a plain telnet port.
 - Password hash algorithm, implemented in Forth.
