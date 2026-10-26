@@ -7,8 +7,39 @@
 
 	.text
 	.global	forth_cold
+// forth_cold: x0 dictionary base (page-aligned, readable, writable and
+// executable), x1 its size. Called by the platform's _start; never returns.
 forth_cold:
-	ldr	x0, =var_sp0
+	ldr	x2, =DICT_MAX
+	cmp	x1, x2
+	csel	x1, x1, x2, ls
+	add	x2, x0, x1
+	ldr	x3, =var_dict_end
+	str	x2, [x3]
+	ldr	x3, =var_tramps
+	str	x0, [x3]
+	mov	x4, x0				// the trampolines: ldr x16, 8; br x16; handler
+	ldr	x5, =docol
+	bl	1f
+	ldr	x5, =dovar
+	bl	1f
+	ldr	x5, =docon
+	bl	1f
+	ldr	x5, =dodoes
+	bl	1f
+	ldr	x3, =var_dp			// the dictionary proper follows them
+	str	x4, [x3]
+	b	2f
+1:	ldr	w6, =INSN_LDR_X16_8
+	str	w6, [x4]
+	ldr	w6, =INSN_BR_X16
+	str	w6, [x4, #4]
+	str	x5, [x4, #8]
+	SYNC_ICACHE x4
+	add	x4, x4, #TRAMPOLINE
+	ret
+
+2:	ldr	x0, =var_sp0
 	mov	x1, sp
 	str	x1, [x0]
 	ldr	UP, =user0			// the console task: a ring of one

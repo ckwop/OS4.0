@@ -7,7 +7,9 @@
 comma_sub:
 	ldr	x1, =var_dp
 	ldr	x2, [x1]
-	ldr	x3, =dict_end - 8
+	ldr	x3, =var_dict_end
+	ldr	x3, [x3]
+	sub	x3, x3, #8
 	cmp	x2, x3
 	b.hi	err_dictfull
 	str	x0, [x2], #8
@@ -22,7 +24,9 @@ header_sub:
 	b.hi	err_longname
 	ldr	x2, =var_dp
 	ldr	x3, [x2]
-	ldr	x4, =dict_end - 64		// the largest header, and its code field
+	ldr	x4, =var_dict_end		// room for the largest header, and its code field
+	ldr	x4, [x4]
+	sub	x4, x4, #64
 	cmp	x3, x4
 	b.hi	err_dictfull
 	add	x3, x3, #7
@@ -106,7 +110,11 @@ dodoes:
 	defuser	"task-name", w_taskname, U_NAME
 	defuser	"task-slimit", w_taskslimit, U_SLIMIT
 	defuser	"task-rlimit", w_taskrlimit, U_RLIMIT
-	defconst "dict-end", w_dictend, dict_end	// ( -- addr ) the dictionary ends here
+	defcode	"dict-end", w_dictend		// ( -- addr ) the dictionary ends here
+	ldr	x0, =var_dict_end
+	ldr	x0, [x0]
+	PUSH	x0
+	NEXT
 	defconst "main-task", w_maintask, user0	// ( -- task ) the console task
 	defconst "/user", w_usersize, U_SIZE	// ( -- n ) bytes in a user area
 	defconst "watchdog-limit", w_watchdog, var_watchdog // ( -- addr ) counter ticks; 0: off
@@ -115,9 +123,19 @@ dodoes:
 	defuser	">in", w_toin, U_TOIN		// ( -- addr )
 	defuser	"#tib", w_ntib, U_NTIB		// ( -- addr )
 	defuser	"'tib", w_ticktib, U_TIB	// ( -- addr )
-	defconst "docol", w_docol, docol	// ( -- addr ) code field handlers, for CF,
-	defconst "dovar", w_dovar, dovar
-	defconst "docon", w_docon, docon
+// ( -- addr ) code field handlers, for CF,: their trampolines, within reach of
+// a bl from anywhere in the dictionary
+.macro deftramp name, label, offset
+	defcode	"\name", \label
+	ldr	x0, =var_tramps
+	ldr	x0, [x0]
+	add	x0, x0, #\offset
+	PUSH	x0
+	NEXT
+.endm
+	deftramp "docol", w_docol, T_DOCOL
+	deftramp "dovar", w_dovar, T_DOVAR
+	deftramp "docon", w_docon, T_DOCON
 
 // ---- Compiler
 
@@ -138,7 +156,9 @@ dodoes:
 compile_cf:
 	ldr	x2, =var_dp
 	ldr	x2, [x2]
-	ldr	x3, =dict_end - 8
+	ldr	x3, =var_dict_end
+	ldr	x3, [x3]
+	sub	x3, x3, #8
 	cmp	x2, x3
 	b.hi	err_dictfull
 	bl	write_cf_sub
@@ -150,7 +170,9 @@ compile_cf:
 
 	defcode	"does-cf,", w_doescfcomma	// ( -- ) compile "mov x9, x30; bl dodoes", for DOES>
 	ldr	w0, =INSN_MOV_X9_X30
-	ldr	x1, =dodoes
+	ldr	x1, =var_tramps
+	ldr	x1, [x1]
+	add	x1, x1, #T_DODOES
 	b	compile_cf
 
 	// ( -- ) ( R: ip -- ) end the defining word, pointing the newest word's code

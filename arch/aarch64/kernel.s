@@ -75,10 +75,23 @@
 
 	.equ	DSTACK_BYTES, 4096
 	.equ	RSTACK_BYTES, 4096
-	.equ	DICT_BYTES, 1 << 20
+
+	// The dictionary is a region of RAM the platform hands to forth_cold. Code
+	// fields reach their handlers with bl, which spans 128 MiB, so the handlers
+	// are reached through trampolines at the start of the region, and the
+	// region is capped at 128 MiB.
+	.equ	DICT_MAX, (1 << 27) - 4096
+	.equ	TRAMPOLINE, 16			// bytes per trampoline: ldr x16, 8; br x16; .quad handler
+	.equ	T_DOCOL, 0 * TRAMPOLINE
+	.equ	T_DOVAR, 1 * TRAMPOLINE
+	.equ	T_DOCON, 2 * TRAMPOLINE
+	.equ	T_DODOES, 3 * TRAMPOLINE
+	.equ	TRAMPOLINES, 4 * TRAMPOLINE
 
 	.equ	INSN_NOP, 0xd503201f
 	.equ	INSN_MOV_X9_X30, 0xaa1e03e9
+	.equ	INSN_LDR_X16_8, 0x58000050	// ldr x16, . + 8
+	.equ	INSN_BR_X16, 0xd61f0200
 	.equ	INSN_BL, 0x94000000
 
 	.equ	CH_LF, 10
@@ -168,7 +181,9 @@ boot_files_end:
 
 	.data
 	.balign	8
-var_dp:		.quad	dict_space	// next free byte of the dictionary
+var_dp:		.quad	0		// next free byte of the dictionary
+var_dict_end:	.quad	0		// where the dictionary ends
+var_tramps:	.quad	0		// the handler trampolines, at the start of the dictionary
 var_source:	.quad	SRC_BOOT
 var_boot_file:	.quad	boot_files	// table entry of the boot file being loaded
 var_boot_pos:	.quad	0		// start of its next line (set by forth_cold)
@@ -187,10 +202,6 @@ dstack_top:	.space	16		// guard: an underflowing word reads here, then INTERPRET
 rstack:		.space	RSTACK_BYTES
 rstack_top:
 user0:		.space	U_SIZE
-	.balign	4096
-	.global	dict_space, dict_end
-dict_space:	.space	DICT_BYTES	// the platform must make this executable: code fields live here
-dict_end:
 
 // CHECK_STACKS: throw if either stack has grown past its limit. In every colon
 // call and backward branch, so runaway recursion and runaway loops are caught

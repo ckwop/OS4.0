@@ -1,0 +1,9 @@
+OS 4.0
+unused 100000000 > . -1  ok
+create big 100000000 allot  ok
+unused 40000000 < . -1  ok
+: far ( -- n ) 42 ;  far . 42  ok
+variable far-var  7 far-var !  far-var @ . 7  ok
+99 constant far-const  far-const . 99  ok
+: maker ( n "name" -- ) create , does> @ 1+ ;  10 maker far-made  far-made . 11  ok
+unused cell+ allot dictionary full

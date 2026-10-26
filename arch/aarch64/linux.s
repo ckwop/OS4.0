@@ -20,7 +20,7 @@
 	.equ	SYS_SETITIMER, 103
 	.equ	SYS_RT_SIGACTION, 134
 	.equ	SYS_RT_SIGRETURN, 139
-	.equ	SYS_MPROTECT, 226
+	.equ	SYS_MMAP, 222
 
 	.equ	SIGILL, 4
 	.equ	SIGBUS, 7
@@ -34,6 +34,8 @@
 	.equ	POLLIN, 1
 
 	.equ	PROT_RWX, 7
+	.equ	MAP_FLAGS, 0x4022		// MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE
+	.equ	DICT_BYTES, 1 << 27		// 128 MiB; the kernel caps the dictionary at this
 	.equ	TCGETS, 0x5401
 	.equ	TCSETS, 0x5402
 	.equ	TERMIOS_LFLAG, 12		// offset of c_lflag in struct termios
@@ -49,19 +51,26 @@ _start:
 	ldr	x0, =linux_args			// the kernel put argc and argv at sp
 	mov	x1, sp
 	str	x1, [x0]
-	// Code fields are written into the dictionary at run time, so it must be executable.
-	ldr	x0, =dict_space
-	ldr	x1, =dict_end
-	sub	x1, x1, x0
+	// The dictionary: executable, since code fields are written into it at run
+	// time. Linux provides the pages only as they are first touched.
+	mov	x0, #0
+	ldr	x1, =DICT_BYTES
 	mov	x2, #PROT_RWX
-	mov	x8, #SYS_MPROTECT
+	ldr	x3, =MAP_FLAGS
+	mov	x4, #-1
+	mov	x5, #0
+	mov	x8, #SYS_MMAP
 	svc	#0
-	cbz	x0, 1f
+	cmn	x0, #4096			// -4095..-1: an error
+	b.lo	1f
 	mov	x0, #2
 	b	hal_bye
-1:	bl	terminal_raw
+1:	mov	x28, x0
+	bl	terminal_raw
 	bl	faults_init
 	bl	timer_init
+	mov	x0, x28
+	ldr	x1, =DICT_BYTES
 	b	forth_cold
 
 // A bad memory access or instruction is reported, then the faulting word

@@ -59,12 +59,25 @@
 	.quad	0xf6b8f4b39de7d1ae, 0xfab91a6940fcb9cf, 0x785c6ed015d3e316, 0x181e920a7852b9d9
 limine_base_revision:
 	.quad	0xf9562b2d5c95a6c8, 0x6a7b384944536bdc, 3
+limine_memmap:					// id, revision, response (Limine fills it in)
+	.quad	0xc7b1dd30df4c8b88, 0x0a82e883a194f07b, 0x67cf3d9d378a806f, 0xe304acdfc50c3c62, 0, 0
+limine_hhdm:
+	.quad	0xc7b1dd30df4c8b88, 0x0a82e883a194f07b, 0x48dcf1cb8ad2b852, 0x63984e959a98244b, 0, 0
 	.quad	0xadc0e0531bb10d03, 0x9572709f31764c62
+
+	.equ	REQ_RESPONSE, 40		// offset of the response pointer in a request
+	.equ	MEMMAP_COUNT, 8			// memmap response: entry count, then the entries array
+	.equ	MEMMAP_ENTRIES, 16
+	.equ	HHDM_OFFSET, 8			// hhdm response: the direct map's offset
+	.equ	MEMMAP_USABLE, 0		// entry type: free RAM
 
 	.section .rodata
 msg_revision:
 	.ascii	"Limine did not accept base revision 3\n"
 	.equ	msg_revision_len, . - msg_revision
+msg_nomemory:
+	.ascii	"Limine gave no memory map\n"
+	.equ	msg_nomemory_len, . - msg_nomemory
 
 // ---------------------------------------------------------------------------
 
@@ -88,7 +101,44 @@ _start:
 	bl	type_sub
 	mov	x0, #1
 	b	hal_bye
-1:	b	forth_cold
+1:	bl	find_memory
+	cbnz	x1, forth_cold
+	ldr	x0, =msg_nomemory
+	mov	x1, #msg_nomemory_len
+	bl	type_sub
+	mov	x0, #1
+	b	hal_bye
+
+// find_memory: -> x0 address, x1 size of the largest usable RAM region, through
+// Limine's direct map (which it maps readable, writable and executable); x1 is 0
+// if Limine gave no memory map.
+find_memory:
+	ldr	x0, =limine_memmap
+	ldr	x2, [x0, #REQ_RESPONSE]
+	ldr	x0, =limine_hhdm
+	ldr	x3, [x0, #REQ_RESPONSE]
+	mov	x0, #0
+	mov	x1, #0
+	cbz	x2, 9f
+	cbz	x3, 9f
+	ldr	x4, [x2, #MEMMAP_COUNT]
+	ldr	x5, [x2, #MEMMAP_ENTRIES]	// array of pointers to entries: base, length, type
+1:	cbz	x4, 2f
+	ldr	x6, [x5], #8
+	ldr	x7, [x6, #16]
+	cmp	x7, #MEMMAP_USABLE
+	b.ne	3f
+	ldr	x7, [x6, #8]
+	cmp	x7, x1
+	b.ls	3f
+	mov	x1, x7				// the largest so far
+	ldr	x0, [x6]
+3:	sub	x4, x4, #1
+	b	1b
+2:	cbz	x1, 9f
+	ldr	x3, [x3, #HHDM_OFFSET]
+	add	x0, x0, x3
+9:	ret
 
 // Map virtual 0 - 1 GiB to physical 0 - 1 GiB as Device-nGnRE, through TTBR0.
 map_devices:

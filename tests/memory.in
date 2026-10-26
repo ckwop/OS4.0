@@ -1,0 +1,8 @@
+unused 100000000 > .
+create big 100000000 allot
+unused 40000000 < .
+: far ( -- n ) 42 ;  far .
+variable far-var  7 far-var !  far-var @ .
+99 constant far-const  far-const .
+: maker ( n "name" -- ) create , does> @ 1+ ;  10 maker far-made  far-made .
+unused cell+ allot
