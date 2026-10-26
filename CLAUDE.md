@@ -23,6 +23,7 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 - Never store player data as Forth source, and never persist execution tokens.
 - `sync` means `save-buffers`, then a device flush, then wait for completion. New player: record, `sync`, then index entry, `sync`.
 - Every hardware access goes through HAL words (`net-send`, `net-poll`, `blk-read`, `blk-write`, `blk-flush`, `key`, `emit`). No driver details above `hal/`.
+- Never expose the OS to the public internet while any `docs/tech-debt.md` entry marked **must fix before public** is open.
 - Barriers (`dmb`/`dsb`) and other ordering-sensitive operations are named Forth words, never inline.
 
 ## Code conventions
