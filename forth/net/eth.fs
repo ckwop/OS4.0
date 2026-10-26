@@ -15,15 +15,25 @@
 
 : .ip  ( u -- )
   4 0 do  dup 24 i 8 * - rshift 255 and (.) type  i 3 < if [char] . emit then  loop drop ;
-: ip   ( "a.b.c.d" -- u )
-  parse-name  0 0 2swap                                   ( ip octet addr u )
+-268 message: not an IPv4 address
+
+variable ip-acc   variable octet   variable digits   variable dots
+: ip>u  ( addr u -- ip true | false )  \ "a.b.c.d": four parts of 0-255
+  0 ip-acc !  0 octet !  0 digits !  0 dots !
   0 ?do
-    dup i + c@  dup [char] . = if
-      drop >r  swap 8 lshift +  0  r>
+    dup i + c@
+    dup [char] . = if
+      drop  digits @ 0= if drop false unloop exit then
+      ip-acc @ 8 lshift octet @ + ip-acc !  0 octet !  0 digits !  1 dots +!
     else
-      [char] 0 -  rot 10 * +  swap
+      [char] 0 -  dup 10 u< 0= if 2drop false unloop exit then
+      octet @ 10 * +  dup 255 > if 2drop false unloop exit then
+      octet !  1 digits +!
     then
-  loop drop  swap 8 lshift + ;
+  loop drop
+  digits @ 0=  dots @ 3 <>  or if false exit then
+  ip-acc @ 8 lshift octet @ +  true ;
+: ip  ( "a.b.c.d" -- u )  parse-name ip>u 0= if -268 throw then ;
 : .mac  ( addr -- )
   base @ >r hex
   6 0 do  dup i + c@ 0 <# # # #> type  i 5 < if [char] : emit then  loop drop
@@ -47,6 +57,10 @@ $0806 constant type-arp
 
 create rx-frame 2048 allot             \ the frame being handled
 create tx-frame 2048 allot             \ the frame being built
+\ A task that builds and sends a packet holds TX-LOCK from start to finish, as
+\ every sending word below does: building in the shared frames (tx-frame and
+\ ARP's) and sending, which may pause while the device works.
+semaphore tx-lock
 create broadcast-mac  $ff c, $ff c, $ff c, $ff c, $ff c, $ff c,
 variable frames-in
 variable frames-out

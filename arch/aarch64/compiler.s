@@ -117,6 +117,11 @@ dodoes:
 	NEXT
 	defconst "main-task", w_maintask, user0	// ( -- task ) the console task
 	defconst "/user", w_usersize, U_SIZE	// ( -- n ) bytes in a user area
+	defconst "user-free", w_userfree, U_FREE // ( -- n ) the first offset free for USER
+	defconst "f-immediate", w_fimmediate, F_IMMED	// ( -- mask ) header flag bits,
+	defconst "f-hidden", w_fhidden, F_HIDDEN	// in the byte after the link
+	defconst "f-compile-only", w_fconly, F_CONLY
+	defconst "f-length", w_flength, F_LENMASK
 	defconst "watchdog-limit", w_watchdog, var_watchdog // ( -- addr ) counter ticks; 0: off
 	defuser	"base", w_base, U_BASE		// ( -- addr )
 	defuser	"state", w_state, U_STATE	// ( -- addr ) true while compiling

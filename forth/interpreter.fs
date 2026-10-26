@@ -6,8 +6,8 @@
 
 : source  ( -- addr u )  'tib @ #tib @ ;
 : lower   ( c -- c' )  dup [char] A [char] Z 1+ within if 32 + then ;
-: hidden?    ( nt -- flag )  cell+ c@ 64 and 0<> ;
-: immediate? ( nt -- flag )  cell+ c@ 128 and 0<> ;
+: hidden?    ( nt -- flag )  cell+ c@ f-hidden and 0<> ;
+: immediate? ( nt -- flag )  cell+ c@ f-immediate and 0<> ;
 : words   ( -- )
   latest @ begin ?dup while
     dup hidden? 0= if dup name>string type space then  @
@@ -43,7 +43,7 @@
   repeat nip nip ;
 : find-word  ( addr u -- 0 | xt 1 | xt -1 )  \ 1 if immediate
   find-name dup if  dup name>xt swap immediate? if 1 else -1 then  then ;
-: compile-only?  ( nt -- flag )  cell+ c@ 32 and 0<> ;
+: compile-only?  ( nt -- flag )  cell+ c@ f-compile-only and 0<> ;
 
 \ Numbers: optional -, optional base prefix ($ hex, # decimal, % binary), digits;
 \ or a character literal such as 'A'.

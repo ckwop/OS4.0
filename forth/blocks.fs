@@ -15,6 +15,7 @@
 -260 message: all block buffers are in use
 
 1024 constant b/buf
+semaphore blocks-lock       \ one task at a time in the buffers and on the disk
 
 \ ---- The disk header
 
@@ -37,17 +38,23 @@ variable volume-id
 : ?writable  ( u -- u )  disk-ok @ 0= if -258 throw then  dup 0= if -259 throw then ;
 
 : .disk  ( -- )  \ describe the data disk
-  mount  disk-ok @ if ." volume " volume-id @ (.) type ." , " else ." no valid header, " then
+  ['] mount blocks-lock locked
+  disk-ok @ if ." volume " volume-id @ (.) type ." , " else ." no valid header, " then
   #blocks @ (.) type ."  blocks" ;
 
 \ ---- Buffers. Each holds one block; LOAD pins the buffer it is reading from.
+
+\ Tasks share the buffers: each public word below holds BLOCKS-LOCK, so a task
+\ that pauses mid-request (waiting for the disk) cannot have its buffer taken.
+\ An address from BLOCK stays valid only until the task next pauses, unless
+\ its buffer is pinned (as LOAD does).
 
 8 constant #buffers
 create buffers  #buffers b/buf * allot
 create buf-blocks  #buffers cells allot   \ the block in each buffer, or -1
 create buf-dirty   #buffers cells allot   \ true once UPDATEd
 create buf-pins    #buffers cells allot   \ LOADs reading from it
-variable last-buf                         \ the buffer BLOCK or BUFFER returned last
+user last-buf                             \ the buffer this task's BLOCK or BUFFER returned last
 variable next-buf                         \ where the search for a free one starts
 
 : buf    ( i -- addr )  b/buf * buffers + ;
@@ -57,9 +64,9 @@ variable next-buf                         \ where the search for a free one star
 : pin    ( i -- )  1 swap 'pins +! ;
 : unpin  ( i -- )  -1 swap 'pins +! ;
 
-: empty-buffers  ( -- )  \ forget every buffer, discarding changes
+: (empty-buffers)  ( -- )
   #buffers 0 do  -1 i 'blk !  0 i 'dirty !  0 i 'pins !  loop ;
-empty-buffers
+(empty-buffers)
 
 : buf-of  ( u -- i | -1 )  \ the buffer holding block u
   #buffers 0 do  dup i 'blk @ = if drop i unloop exit then  loop drop -1 ;
@@ -75,23 +82,33 @@ empty-buffers
     dup 'pins @ 0= if  dup write-buf unloop exit  then drop
   loop -260 throw ;
 
-: buffer  ( u -- addr )  \ a buffer for block u, without reading it from disk
+: (buffer)  ( u -- addr )
   ?block dup buf-of dup 0< if
     drop victim  tuck 'blk !  0 over 'dirty !
   else nip then
   dup last-buf !  buf ;
 
-: block  ( u -- addr )  \ block u, read from disk unless already buffered
+: (block)  ( u -- addr )
   dup buf-of 0< if
-    dup dup buffer swap  ['] blk-read catch ?dup if
+    dup dup (buffer) swap  ['] blk-read catch ?dup if
       nip nip  -1 last-buf @ 'blk !  throw
     then
-  then buffer ;
+  then (buffer) ;
 
-: update        ( -- )  last-buf @ dup 'blk @ ?writable drop  true swap 'dirty ! ;
-: save-buffers  ( -- )  #buffers 0 do i write-buf loop ;
-: flush         ( -- )  save-buffers empty-buffers ;
-: sync          ( -- )  save-buffers blk-flush ;  \ durable once this returns
+: (update)        ( -- )  last-buf @ dup 'blk @ ?writable drop  true swap 'dirty ! ;
+: (save-buffers)  ( -- )  #buffers 0 do i write-buf loop ;
+
+: buffer  ( u -- addr )  \ a buffer for block u, without reading it from disk
+  ['] (buffer) blocks-lock locked ;
+: block   ( u -- addr )  \ block u, read from disk unless already buffered
+  ['] (block) blocks-lock locked ;
+: update         ( -- )  ['] (update) blocks-lock locked ;   \ the last buffer this task got
+: save-buffers   ( -- )  ['] (save-buffers) blocks-lock locked ;
+: empty-buffers  ( -- )  ['] (empty-buffers) blocks-lock locked ;  \ discarding changes
+: (flush)  ( -- )  (save-buffers) (empty-buffers) ;
+: flush          ( -- )  ['] (flush) blocks-lock locked ;
+: (sync)   ( -- )  (save-buffers) blk-flush ;
+: sync           ( -- )  ['] (sync) blocks-lock locked ;  \ durable once this returns
 
 \ ---- Loading source from blocks. A block is 16 lines of 64 characters.
 
@@ -114,7 +131,7 @@ variable 'interpret     \ xt of INTERPRET, set by interpreter.fs
 
 \ ---- Looking at and editing blocks
 
-variable scr            \ the screen LIST, WIPE and >LINE work on
+user scr                \ the screen LIST, WIPE and >LINE work on, per task
 
 : .line  ( addr u -- )  \ a space, then the text, if the line is not blank
   -trailing ?dup if

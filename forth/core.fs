@@ -44,12 +44,13 @@
 : c,       ( c -- )  here c! 1 allot ;
 : aligned  ( addr -- addr' )  7 + -8 and ;
 : align    ( -- )  here aligned dp ! ;
-\ Header flags byte: bit 7 immediate, bit 6 hidden, bit 5 compile-only, bits 0-4 length.
-: compile-only  ( -- )  latest @ cell+ dup c@ 32 or swap c! ;  \ refused outside definitions
+\ Header flags byte, as the kernel's f- constants: f-immediate, f-hidden,
+\ f-compile-only, and f-length (the name's length).
+: compile-only  ( -- )  latest @ cell+ dup c@ f-compile-only or swap c! ;  \ refused outside definitions
 : literal  ( x -- )  lit lit , , ; immediate compile-only   \ compiles: lit x
 : '        ( "name" -- xt )  parse-find drop ;
 : [']      ( "name" -- )  ' [ ' literal , ] ; immediate compile-only
-: name>string  ( nt -- addr len )  cell+ dup 1+ swap c@ 31 and ;
+: name>string  ( nt -- addr len )  cell+ dup 1+ swap c@ f-length and ;
 : name>xt  ( nt -- xt )  name>string + aligned ;
 : recurse  ( -- )  latest @ name>xt , ; immediate compile-only
 
@@ -116,6 +117,30 @@
 : allot   ( n -- )  dup unused > if -8 throw then  allot ;
 : c,      ( c -- )  here c! 1 allot ;
 
+\ ---- User variables: one per task, in its user area. A new task starts with
+\ a copy of its creator's values.
+
+variable next-user   user-free next-user !
+: user  ( "name" -- )  \ name ( -- addr ) gives this task's cell
+  next-user @  dup cell+ /user > if -267 throw then
+  create ,  1 cells next-user +!
+  does> @ up@ + ;
+
+\ ---- Semaphores: a lock that a task can hold across pauses; others wanting it
+\ pause until it is free. Re-entrant: the holder may GET it again, and must
+\ RELEASE it as many times. LOCKED runs an xt holding a semaphore and releases
+\ it however the xt ends.
+
+: semaphore  ( "name" -- )  create 0 , 0 , ;      \ holder (a task), count
+: get  ( sem -- )
+  dup @ up@ = if  cell+ 1 swap +!  exit  then
+  begin dup @ while pause repeat
+  up@ over !  cell+ 1 swap ! ;
+: release  ( sem -- )
+  dup @ up@ <> if drop exit then
+  dup cell+ -1 over +! @ 0= if 0 swap ! else drop then ;
+: locked  ( i*x xt sem -- j*x )  dup >r get  catch  r> release  throw ;
+
 \ ---- Counted loops. ?DO and LEAVE add forward branches to a chain that
 \ LOOP and +LOOP resolve; DO saves the enclosing loop's chain.
 
@@ -151,3 +176,23 @@ variable leaves
   loop 2drop
   r> r> 2dup = if 2drop 0 exit then  < if 1 else -1 then ;
 
+
+\ ---- Reference definitions of kernel hot spots. The kernel has these as
+\ assembly for speed; here they are in Forth, so the definition is never lost.
+\ PICK-REF and UM/MOD-REF are real words, which tests/reference checks against
+\ the kernel's. The loop runtime cannot be swapped in, so it is shown only:
+\   : (do)    ( limit start -- ) ( R: -- limit index )   r> -rot swap >r >r >r ;
+\   : (loop)  ( -- ) ( R: limit index -- limit index+1 | )  \ the next cell is the loop start
+\     r> r> 1+ r@ over = if  r> 2drop cell+  else  >r @  then >r ;
+\   : i       ( -- index )  r> r@ swap >r ;
+
+: pick-ref  ( xu ... x0 u -- xu ... x0 xu )  1+ cells sp@ + @ ;
+
+variable ref-divisor   variable ref-carry
+: um/mod-ref  ( ud u -- urem uquot )  \ shift and subtract, a bit at a time
+  ref-divisor !
+  64 0 do
+    dup 63 rshift ref-carry !                      \ the bit leaving the high cell
+    1 lshift over 63 rshift or  swap 1 lshift swap \ shift ud left one bit
+    ref-carry @  over ref-divisor @ u< 0= or if  ref-divisor @ -  swap 1 or swap  then
+  loop swap ;

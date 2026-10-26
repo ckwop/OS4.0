@@ -58,9 +58,7 @@ variable rx-udp                 \ the datagram being handled
 : tx-udp  ( -- addr )  tx-frame ip-payload + ;
 variable udp-to
 
-\ Send len bytes from data, from our port to dst-port at dst-ip. False if the
-\ destination's MAC is not known yet: an ARP request has gone out; try again.
-: udp-send  ( data len port dst-ip dst-port -- flag )
+: (udp-send)  ( data len port dst-ip dst-port -- flag )
   tx-udp udp-dport + n16!  udp-to !  tx-udp udp-sport + n16!
   dup udp-max > if 2drop -265 throw then
   dup >r  tx-udp /udp + swap cmove
@@ -69,6 +67,10 @@ variable udp-to
   my-ip @ udp-to @ 2 pick pseudo-sum  tx-udp 2 pick sum16 fold
   ?dup 0= if $ffff then  tx-udp udp-checksum + n16!
   proto-udp udp-to @ ip-send ;
+
+\ Send len bytes from data, from our port to dst-port at dst-ip. False if the
+\ destination's MAC is not known yet: an ARP request has gone out; try again.
+: udp-send  ( data len port dst-ip dst-port -- flag )  ['] (udp-send) tx-lock locked ;
 
 : udp-reply  ( data len -- flag )  \ to the sender of the datagram being handled
   udp-local-port udp-peer-ip udp-peer-port udp-send ;

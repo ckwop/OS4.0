@@ -120,9 +120,10 @@ $74726976 constant virtio-magic
 -263 message: a device did not respond in time
 5000 constant device-timeout          \ ms
 
-\ Wait for the device to use one more chain. Spins: the block layer cannot yet
-\ let other tasks in mid-request (docs/tech-debt.md TD-7).
+\ Wait for the device to use one more chain, letting other tasks run meanwhile.
+\ Callers hold a lock for the queue (blocks-lock for the disk, tx-lock for the
+\ network), so no other task can submit to it in between.
 : vq-wait  ( vq -- )
   device-timeout deadline >r
-  begin dup vq-used? 0= while  r@ expired? if  r> 2drop -263 throw  then  repeat
+  begin dup vq-used? 0= while  r@ expired? if  r> 2drop -263 throw  then  pause  repeat
   r> drop  vq-take 2drop ;

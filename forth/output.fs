@@ -72,4 +72,5 @@ variable messages
 -16 message: missing name
 -19 message: name too long
 -24 message: invalid numeric argument
+-267 message: no room for another user variable
 

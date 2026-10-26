@@ -1,0 +1,9 @@
+OS 4.0
+ip 10.0.2.15 .ip 10.0.2.15 ok
+ip 192.168.1.255 .ip 192.168.1.255 ok
+ip 0.0.0.0 .ip 0.0.0.0 ok
+ip 300.1.1.1 not an IPv4 address
+ip 1.2.3 not an IPv4 address
+ip 1.2.3.4.5 not an IPv4 address
+ip 1..2.3 not an IPv4 address
+ip a.b.c.d not an IPv4 address

@@ -53,10 +53,13 @@
 	.equ	U_NAME, 112		// ( addr len ) as 2! stores it: length, then address
 	.equ	U_SLIMIT, 128		// lowest safe data stack pointer: below it is overflow
 	.equ	U_RLIMIT, 136		// lowest safe return stack pointer (keep after U_SLIMIT)
+	.equ	U_FREE, 144		// the rest is for user variables defined in Forth (USER)
 	.equ	U_SIZE, 256
 	.equ	STACK_MARGIN, 16 * 8	// room left below a limit for reporting the overflow
 
-	// THROW codes for errors the kernel detects (standard codes, plus -256)
+	// THROW codes for errors the kernel detects (standard codes, plus -256). Their
+	// messages are registered with MESSAGE: in forth/output.fs (forth/tasks.fs for
+	// -262); keep the two lists in step.
 	.equ	THROW_OVERFLOW, -3
 	.equ	THROW_UNDERFLOW, -4
 	.equ	THROW_ROVERFLOW, -5

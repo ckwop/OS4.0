@@ -45,16 +45,20 @@ create arp-frame 64 allot
   arp-out arp-oper + n16!
   net-mac arp-out arp-sha + 6 cmove  my-ip @ arp-out arp-spa + n32! ;
 
-: arp-request  ( ip -- )  \ who has ip? Broadcast.
+: (arp-request)  ( ip -- )
   1 arp-header  arp-out arp-tha + 6 0 fill  arp-out arp-tpa + n32!
   arp-frame broadcast-mac type-arp /arp eth-send ;
+: arp-request  ( ip -- )  \ who has ip? Broadcast.
+  ['] (arp-request) tx-lock locked ;
 
-: arp-reply  ( request -- )  \ answer the request at that address
+: (arp-reply)  ( request -- )
   2 arp-header
   dup arp-sha + arp-out arp-tha + 6 cmove
   dup arp-spa + n32@ arp-out arp-tpa + n32!
   arp-frame swap arp-sha + type-arp /arp eth-send
   1 arps-answered +! ;
+: arp-reply  ( request -- )  \ answer the request at that address
+  ['] (arp-reply) tx-lock locked ;
 
 : arp-in  ( packet -- )  \ an ARP packet; ignore any not about us
   dup arp-htype + n16@ 1 =  over arp-ptype + n16@ type-ipv4 = and 0= if drop exit then

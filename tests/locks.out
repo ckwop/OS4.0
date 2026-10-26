@@ -1,0 +1,22 @@
+OS 4.0
+semaphore door  ok
+task waiter  ok
+: yield ( n -- ) 0 ?do pause loop ;  ok
+: wait-door ( -- ) door get ." waiter has the door" cr door release ;  ok
+door get  ' wait-door waiter start  5 yield  .( console still holds the door) cr console still holds the door
+ ok
+door release  5 yield waiter has the door
+ ok
+: twice ( -- ) door get door get door release ." held once more: " door @ up@ = . door release ." then free: " door @ . cr ;  ok
+twice held once more: -1 then free: 0 
+ ok
+: boom ( -- ) 1 0 / ;  ok
+' boom door ' locked catch .  door @ . -10 0  ok
+task writer1  task writer2  ok
+: fill-block ( u c -- ) swap buffer b/buf rot fill update ;  ok
+: write-a ( -- ) 30 0 do  100 i + [char] a fill-block  pause  loop ;  ok
+: write-b ( -- ) 30 0 do  200 i + [char] b fill-block  pause  loop ;  ok
+' write-a writer1 start  ' write-b writer2 start  2000 ms  flush  ok
+variable good  ok
+: verify ( first c -- ) 0 good !  swap 30 0 do  dup i + block  dup c@ 3 pick =  swap b/buf 1- + c@ 3 pick = and  if 1 good +! then  loop 2drop  good @ . ;  ok
+100 char a verify  200 char b verify 30 30  ok
