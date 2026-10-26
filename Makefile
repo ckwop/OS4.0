@@ -46,7 +46,7 @@ comma   := ,
 CONSOLE := python3 tools/console-run.py
 TESTS   := python3 tools/run-tests.py --setup "$(TEST_SETUP)"
 
-.PHONY: all build image data run run-hosted test test-hosted test-virt ping-check clean
+.PHONY: all build image data run run-hosted run-tap test test-hosted test-virt ping-check clean
 
 all: build
 
@@ -106,10 +106,19 @@ test-hosted: $(HOSTED)
 test-virt: $(BOOT_IMG)
 	$(TESTS) --timeout 120 --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST))" tests tests/baremetal
 
-# The milestone 6 acceptance test, literally: boot on a TAP device and ping the
-# OS from this container. Needs: docker run --cap-add NET_ADMIN --device /dev/net/tun
+# The OS on a TAP device, reachable from this container at 10.0.2.15 (the
+# container is 10.0.2.2). Needs: docker run --cap-add NET_ADMIN --device /dev/net/tun
+NET_TAP := -netdev tap$(comma)id=net$(comma)ifname=tap0$(comma)script=no$(comma)downscript=no
+
+# Boot it with the console on this terminal; ping it from another shell in the
+# same container (docker exec).
+run-tap: $(BOOT_IMG) $(DATA_IMG)
+	@sh tools/tap-up.sh
+	@$(call VIRT_CMD,$(DATA_IMG),$(NET_TAP))
+
+# The milestone 6 acceptance test, literally: boot, ping the OS, shut down.
 ping-check: $(BOOT_IMG) $(DATA_IMG)
-	sh tools/ping-check.sh "$(call VIRT_CMD,$(DATA_IMG),-netdev tap$(comma)id=net$(comma)ifname=tap0$(comma)script=no$(comma)downscript=no)"
+	sh tools/ping-check.sh "$(call VIRT_CMD,$(DATA_IMG),$(NET_TAP))"
 
 clean:
 	rm -rf $(BUILD) tests/*.actual tests/*/*.actual

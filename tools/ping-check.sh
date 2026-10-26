@@ -5,9 +5,7 @@
 # Usage: tools/ping-check.sh "<qemu command using -netdev tap,ifname=tap0>"
 set -eu
 
-ip tuntap add tap0 mode tap
-ip addr add 10.0.2.2/24 dev tap0
-ip link set tap0 up
+sh "$(dirname "$0")/tap-up.sh"
 trap 'ip link del tap0 2>/dev/null || true' EXIT
 
 console=$(mktemp)

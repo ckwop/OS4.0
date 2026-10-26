@@ -18,6 +18,7 @@ Known shortcuts, gaps and risks in OS 4.0, and what we plan to do about them. Ad
 | TD-15 | Outgoing packets share one `tx-frame`. That is safe only because building and sending a packet never pauses; a task that paused in between would have its packet overwritten. | medium, from milestone 8 | Before TCP, which will wait mid-conversation: one frame per sender, or a lock. |
 | TD-16 | `ip` reads dotted addresses without checking them: `ip 300.1` gives a wrong address, not an error. | low | Check four octets of 0-255; throw otherwise. |
 | TD-17 | The network stack sends no ICMP errors (port or protocol unreachable) and ignores IP options and fragments. | low | Add destination-unreachable replies with UDP (milestone 7); fragments only if a real need appears. |
+| TD-18 | The address, netmask and gateway are set at boot to QEMU's user-networking values (variables `my-ip`, `netmask`, `gateway`). On EC2 the VPC assigns addresses by DHCP. | high for milestone 12 | A DHCP client over UDP, falling back to the static values. Before the EC2 AMI (milestone 12). |
 
 ## Closed
 
