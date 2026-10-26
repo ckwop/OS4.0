@@ -1,0 +1,8 @@
+echo-service
+: heard ( data len -- ) ." heard from " udp-peer-ip .ip ." :" udp-peer-port (.) type ." : " type cr ;
+' heard 5000 udp-bind
+1500 ms
+s" hello, peer" 5000 ip 10.0.2.2 7 udp-send .  500 ms
+5000 udp-unbind
+s" again" 5000 ip 10.0.2.2 7 udp-send .  500 ms
+5000 ms

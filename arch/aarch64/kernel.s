@@ -172,6 +172,7 @@ boot_files:
 	bootfile "forth/net/arp.fs"
 	bootfile "forth/net/ip.fs"
 	bootfile "forth/net/icmp.fs"
+	bootfile "forth/net/udp.fs"
 	bootfile "forth/net/net.fs"
 	bootfile "forth/interpreter.fs"	// last: ends by starting the Forth QUIT loop
 boot_files_end:

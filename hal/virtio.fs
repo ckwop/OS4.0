@@ -64,18 +64,28 @@ $74726976 constant virtio-magic
   nip ;
 : virtio-ready  ( base -- )  st-driver-ok status+ ;
 
-\ ---- Split virtqueues, one page each: descriptors at 0, the available ring at
-\ 128, the used ring at 256, and the last used index we have seen at 512.
+\ ---- Split virtqueues. A vq is five cells: its size (a power of two), the last
+\ used index seen, and the addresses of its three parts, which follow: the
+\ descriptor table (16 bytes each), the available ring and the used ring.
 
-8 constant vq-size
 1 constant d-next                     \ descriptor flags: the chain continues
 2 constant d-write                    \ the device writes this buffer
 
-: new-vq     ( -- vq )  here 4095 + -4096 and dp !  here 4096 allot  dup 4096 0 fill ;
-: vq-desc    ( vq i -- addr )  16 * + ;
-: vq-avail   ( vq -- addr )  128 + ;
-: vq-used    ( vq -- addr )  256 + ;
-: vq-seen    ( vq -- addr )  512 + ;
+: vq-size    ( vq -- n )  @ ;
+: vq-seen    ( vq -- addr )  cell+ ;
+: vq-desc    ( vq i -- addr )  16 *  swap 2 cells + @ + ;
+: vq-avail   ( vq -- addr )  3 cells + @ ;
+: vq-used    ( vq -- addr )  4 cells + @ ;
+
+: new-vq  ( n -- vq )  \ a virtqueue of n entries, zeroed
+  align here >r  dup ,  0 , 0 , 0 , 0 ,
+  here 15 + -16 and dp !
+  here r@ 2 cells + !  dup 16 * allot           \ descriptors
+  here r@ 3 cells + !  dup 2* 6 + allot         \ available ring: flags, index, entries, event
+  here 3 + -4 and dp !
+  here r@ 4 cells + !  8 * 6 + allot            \ used ring: flags, index, entries, event
+  r@ 0 vq-desc  here over - 0 fill
+  r> ;
 
 \ Fill descriptor i: buffer, length, flags, next descriptor in the chain.
 : desc!  ( addr len flags next vq i -- )
@@ -83,9 +93,9 @@ $74726976 constant virtio-magic
 
 : virtio-queue  ( base vq n -- )  \ give the device queue n, using vq
   2 pick vm-queue-sel vm!
-  over vm-queue-num-max vm@ vq-size < if -261 throw then
-  vq-size 2 pick vm-queue-num vm!
-  dup >phys 2 pick vm-queue-desc vm64!
+  over vm-queue-num-max vm@  over vq-size < if -261 throw then
+  dup vq-size 2 pick vm-queue-num vm!
+  dup 0 vq-desc >phys 2 pick vm-queue-desc vm64!
   dup vq-avail >phys 2 pick vm-queue-driver vm64!
   vq-used >phys over vm-queue-device vm64!
   1 swap vm-queue-ready vm! ;
@@ -93,7 +103,7 @@ $74726976 constant virtio-magic
 \ Offer the chain starting at descriptor head, and ring queue n's doorbell.
 : vq-submit  ( head vq base n -- )
   2swap  dup vq-avail 2 + w@ >r                    ( base n head vq )
-  r@ vq-size 1- and 2* 4 + over vq-avail + rot swap w!
+  r@ over vq-size 1- and 2* 4 + over vq-avail + rot swap w!
   dmb                                              \ the ring entry, then the index
   r> 1+ swap vq-avail 2 + w!
   dsb                                              \ all of it, then the doorbell
@@ -105,7 +115,7 @@ $74726976 constant virtio-magic
 : vq-take   ( vq -- id len )  \ the next used chain: its head and length
   dmb                                              \ the index, then the entry
   dup vq-seen @  dup 1+ $ffff and  2 pick vq-seen !
-  vq-size 1- and 8 * 4 +  swap vq-used +  dup l@ swap 4 + l@ ;
+  over vq-size 1- and 8 * 4 +  swap vq-used +  dup l@ swap 4 + l@ ;
 
 -263 message: a device did not respond in time
 5000 constant device-timeout          \ ms

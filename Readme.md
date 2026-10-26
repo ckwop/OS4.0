@@ -66,6 +66,10 @@ The OS is 10.0.2.15 on QEMU's user network, with the gateway at 10.0.2.2. It ans
 ```forth
 .net                                   \ address, MAC and gateway
 ip 10.0.2.2 ping                       \ three echo requests
+echo-service                           \ answer UDP echo on port 7
+: heard ( data len -- ) ." heard: " type cr ;
+' heard 5000 udp-bind                  \ datagrams to port 5000 go to HEARD
+s" hello" 5000 ip 10.0.2.2 7 udp-send drop
 ```
 
 To ping the OS from inside the container with the real `ping` (this needs extra privileges for a TAP device):
@@ -86,7 +90,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 4 | Blocks | Done |
 | 5 | Multitasking and timer | Done |
 | 6 | Network to ping | Done |
-| 7 | UDP | Not started |
+| 7 | UDP | Done |
 | 8 | TCP, many connections | Not started |
 | 9 | Network REPL | Not started |
 | 10 | MUD engine | Not started |

@@ -13,9 +13,10 @@
 2048 constant /net-buf
 
 variable net-base                     \ the device, once started; 0 until then
-new-vq constant rx-vq
-new-vq constant tx-vq
-create rx-bufs  vq-size /net-buf * allot
+64 constant #rx-bufs                  \ frames that can arrive between two polls
+#rx-bufs new-vq constant rx-vq
+8 new-vq constant tx-vq
+create rx-bufs  #rx-bufs /net-buf * allot
 create tx-buf   /net-buf allot
 create mac 6 allot
 
@@ -33,7 +34,7 @@ create mac 6 allot
   dup tx-vq 1 virtio-queue
   dup virtio-ready
   net-base !
-  vq-size 0 do i rx-post loop ;
+  #rx-bufs 0 do i rx-post loop ;
 
 : net-up?   ( -- flag )  net-open  net-base @ 0<> ;
 : net-mac   ( -- addr )  mac ;

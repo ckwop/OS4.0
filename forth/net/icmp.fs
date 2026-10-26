@@ -1,4 +1,5 @@
-\ net/icmp.fs: ICMP echo. Answers pings, and PING sends them.
+\ net/icmp.fs: ICMP. Answers pings, and PING sends them; tells senders when a
+\ packet could not be delivered.
 
 0 constant icmp-type           \ 8 echo request, 0 echo reply
 1 constant icmp-code
@@ -14,6 +15,22 @@ variable echoes-answered
   0 tx-icmp icmp-checksum + n16!
   over tx-icmp swap checksum  tx-icmp icmp-checksum + n16!
   proto-icmp swap ip-send ;
+
+\ Destination unreachable: tell the sender of the packet being handled that it
+\ could not be delivered, quoting its header and first 8 bytes. Never for a
+\ broadcast. Codes: 2 protocol unreachable, 3 port unreachable.
+3 constant icmp-unreachable
+2 constant protocol-unreachable
+3 constant port-unreachable
+: unreachable  ( code -- )
+  rx-ip ip-dst + n32@ broadcast-ip = if drop exit then
+  icmp-unreachable tx-icmp icmp-type + c!  tx-icmp icmp-code + c!
+  0 tx-icmp 4 + n32!
+  rx-ip ip-ver-ihl + c@ 15 and 4 * 8 +  dup >r
+  rx-ip tx-icmp 8 + rot cmove
+  r> 8 + ip-source icmp-send drop ;
+: no-protocol  ( payload len -- )  2drop protocol-unreachable unreachable ;
+' no-protocol 'no-protocol !
 
 : echo-reply  ( message len -- )  \ the same identifier, sequence and data, back
   dup >r  tx-icmp swap cmove  0 tx-icmp icmp-type + c!

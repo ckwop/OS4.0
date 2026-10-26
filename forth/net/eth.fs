@@ -58,10 +58,13 @@ variable frames-out
   r> /eth + net-send  1 frames-out +! ;
 
 \ ---- The Internet checksum: the one's complement of the one's complement sum
-\ of 16-bit words. A packet whose checksum field is right sums to 0.
+\ of 16-bit words. A packet whose checksum field is right sums to 0. SUM16 and
+\ FOLD let a checksum cover parts that are not in one piece (UDP's pseudo-header).
 
-: checksum  ( addr u -- u16 )
-  0 -rot  begin dup 1 > while  over n16@ >r rot r> + -rot  2 /string  repeat
-  if c@ 8 lshift + else drop then
+: sum16  ( sum addr u -- sum' )  \ add the bytes as 16-bit words, padding an odd one
+  begin dup 1 > while  over n16@ >r rot r> + -rot  2 /string  repeat
+  if c@ 8 lshift + else drop then ;
+: fold   ( sum -- u16 )  \ the checksum of a sum
   begin dup 16 rshift while  dup $ffff and swap 16 rshift +  repeat
   invert $ffff and ;
+: checksum  ( addr u -- u16 )  0 -rot sum16 fold ;

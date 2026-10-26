@@ -15,7 +15,7 @@
 variable blk-base                     \ the device, once started; 0 until then
 variable blk-features
 variable #disk-blocks
-new-vq constant blk-vq
+8 new-vq constant blk-vq              \ one request at a time needs only 3
 create blk-header 16 allot            \ request type, reserved, sector
 create blk-status 8 allot             \ the device's reply: 0 means done
 

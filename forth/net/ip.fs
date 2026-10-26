@@ -22,6 +22,7 @@
 
 create ip-handlers  256 cells allot   ip-handlers 256 cells 0 fill
 : ip-handler!  ( xt protocol -- )  cells ip-handlers + ! ;
+variable 'no-protocol  ' 2drop 'no-protocol !   \ ( payload len -- ) for the rest; icmp.fs replies
 
 : rx-ip  ( -- addr )  rx-frame /eth + ;         \ the packet being handled
 : tx-ip  ( -- addr )  tx-frame /eth + ;         \ the packet being built
@@ -39,7 +40,7 @@ create ip-handlers  256 cells allot   ip-handlers 256 cells 0 fill
   r@ ip-dst + n32@  dup my-ip @ =  swap broadcast-ip = or 0= if  2drop r> drop exit  then
   ip-source dup on-link? if  rx-frame eth-src + swap arp-learn  else drop then
   over - swap r@ + swap                          ( payload len )
-  r> ip-protocol + c@ cells ip-handlers + @ ?dup if execute else 2drop then ;
+  r> ip-protocol + c@ cells ip-handlers + @ ?dup if execute else 'no-protocol @ execute then ;
 
 \ Send len bytes of payload, already at ip-payload in tx-frame, to dst. False if
 \ dst's MAC is not known yet: an ARP request has gone out instead; try again.
