@@ -70,7 +70,8 @@
   if r> if negate then true else r> drop false then ;
 
 : undefined  ( addr u -- )  errname 2! -13 throw ;
-: ?stack     ( -- )  depth 0< if -4 throw then ;
+: ?stack     ( -- )  \ overflows are caught as they happen, underflows here
+  depth 0< if -4 throw then  rp@ task-r0 @ u> if -6 throw then ;
 : interpret  ( -- )  \ the current line, word by word
   begin parse-name dup while
     2dup find-name ?dup if
@@ -81,6 +82,17 @@
     then ?stack
   repeat 2drop ;
 ' interpret 'interpret !   \ for LOAD
+
+\ Words that look names up for the user, rebuilt on FIND-WORD so that every
+\ lookup after boot goes through it (wordlists will change only FIND-NAME).
+\ The kernel's versions are only for loading the boot files.
+: parse-find  ( "name" -- xt 1 | xt -1 )  \ throws if the word is not found
+  parse-name dup 0= if -16 throw then
+  2dup find-word ?dup if  2swap 2drop  else  undefined  then ;
+: '         ( "name" -- xt )  parse-find drop ;
+: [']       ( "name" -- )  ' postpone literal ; immediate compile-only
+: postpone  ( "name" -- )
+  parse-find 0< if  postpone literal  ['] , ,  else  ,  then ; immediate compile-only
 
 \ Terminal input. The Forth echoes what is typed: a serial console does not.
 \ KEY (tasks.fs) lets other tasks run while waiting.

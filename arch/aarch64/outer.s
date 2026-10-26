@@ -17,6 +17,9 @@ forth_cold:
 	str	x0, [UP, #U_S0]
 	ldr	x0, =rstack_top
 	str	x0, [UP, #U_R0]
+	ldr	x0, =dstack + STACK_MARGIN
+	ldr	x1, =rstack + STACK_MARGIN
+	stp	x0, x1, [UP, #U_SLIMIT]
 	ldr	x0, =msg_console
 	mov	x1, #msg_console_len
 	stp	x1, x0, [UP, #U_NAME]
@@ -41,6 +44,10 @@ do_quit:
 	cbz	x0, 1f
 	ldr	x1, =var_source		// boot files loaded: input is the terminal now
 	str	xzr, [x1]
+	isb				// the watchdog counts from here, not from boot
+	mrs	x2, cntvct_el0
+	ldr	x1, =var_task_since
+	str	x2, [x1]
 	mov	x8, x0
 	br	x8
 1:	ldr	IP, =quit_thread
@@ -151,6 +158,30 @@ err_range:
 	mov	x2, #msg_range_len
 	b	err_code
 
+err_overflow:
+	mov	x0, #THROW_OVERFLOW
+	ldr	x1, =msg_overflow
+	mov	x2, #msg_overflow_len
+	b	err_code
+
+err_roverflow:
+	mov	x0, #THROW_ROVERFLOW
+	ldr	x1, =msg_roverflow
+	mov	x2, #msg_roverflow_len
+	b	err_code
+
+err_runderflow:
+	mov	x0, #THROW_RUNDERFLOW
+	ldr	x1, =msg_runderflow
+	mov	x2, #msg_runderflow_len
+	b	err_code
+
+err_dictfull:
+	mov	x0, #THROW_DICTFULL
+	ldr	x1, =msg_dictfull
+	mov	x2, #msg_dictfull_len
+	b	err_code
+
 err_noquit:
 	ldr	x0, =msg_noquit
 	mov	x1, #msg_noquit_len
@@ -176,6 +207,8 @@ err_message:
 // try_throw: x0 code -> throw it to the nearest CATCH, as if the running word
 // had called THROW; does not return. Returns instead while the boot files are
 // loading or before THROW exists.
+// Both stacks are first reset to the CATCH frame, as THROW itself would: the
+// error may be that a stack overflowed, and THROW must not trip over it.
 try_throw:
 	ldr	x1, =var_source
 	ldr	x1, [x1]
@@ -186,7 +219,13 @@ try_throw:
 	ldr	x1, =var_sp0			// Forth keeps nothing on the hardware stack
 	ldr	x1, [x1]
 	mov	sp, x1
-	PUSH	x0
+	ldr	x1, [UP, #U_HANDLER]		// frame: enclosing handler, then saved SP@
+	cbz	x1, 2f
+	mov	RSP, x1
+	ldr	x3, [x1, #8]
+	add	DSP, x3, #8			// as SP! does
+	ldr	TOS, [x3]
+2:	PUSH	x0
 	mov	x8, x2
 	br	x8
 1:	ret

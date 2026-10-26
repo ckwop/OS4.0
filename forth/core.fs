@@ -106,6 +106,12 @@
 ' throw 'throw !                 \ kernel-detected errors throw from now on
 : abort  ( i*x -- )  -1 throw ;
 
+\ The dictionary is a fixed size: growing it past the end throws -8.
+\ (The kernel's , and HEADER check for themselves.)
+: unused  ( -- u )  dict-end here - ;
+: allot   ( n -- )  dup unused > if -8 throw then  allot ;
+: c,      ( c -- )  here c! 1 allot ;
+
 \ ---- Counted loops. ?DO and LEAVE add forward branches to a chain that
 \ LOOP and +LOOP resolve; DO saves the enclosing loop's chain.
 

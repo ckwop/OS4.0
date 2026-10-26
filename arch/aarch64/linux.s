@@ -22,11 +22,15 @@
 	.equ	SYS_RT_SIGRETURN, 139
 	.equ	SYS_MPROTECT, 226
 
+	.equ	SIGILL, 4
+	.equ	SIGBUS, 7
+	.equ	SIGSEGV, 11
 	.equ	SIGALRM, 14
 	.equ	SA_FLAGS, 0x14000004		// SA_RESTART | SA_RESTORER | SA_SIGINFO
 	.equ	ITIMER_REAL, 0
 	.equ	TICK_USEC, 10000
-	.equ	UC_PC, 440			// pc in the ucontext of a signal frame
+	.equ	UC_FAULT, 176			// fault_address in the ucontext of a signal frame
+	.equ	UC_PC, 440			// pc
 	.equ	POLLIN, 1
 
 	.equ	PROT_RWX, 7
@@ -56,8 +60,60 @@ _start:
 	mov	x0, #2
 	b	hal_bye
 1:	bl	terminal_raw
+	bl	faults_init
 	bl	timer_init
 	b	forth_cold
+
+// A bad memory access or instruction is reported, then the faulting word
+// throws -256, as on bare metal.
+faults_init:
+	stp	x29, x30, [sp, #-16]!
+	ldr	x1, =fault_action
+	ldr	x0, =fault_handler
+	str	x0, [x1]
+	ldr	x0, =SA_FLAGS
+	str	x0, [x1, #8]
+	ldr	x0, =alarm_restorer
+	str	x0, [x1, #16]
+	str	xzr, [x1, #24]
+	mov	x0, #SIGSEGV
+	bl	1f
+	mov	x0, #SIGBUS
+	bl	1f
+	mov	x0, #SIGILL
+	bl	1f
+	ldp	x29, x30, [sp], #16
+	ret
+1:	ldr	x1, =fault_action
+	mov	x2, #0
+	mov	x3, #8
+	mov	x8, #SYS_RT_SIGACTION
+	svc	#0
+	ret
+
+// x0 signal, x2 ucontext. Print "exception: signal 11 at <address>", then
+// resume the faulting code in exception_throw.
+fault_handler:
+	stp	x29, x30, [sp, #-32]!
+	stp	x0, x2, [sp, #16]
+	ldr	x0, =msg_fault
+	mov	x1, #msg_fault_len
+	bl	type_sub
+	ldr	x0, [sp, #16]
+	bl	print_udec_sub
+	ldr	x0, =msg_fault_at
+	mov	x1, #msg_fault_at_len
+	bl	type_sub
+	ldr	x2, [sp, #24]
+	ldr	x0, [x2, #UC_FAULT]
+	bl	print_hex_sub
+	mov	x0, #10
+	bl	hal_emit
+	ldr	x2, [sp, #24]
+	ldr	x0, =exception_throw
+	str	x0, [x2, #UC_PC]
+	ldp	x29, x30, [sp], #32
+	ret
 
 // Deliver SIGALRM every tick. Interrupted system calls restart.
 timer_init:
@@ -196,6 +252,12 @@ hal_bye:
 	mov	x8, #SYS_EXIT_GROUP
 	svc	#0
 
+	.section .rodata
+msg_fault:	.ascii	"\nexception: signal "
+	.equ	msg_fault_len, . - msg_fault
+msg_fault_at:	.ascii	" at "
+	.equ	msg_fault_at_len, . - msg_fault_at
+
 	.data
 	.balign	8
 alarm_interval:	.quad	0, TICK_USEC, 0, TICK_USEC	// interval, then first expiry: sec, usec
@@ -205,6 +267,7 @@ idle_time:	.quad	0, 1000000			// timespec: 1 ms
 	.bss
 	.balign	8
 alarm_action:	.space	32			// struct sigaction
+fault_action:	.space	32
 poll_stdin:	.space	8			// struct pollfd
 	.global	linux_args
 linux_args:	.space	8			// address of argc, then the argv pointers

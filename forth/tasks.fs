@@ -23,6 +23,8 @@
   up@ r@ /user move                               \ start from a copy of this task's
   r@ /user + /dstack +  dup r@ task-s0 field!
   /rstack +             r@ task-r0 field!
+  r@ /user + 16 cells +            r@ task-slimit field!   \ room to report an overflow
+  r@ task-s0 >user @ 16 cells +    r@ task-rlimit field!
   1 r@ task-status field!  0 r@ task-wake field!
   0 r@ handler field!  0 r@ blk field!  0 r@ state field!
   latest @ name>string  r@ task-name >user 2!
@@ -66,5 +68,7 @@ create task-thread  ' run-task ,                 \ where a started task begins
 5000 watchdog
 
 \ Others run while we wait. The timer ticks every 10 ms, so polling more often
-\ would not help; a receive interrupt could replace the polling later.
-: key  ( -- c )  begin key? 0= while 10 ms repeat key ;
+\ would not help; a receive interrupt could replace the polling later. It
+\ always pauses once, so a burst of typed or pasted input still lets other
+\ tasks run, and never looks to the watchdog like a task that will not pause.
+: key  ( -- c )  pause  begin key? 0= while 10 ms repeat key ;

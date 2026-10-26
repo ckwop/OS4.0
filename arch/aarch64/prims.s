@@ -5,20 +5,22 @@
 
 // ---- Inner interpreter
 
-	defcode	"exit", w_exit			// ( -- ) ( R: ip -- )
+	defcode	"exit", w_exit, F_CONLY			// ( -- ) ( R: ip -- )
 	RPOP	IP
 	NEXT
 
-	defcode	"lit", w_lit			// ( -- x ) push the cell that follows
+	defcode	"lit", w_lit, F_CONLY			// ( -- x ) push the cell that follows
 	str	TOS, [DSP, #-8]!
 	ldr	TOS, [IP], #8
 	NEXT
 
-	defcode	"branch", w_branch		// ( -- ) jump to the address that follows
+	defcode	"branch", w_branch, F_CONLY		// ( -- ) jump to the address that follows
+	CHECK_STACKS
 	ldr	IP, [IP]
 	NEXT
 
-	defcode	"0branch", w_zbranch		// ( flag -- ) jump if flag is zero
+	defcode	"0branch", w_zbranch, F_CONLY		// ( flag -- ) jump if flag is zero
+	CHECK_STACKS
 	POP	x0
 	cbz	x0, 1f
 	add	IP, IP, #8
@@ -51,17 +53,17 @@
 	PUSH	x0
 	NEXT
 
-	defcode	">r", w_tor			// ( x -- ) ( R: -- x )
+	defcode	">r", w_tor, F_CONLY			// ( x -- ) ( R: -- x )
 	RPUSH	TOS
 	ldr	TOS, [DSP], #8
 	NEXT
 
-	defcode	"r>", w_rfrom			// ( -- x ) ( R: x -- )
+	defcode	"r>", w_rfrom, F_CONLY			// ( -- x ) ( R: x -- )
 	str	TOS, [DSP, #-8]!
 	RPOP	TOS
 	NEXT
 
-	defcode	"r@", w_rfetch			// ( -- x ) ( R: x -- x )
+	defcode	"r@", w_rfetch, F_CONLY			// ( -- x ) ( R: x -- x )
 	str	TOS, [DSP, #-8]!
 	ldr	TOS, [RSP]
 	NEXT
@@ -85,7 +87,7 @@
 	mov	TOS, DSP
 	NEXT
 
-	defcode	"sp!", w_spstore		// ( addr -- i*x ) the stack as it was at SP@
+	defcode	"sp!", w_spstore, F_CONLY		// ( addr -- i*x ) the stack as it was at SP@
 	add	DSP, TOS, #8
 	ldr	TOS, [TOS]
 	NEXT
@@ -94,7 +96,7 @@
 	PUSH	RSP
 	NEXT
 
-	defcode	"rp!", w_rpstore		// ( addr -- ) ( R: i*x -- j*x )
+	defcode	"rp!", w_rpstore, F_CONLY		// ( addr -- ) ( R: i*x -- j*x )
 	POP	RSP
 	NEXT
 
@@ -273,6 +275,12 @@
 // over the ring of user areas. tasks.fs builds the rest on it.
 
 	defcode	"pause", w_pause		// ( -- ) let the next ready task run
+	CHECK_STACKS				// a task must not be switched out broken
+	ldp	x9, x10, [UP, #U_S0]
+	cmp	DSP, x9
+	b.hi	err_underflow
+	cmp	RSP, x10
+	b.hi	err_runderflow
 	RPUSH	IP
 	str	TOS, [DSP, #-8]!
 	str	DSP, [UP, #U_SP]
@@ -357,7 +365,7 @@ pause_end:
 // ---- Counted loops. Loop parameters on the return stack: index on top, then limit.
 // These are hot paths, so they are primitives; DO, LOOP and friends are in core.fs.
 
-	defcode	"(do)", w_pdo			// ( limit start -- ) ( R: -- limit start )
+	defcode	"(do)", w_pdo, F_CONLY		// ( limit start -- ) ( R: -- limit start )
 	ldr	x0, [DSP], #8
 	RPUSH	x0
 	RPUSH	TOS
@@ -365,7 +373,7 @@ pause_end:
 	NEXT
 
 	// ( limit start -- ) skip the loop, to the address that follows, if limit = start
-	defcode	"(?do)", w_pqdo
+	defcode	"(?do)", w_pqdo, F_CONLY
 	ldr	x0, [DSP], #8
 	cmp	x0, TOS
 	b.eq	1f
@@ -378,7 +386,8 @@ pause_end:
 	ldr	IP, [IP]
 	NEXT
 
-	defcode	"(loop)", w_ploop		// ( -- ) step by 1; loop back to the address that follows
+	defcode	"(loop)", w_ploop, F_CONLY	// ( -- ) step by 1; loop back to the address that follows
+	CHECK_STACKS
 	ldr	x0, [RSP]
 	add	x0, x0, #1
 	ldr	x1, [RSP, #8]
@@ -393,7 +402,8 @@ pause_end:
 
 	// ( n -- ) step by n. Ends when the index crosses the boundary between
 	// limit-1 and limit, in either direction.
-	defcode	"(+loop)", w_pplusloop
+	defcode	"(+loop)", w_pplusloop, F_CONLY
+	CHECK_STACKS
 	ldr	x0, [RSP]
 	ldr	x1, [RSP, #8]
 	sub	x2, x0, x1			// old index - limit
@@ -411,17 +421,17 @@ pause_end:
 	add	IP, IP, #8
 	NEXT
 
-	defcode	"i", w_i			// ( -- n ) innermost loop index
+	defcode	"i", w_i, F_CONLY			// ( -- n ) innermost loop index
 	str	TOS, [DSP, #-8]!
 	ldr	TOS, [RSP]
 	NEXT
 
-	defcode	"j", w_j			// ( -- n ) next outer loop index
+	defcode	"j", w_j, F_CONLY			// ( -- n ) next outer loop index
 	str	TOS, [DSP, #-8]!
 	ldr	TOS, [RSP, #16]
 	NEXT
 
-	defcode	"unloop", w_unloop		// ( -- ) ( R: limit index -- )
+	defcode	"unloop", w_unloop, F_CONLY		// ( -- ) ( R: limit index -- )
 	add	RSP, RSP, #16
 	NEXT
 

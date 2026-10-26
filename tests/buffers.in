@@ -1,0 +1,8 @@
+: mark ( u -- ) dup buffer dup b/buf bl fill  >r s" \ screen " r@ swap cmove  (.) r> 9 + swap cmove  update ;
+: marks ( from to -- ) 1+ swap ?do i mark loop ;
+20 31 marks
+empty-buffers
+20 31 index
+32 33 marks  flush  empty-buffers
+32 33 index
+34 mark  save-buffers  empty-buffers  34 34 index

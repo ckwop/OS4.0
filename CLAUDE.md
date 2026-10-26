@@ -38,7 +38,8 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 - AArch64 registers: `x19` IP, `x20` data stack pointer, `x21` return stack pointer, `x22` cached TOS, `x23` user area. `x8`–`x15` are scratch, and `x24`–`x28` are scratch for primitives across subroutine calls. Hardware `sp` is reserved for exceptions and C calls and stays 16-byte aligned.
 - Direct-threaded code: `NEXT` is `ldr x8, [x19], #8` then `br x8`. Non-primitive words start with an 8-byte code field `<insn>; bl <handler>` (DECISIONS.md #12).
 - Kernel layout: `arch/aarch64/kernel.s` includes `outer.s`, `text.s`, `prims.s` and `compiler.s` as one assembly unit (the dictionary link chain needs this). Platform glue is a separate object: `linux.s` for the hosted build, `virt.s` (plus `vectors.s` and `virt.ld`) for bare metal on QEMU virt under Limine.
-- Bare metal: Limine base revision 3, kernel in the higher half, devices reached through our own TTBR0 identity map of 0–1 GiB as Device memory (DECISIONS.md #23–25). Faults print a register dump and resume at ABORT.
+- Bare metal: Limine base revision 3, kernel in the higher half, devices reached through our own TTBR0 identity map of 0–1 GiB as Device memory (DECISIONS.md #23–25). Faults print a register dump and throw -256 (hosted: a signal report, then the same throw).
+- Each task's stacks have limits, checked in colon calls, branches, loops and `pause` (#57). Kernel errors go through `try_throw` in `outer.s`, which unwinds to the `catch` frame first. Internal kernel words that only work inside definitions get `F_CONLY` in their `defcode` line.
 - Assembly subroutines follow AAPCS64 (args in `x0`–`x7`, may clobber `x0`–`x15` and `x30`) and are named `*_sub`; HAL routines are `hal_key`, `hal_emit` and `hal_bye`.
 - All text files use LF line endings (enforced by `.gitattributes`).
 
@@ -46,9 +47,9 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 
 - Tests are `tests/*.in` (Forth fed to the serial console) paired with `tests/*.out` (expected output), run headless under QEMU.
 - `.out` files are transcripts: the banner, then each input line as the Forth echoes it, its output, and ` ok`. Generate a new one by running the `.in` file, then check every value by hand (and against gforth for standard words) before committing it.
-- `make test` runs `tests/` on the hosted build, then `tests/` and `tests/baremetal/` over the serial console (`make test-hosted`, `make test-virt` for one). The serial run boots QEMU per test, about 10 s each.
+- `make test` runs `tests/` and `tests/hosted/` on the hosted build (seconds), then `tests/` and `tests/baremetal/` over the serial console (under a minute; one VM per test, in parallel). `make test-hosted` or `make test-virt` runs one. `tools/run-tests.py` is the runner.
 - A `<name>.filter` file next to a test is a sed script that masks build-dependent output, such as addresses in a register dump.
-- Each test gets a fresh data disk (`build/test-data.img`, 1024 blocks, volume ID 42). A line `\ --- reboot ---` in a `.in` file shuts down and boots again on the same disk (`tools/console-run.py`).
+- Each test gets a fresh data disk of its own (in `build/test-disks/`, 1024 blocks, volume ID 42). A line `\ --- reboot ---` in a `.in` file shuts down and boots again on the same disk (`tools/console-run.py`).
 - `tools/blocks.py` formats data disks and lists or imports screens from the host: `python3 tools/blocks.py list build/data.img 5`.
 - Drive a REPL interactively through a pseudo-terminal with `script -qec 'make -s run' /dev/null` (bare metal) or `script -qec 'make -s run-hosted' /dev/null` inside the container.
 - Every feature adds tests, and the whole suite runs on every change.
@@ -56,4 +57,5 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 ## Workflow
 
 - Record any choice the brief leaves open in `DECISIONS.md` with a one-line reason.
+- Record shortcuts, gaps and risks in `docs/tech-debt.md`; close entries there when they are fixed. Check its open entries when starting a milestone: some are due before particular milestones.
 - At the end of each milestone, update the Readme milestone table and report what passed and anything that changed the plan.

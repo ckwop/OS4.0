@@ -60,6 +60,14 @@ A running log of choices that [docs/brief.md](docs/brief.md) leaves open. Add ne
 | 54 | 2026-10-25 | Disk waits still spin without `pause`. | The block layer is not yet safe for another task to enter mid-request; requests take microseconds. |
 | 55 | 2026-10-25 | Boot file order: `core`, `output`, the drivers, `blocks`, `errors`, `tasks`, `interpreter`. | `tasks.fs` needs `.error`, and its pausing `key` must exist before `accept` is compiled. |
 | 56 | 2026-10-25 | `_start` switches to `SP_EL1`, keeping Limine's stack, and faults return with IRQs enabled (`SPSR` 0x345). | Exceptions and the kernel share one stack; a handled fault must not stop the timer. |
+| 57 | 2026-10-26 | Each task has stack limits (`task-slimit`, `task-rlimit`, 16 cells above the bottom of each stack) checked in every colon call, branch, loop step and `pause`; underflows are checked in `pause` and after each interpreted word. Before throwing, the kernel resets both stacks to the innermost `catch` frame, as `throw` would. | An overflow used to overwrite the task's user area or other stack silently. Unwinding first means `throw` cannot trip over the overflow it reports. |
+| 58 | 2026-10-26 | `,`, `header`, code fields and `allot` throw -8 rather than grow the dictionary past its end; `unused` gives the space left. | The dictionary is a fixed size and tasks are allotted in it. |
+| 59 | 2026-10-26 | After boot, `'`, `[']`, `postpone` and `parse-find` are Forth words over `find-word`; the kernel's lookup only serves the boot files. | Wordlists (milestone 9) will change `find-name` alone, and must govern every lookup. |
+| 60 | 2026-10-26 | Internal kernel words (`exit`, `lit`, branches, loop runtime, `>r r> r@ i j unloop`, `sp! rp!`, `(does>)`) are compile-only (header bit 5). | Typed at the prompt they corrupted the interpreter's own return stack. |
+| 61 | 2026-10-26 | Hosted, `SIGSEGV`, `SIGBUS` and `SIGILL` print `exception: signal N at <address>` and resume the faulting word in `exception_throw`, which throws -256. | The same recovery as bare metal. |
+| 62 | 2026-10-26 | Tests run in parallel through `tools/run-tests.py`, each with its own data disk; the boot disk is attached read-only; `tests/hosted/` holds hosted-only tests. | The serial suite took ~10 s per test one after another. Read-only lets VMs share the boot disk, and enforces the brief's rule that it is never written. |
+| 63 | 2026-10-26 | `key` always pauses once before reading, and the watchdog's clock starts when the REPL does. | A burst of input never paused, so the console looked to the watchdog like a runaway task. |
+| 64 | 2026-10-26 | Technical debt is tracked in `docs/tech-debt.md`. | One place to record shortcuts and gaps, and close them. |
 
 ## Open questions (from the brief)
 

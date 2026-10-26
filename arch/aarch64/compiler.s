@@ -7,6 +7,9 @@
 comma_sub:
 	ldr	x1, =var_dp
 	ldr	x2, [x1]
+	ldr	x3, =dict_end - 8
+	cmp	x2, x3
+	b.hi	err_dictfull
 	str	x0, [x2], #8
 	str	x2, [x1]
 	ret
@@ -19,6 +22,9 @@ header_sub:
 	b.hi	err_longname
 	ldr	x2, =var_dp
 	ldr	x3, [x2]
+	ldr	x4, =dict_end - 64		// the largest header, and its code field
+	cmp	x3, x4
+	b.hi	err_dictfull
 	add	x3, x3, #7
 	and	x3, x3, #-8
 	ldr	x4, =var_latest
@@ -58,6 +64,7 @@ write_cf_sub:
 // Code field handlers. x30 holds the body address of the word being run.
 
 docol:					// colon definition: run the thread in the body
+	CHECK_STACKS
 	RPUSH	IP
 	mov	IP, x30
 	NEXT
@@ -97,6 +104,9 @@ dodoes:
 	defuser	"task-s0", w_tasks0, U_S0
 	defuser	"task-r0", w_taskr0, U_R0
 	defuser	"task-name", w_taskname, U_NAME
+	defuser	"task-slimit", w_taskslimit, U_SLIMIT
+	defuser	"task-rlimit", w_taskrlimit, U_RLIMIT
+	defconst "dict-end", w_dictend, dict_end	// ( -- addr ) the dictionary ends here
 	defconst "main-task", w_maintask, user0	// ( -- task ) the console task
 	defconst "/user", w_usersize, U_SIZE	// ( -- n ) bytes in a user area
 	defconst "watchdog-limit", w_watchdog, var_watchdog // ( -- addr ) counter ticks; 0: off
@@ -128,6 +138,9 @@ dodoes:
 compile_cf:
 	ldr	x2, =var_dp
 	ldr	x2, [x2]
+	ldr	x3, =dict_end - 8
+	cmp	x2, x3
+	b.hi	err_dictfull
 	bl	write_cf_sub
 	ldr	x0, =var_dp
 	ldr	x1, [x0]
@@ -142,7 +155,7 @@ compile_cf:
 
 	// ( -- ) ( R: ip -- ) end the defining word, pointing the newest word's code
 	// field at the DOES> code that follows in the thread.
-	defcode	"(does>)", w_pdoes
+	defcode	"(does>)", w_pdoes, F_CONLY
 	ldr	x0, =var_latest
 	ldr	x0, [x0]
 	ldrb	w1, [x0, #8]

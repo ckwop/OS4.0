@@ -1,0 +1,9 @@
+OS 4.0
+1 2 3 .s <3> 1 2 3  ok
+0 @ 
+exception: signal 11 at 0000000000000000
+.s <0>  ok
+: peek ( -- x ) 0 @ ;  ' peek catch . 
+exception: signal 11 at 0000000000000000
+-256  ok
+2 3 + . 5  ok

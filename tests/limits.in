@@ -1,0 +1,15 @@
+: deep ( -- ) recurse ;
+deep
+: pusher ( -- ) begin 1 again ;
+pusher
+.s
+r>
+1 >r
+variable saved  here saved !
+unused cell+ allot
+unused allot  : more ;
+saved @ dp !  : fine ( -- n ) 42 ;  fine .
+' nosuchword
+: pdup ( -- ) postpone dup ; immediate
+: twice-five ( -- n n ) 5 pdup ;  twice-five . .
+: dup-xt ( -- xt ) ['] dup ;  3 dup-xt execute . .

@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Run transcript tests, several at a time.
+
+Each <dir>/<name>.in is fed to a Forth system on stdin, and the output is
+compared with <dir>/<name>.out. If <dir>/<name>.filter exists, it is a sed
+script applied to the output first, to mask values that change from build to
+build (such as code addresses). The output is kept in <dir>/<name>.actual.
+
+Every test gets its own data disk, so tests can run side by side: "{disk}" in
+the command and in --setup is replaced by that test's disk image.
+
+Usage: run-tests.py --cmd "COMMAND {disk}" [--setup "COMMAND {disk}"]
+                    [--jobs N] [--timeout SECONDS] [--disks DIR] DIR ...
+"""
+
+import argparse
+import concurrent.futures
+import difflib
+import os
+import shlex
+import subprocess
+import sys
+
+
+def run_test(path, args):
+    name = os.path.splitext(path)[0]
+    disk = os.path.join(args.disks, name.replace(os.sep, "-") + ".img")
+    if args.setup:
+        setup = subprocess.run(shlex.split(args.setup.format(disk=disk)), capture_output=True)
+        if setup.returncode:
+            return name, False, f"setup failed:\n{setup.stdout.decode()}{setup.stderr.decode()}"
+
+    with open(path, "rb") as stdin:
+        try:
+            run = subprocess.run(shlex.split(args.cmd.format(disk=disk)), stdin=stdin,
+                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                 timeout=args.timeout)
+            output = run.stdout
+        except subprocess.TimeoutExpired as e:
+            output = (e.stdout or b"") + f"\n[timed out after {args.timeout} s]\n".encode()
+    if os.path.exists(name + ".filter"):
+        output = subprocess.run(["sed", "-f", name + ".filter"], input=output,
+                                stdout=subprocess.PIPE, check=True).stdout
+    with open(name + ".actual", "wb") as f:
+        f.write(output)
+
+    try:
+        with open(name + ".out", "rb") as f:
+            expected = f.read()
+    except FileNotFoundError:
+        return name, False, f"{name}.out is missing"
+    if output == expected:
+        return name, True, ""
+    diff = difflib.unified_diff(expected.decode(errors="replace").splitlines(True),
+                                output.decode(errors="replace").splitlines(True),
+                                name + ".out", name + ".actual")
+    return name, False, "".join(diff)
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--cmd", required=True)
+    p.add_argument("--setup")
+    p.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
+    p.add_argument("--timeout", type=float, default=30)
+    p.add_argument("--disks", default="build/test-disks")
+    p.add_argument("dirs", nargs="+")
+    args = p.parse_args()
+
+    os.makedirs(args.disks, exist_ok=True)
+    tests = sorted(os.path.join(d, f) for d in args.dirs
+                   for f in os.listdir(d) if f.endswith(".in"))
+    with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
+        results = list(pool.map(lambda t: run_test(t, args), tests))
+
+    failed = 0
+    for name, ok, report in results:
+        if not ok:
+            failed += 1
+            print(report, end="" if report.endswith("\n") else "\n")
+            print(f"FAIL: {name}")
+    print(f"{len(results) - failed} passed, {failed} failed")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

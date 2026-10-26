@@ -4,6 +4,7 @@ A tiny bare-metal Forth operating system for 64-bit ARM, built to run a MUD: a t
 
 - Full specification: [docs/brief.md](docs/brief.md)
 - Choices made along the way: [DECISIONS.md](DECISIONS.md)
+- Known shortcuts and gaps: [docs/tech-debt.md](docs/tech-debt.md)
 - Notes for AI coding agents: [CLAUDE.md](CLAUDE.md)
 
 ### Prerequisites

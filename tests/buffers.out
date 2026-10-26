@@ -1,0 +1,24 @@
+OS 4.0
+: mark ( u -- ) dup buffer dup b/buf bl fill  >r s" \ screen " r@ swap cmove  (.) r> 9 + swap cmove  update ;  ok
+: marks ( from to -- ) 1+ swap ?do i mark loop ;  ok
+20 31 marks  ok
+empty-buffers  ok
+20 31 index   20 \ screen 20
+  21 \ screen 21
+  22 \ screen 22
+  23 \ screen 23
+  24
+  25
+  26
+  27
+  28
+  29
+  30
+  31
+ ok
+32 33 marks  flush  empty-buffers  ok
+32 33 index   32 \ screen 32
+  33 \ screen 33
+ ok
+34 mark  save-buffers  empty-buffers  34 34 index   34 \ screen 34
+ ok

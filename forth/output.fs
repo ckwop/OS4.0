@@ -62,7 +62,11 @@ variable messages
     @
   repeat nip ;
 
+-3 message: stack overflow
 -4 message: stack underflow
+-5 message: return stack overflow
+-6 message: return stack underflow
+-8 message: dictionary full
 -10 message: division by zero
 -11 message: result out of range
 -16 message: missing name

@@ -1,0 +1,16 @@
+OS 4.0
+: deep ( -- ) recurse ;  ok
+deep return stack overflow
+: pusher ( -- ) begin 1 again ;  ok
+pusher stack overflow
+.s <0>  ok
+r> r> is compile-only
+1 >r >r is compile-only
+variable saved  here saved !  ok
+unused cell+ allot dictionary full
+unused allot  : more ; dictionary full
+saved @ dp !  : fine ( -- n ) 42 ;  fine . 42  ok
+' nosuchword nosuchword ?
+: pdup ( -- ) postpone dup ; immediate  ok
+: twice-five ( -- n n ) 5 pdup ;  twice-five . . 5 5  ok
+: dup-xt ( -- xt ) ['] dup ;  3 dup-xt execute . . 3 3  ok

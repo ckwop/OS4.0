@@ -14,27 +14,28 @@ UEFI_FIRMWARE ?= /usr/share/qemu-efi-aarch64/QEMU_EFI.fd
 # kernel sources. It is assembled once per platform, choosing the drivers.
 KERNEL_DEPS := $(wildcard $(ARCH)/*.s) $(wildcard forth/*.fs) $(wildcard hal/*.fs)
 
-# Data disks: DATA_IMG for running, TEST_IMG made fresh for every test.
+# Data disks: DATA_IMG for running; every test gets a fresh one of its own.
 DATA_IMG    ?= $(BUILD)/data.img
-TEST_IMG    := $(BUILD)/test-data.img
 BLOCKS_TOOL := python3 tools/blocks.py
-TEST_SETUP  := $(BLOCKS_TOOL) format --force $(TEST_IMG) --blocks 1024 --volume-id 42
+TEST_SETUP  := $(BLOCKS_TOOL) format --force {disk} --blocks 1024 --volume-id 42
 
 # Hosted: an AArch64 Linux binary run under qemu-aarch64 (milestone 2).
 HOSTED      := $(BUILD)/forth-hosted
 HOSTED_CMD   = qemu-aarch64 $(HOSTED) $(1)
 
 # Bare metal: Limine boots the kernel on QEMU's virt machine (milestone 3).
-# The boot disk is virtio-pci; the data disk is virtio-mmio, as our driver expects.
+# The boot disk is virtio-pci and read-only (the OS never writes it, and tests
+# share it); the data disk is virtio-mmio, as our driver expects.
 KERNEL_ELF := $(BUILD)/kernel.elf
 BOOT_IMG   := $(BUILD)/boot.img
 VIRT_CMD    = qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m 256M -nographic \
               -bios $(UEFI_FIRMWARE) -nic none \
-              -drive file=$(BOOT_IMG),format=raw,if=virtio \
+              -drive file=$(BOOT_IMG),format=raw,if=virtio,readonly=on \
               -drive file=$(1),format=raw,if=none,id=data,cache=writeback \
               -device virtio-blk-device,drive=data -global virtio-mmio.force-legacy=false
 
 CONSOLE := python3 tools/console-run.py
+TESTS   := python3 tools/run-tests.py --setup "$(TEST_SETUP)"
 
 .PHONY: all build image data run run-hosted test test-hosted test-virt clean
 
@@ -89,13 +90,12 @@ run-hosted: $(HOSTED) $(DATA_IMG)
 
 test: test-hosted test-virt
 
+# Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)
-	TEST_SETUP="$(TEST_SETUP)" sh tools/run-tests.sh "$(CONSOLE) $(call HOSTED_CMD,$(TEST_IMG))" tests
+	$(TESTS) --timeout 30 --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk})" tests tests/hosted
 
-# The same tests over the serial console, plus bare-metal-only ones.
 test-virt: $(BOOT_IMG)
-	TEST_SETUP="$(TEST_SETUP)" TEST_TIMEOUT=90 sh tools/run-tests.sh \
-	  "$(CONSOLE) $(call VIRT_CMD,$(TEST_IMG))" tests tests/baremetal
+	$(TESTS) --timeout 120 --cmd "$(CONSOLE) $(call VIRT_CMD,{disk})" tests tests/baremetal
 
 clean:
 	rm -rf $(BUILD) tests/*.actual tests/*/*.actual

@@ -30,6 +30,7 @@
 
 	.equ	F_IMMED, 0x80
 	.equ	F_HIDDEN, 0x40
+	.equ	F_CONLY, 0x20		// compile-only: refused by the interpreter outside definitions
 	.equ	F_LENMASK, 0x1f
 	.equ	NAME_MAX, 31
 
@@ -50,10 +51,17 @@
 	.equ	U_S0, 96		// data stack pointer when empty
 	.equ	U_R0, 104		// return stack pointer when empty
 	.equ	U_NAME, 112		// ( addr len ) as 2! stores it: length, then address
+	.equ	U_SLIMIT, 128		// lowest safe data stack pointer: below it is overflow
+	.equ	U_RLIMIT, 136		// lowest safe return stack pointer (keep after U_SLIMIT)
 	.equ	U_SIZE, 256
+	.equ	STACK_MARGIN, 16 * 8	// room left below a limit for reporting the overflow
 
 	// THROW codes for errors the kernel detects (standard codes, plus -256)
+	.equ	THROW_OVERFLOW, -3
 	.equ	THROW_UNDERFLOW, -4
+	.equ	THROW_ROVERFLOW, -5
+	.equ	THROW_RUNDERFLOW, -6
+	.equ	THROW_DICTFULL, -8
 	.equ	THROW_DIVZERO, -10
 	.equ	THROW_RANGE, -11
 	.equ	THROW_UNDEFINED, -13
@@ -97,6 +105,10 @@
 
 	message	msg_undefined, " ?\n"
 	message	msg_underflow, "stack underflow\n"
+	message	msg_overflow, "stack overflow\n"
+	message	msg_roverflow, "return stack overflow\n"
+	message	msg_runderflow, "return stack underflow\n"
+	message	msg_dictfull, "dictionary full\n"
 	message	msg_noname, "missing name\n"
 	message	msg_longname, "name too long\n"
 	message	msg_divzero, "division by zero\n"
@@ -172,6 +184,17 @@ user0:		.space	U_SIZE
 	.global	dict_space, dict_end
 dict_space:	.space	DICT_BYTES	// the platform must make this executable: code fields live here
 dict_end:
+
+// CHECK_STACKS: throw if either stack has grown past its limit. In every colon
+// call and backward branch, so runaway recursion and runaway loops are caught
+// before they overwrite the task's user area or the other stack.
+.macro CHECK_STACKS
+	ldp	x9, x10, [UP, #U_SLIMIT]
+	cmp	DSP, x9
+	b.lo	err_overflow
+	cmp	RSP, x10
+	b.lo	err_roverflow
+.endm
 
 // ---------------------------------------------------------------------------
 // Dictionary. Each word: header, then the code its xt points at. The link
