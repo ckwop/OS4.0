@@ -29,6 +29,9 @@ Scripts:
          then hundreds of random ones, checking after each batch that the OS
          still answers a ping; telnet sessions with a slow typist and with
          rubbish of every kind; finally TCP and UDP echoes must still work
+  soak   five rounds of four telnet sessions and four TCP echo clients at
+         once, pings and UDP echoes; after each the OS reports, once its
+         connections are gone, how much memory and its pools grew
   tcp-attack  an off-path attacker against the echo server on port 5000: a SYN
          flood beyond the OS's cap on half-open connections, then a real
          client; forged resets in and out of the window, a SYN and an
@@ -626,6 +629,54 @@ class Peer:
             self.send_ip(17, self.udp_segment(40004, 5001, b"done"))
             time.sleep(0.2)
 
+    def script_soak(self):
+        if not self.find_os():
+            print("peer: no ARP reply from 10.0.2.15", flush=True)
+            return
+        time.sleep(1)                       # let the console start the servers
+        problems = []
+        for r in range(1, 6):
+            telnet = [TcpClient(self, 62000 + 20 * r + i, dport=4000) for i in range(4)]
+            echo = [TcpClient(self, 62010 + 20 * r + i, dport=5000) for i in range(4)]
+            for c in telnet + echo:         # all open at once: each round peaks the same
+                if not c.connect():
+                    problems.append(f"round {r}: {c.sport} no SYN-ACK")
+            for i, c in enumerate(telnet):
+                c.wait_for_text("leave.\r\n")
+                c.send_reliably(f"{r} {i + 2} * .\r\n".encode())
+                c.wait_for_text(f"{r * (i + 2)}  ok\r\n")
+            for c in echo:
+                for j in range(2):
+                    if not c.echo(f"round {r} line {j}".encode()):
+                        problems.append(f"round {r}: {c.sport} no echo")
+            if not self.alive():
+                problems.append(f"round {r}: no ping reply")
+            self.send_ip(17, self.udp_segment(40011, 7, f"round {r}".encode()))
+            for c in telnet:
+                c.send_reliably(b"bye\r\n")
+            for c in telnet:
+                c.wait_for(lambda: c.fin_received, 10)
+            for c in telnet + echo:
+                c.close()
+                problems += [f"round {r}: {c.sport} {p}" for p in c.problems]
+                threading.Thread(target=lambda c=c: [c.pump(1) for _ in iter(int, 1)],
+                                 daemon=True).start()   # TIME-WAIT: answer a resent FIN
+            self.send_ip(17, self.udp_segment(40010, 5001, b"mark"))
+            deadline = time.time() + 70     # the OS answers once its connections are gone
+            while time.time() < deadline:
+                try:
+                    packet, ihl, message = self.udp_replies.get(timeout=1)
+                except queue.Empty:
+                    continue
+                if message[8:] == b"ready":
+                    break
+            else:
+                problems.append(f"round {r}: the OS did not settle")
+                break
+        print(f"peer: soak: {r} rounds", flush=True)
+        for p in problems:
+            print(f"peer: {p}", flush=True)
+
     def hostile_telnet(self):
         """Telnet clients of the sandbox: a slow typist, who must not hold up
         anyone else, and one who sends every kind of rubbish."""
@@ -948,7 +999,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--os-port", type=int, required=True)
-    p.add_argument("script", choices=["ping", "udp", "tcp", "tcp-attack", "repl", "hostile"])
+    p.add_argument("script", choices=["ping", "udp", "tcp", "tcp-attack", "repl", "hostile", "soak"])
     args = p.parse_args()
     peer = Peer(args.port, args.os_port)
     getattr(peer, "script_" + args.script.replace("-", "_"))()

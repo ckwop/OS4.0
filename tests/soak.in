@@ -1,0 +1,19 @@
+\ Soak (tools/netpeer.py soak): five rounds of sessions; after the first, memory and pools must not grow
+echo-service
+variable served
+: (serve) ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat 2drop ;
+: serve ( conn -- ) 10000 io-timeout !  dup ['] (serve) catch if drop then  close-connection  1 served +! ;
+: line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;
+task server  ' line-server server start
+variable marks
+: mark ( data len -- ) 2drop 1 marks +! ;
+' mark 5001 udp-bind
+: settled ( n -- ) 60000 deadline begin 100 ms  over marks @ > 0=  conns @ 0= and  over expired? or until 2drop ;
+: ready ( -- ) s" ready" 5001 [ ip 10.0.2.2 ] literal 40010 udp-send drop ;
+variable u0  variable p0  variable w0
+: baseline ( -- ) unused u0 !  free-conns @ count-list p0 !  workers @ w0 ! ;
+: growth ( -- ) u0 @ unused - .  free-conns @ count-list p0 @ - .  workers @ w0 @ - . ;
+: soak ( -- ) 1 settled baseline ready  6 2 do  cr ." round " i . ." grew " i settled growth ready  loop ;
+soak
+served @ . sessions-served @ .
+1000 ms
