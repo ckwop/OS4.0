@@ -1,0 +1,10 @@
+\ An off-path attacker against a line echo server (tools/netpeer.py tcp-attack)
+variable served
+: serve ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat drop close-connection 1 served +! ;
+: line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;
+1 max-syn-retries !  16 max-half-open !
+task server  ' line-server server start
+: settled? ( -- flag ) served @ 2 = conns @ 0= and ;
+: settle ( -- ) 60000 deadline begin 200 ms settled? over expired? or until drop ;
+settle .tcp ." , half-open " half-open .
+1000 ms

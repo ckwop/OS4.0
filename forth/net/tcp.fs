@@ -7,6 +7,11 @@
 \
 \ Each connection counts bytes: acknowledged, sent and queued on the way out;
 \ received and consumed on the way in. Sequence numbers follow from the counts.
+\
+\ Against attackers off the path: initial sequence numbers are a keyed hash
+\ (RFC 6528); resets, SYNs and acknowledgements must be where we expect them,
+\ or they get a challenge ACK or are dropped (RFC 5961); connections and
+\ half-open ones are capped, and a SYN beyond the caps is dropped.
 
 -269 message: connection closed
 -270 message: no free listening port slot
@@ -69,7 +74,8 @@
 1 cells field c.rexmit            \ when to retransmit (a deadline), or 0
 1 cells field c.retries
 1 cells field c.flags
-1 cells field c.timeout           \ when TIME-WAIT ends
+1 cells field c.timeout           \ when TIME-WAIT or FIN-WAIT-2 ends
+1 cells field c.hlink             \ next in its hash bucket
 1 cells field c.owner             \ the task to wake when something changes
 1 cells field c.next              \ next in its listener's queue
 dup constant /conn-header
@@ -82,13 +88,40 @@ variable free-conns            \ recycled ones
 1000 constant base-rto
 60000 constant max-rto
 8 constant max-retries
+variable max-syn-retries  4 max-syn-retries !   \ SYN-ACKs sent before a half-open connection goes (about 30 s)
 2000 constant time-wait-ms
+60000 constant fin-wait-ms     \ how long we wait for their FIN after ours is acknowledged
+variable max-conns  256 max-conns !          \ live connections, in any state
+variable max-half-open  64 max-half-open !   \ connections still in the handshake
 
 : flag?   ( conn bit -- flag )  swap c.flags @ and 0<> ;
 : flag+   ( conn bit -- )  over c.flags @ or swap c.flags ! ;
 : wake-owner  ( conn -- )  c.owner @ ?dup if wake then ;
 
-: new-conn  ( -- conn )  \ from the free list, or new: there is no fixed limit
+\ ---- Finding connections: a hash table of their addresses and ports, keyed so
+\ that outsiders cannot choose ports that all land in one bucket.
+
+: key@  ( addr -- k0 k1 )  dup @ swap cell+ @ ;
+create isn-key  random , random ,
+create bucket-key  random , random ,
+create tuple 2 cells allot
+: tuple-hash  ( rip rport lport key -- h )  \ the keyed hash of a connection's addresses and ports
+  >r  swap 16 lshift or  swap 32 lshift or  tuple !  my-ip @ tuple cell+ !
+  tuple 16 r> key@ siphash ;
+
+256 constant #buckets
+create buckets  #buckets cells allot   buckets #buckets cells 0 fill
+: bucket  ( rip rport lport -- addr )  bucket-key tuple-hash #buckets 1- and cells buckets + ;
+: conn-bucket  ( conn -- addr )  dup c.rip @ over c.rport @ rot c.lport @ bucket ;
+: hash-in   ( conn -- )  dup conn-bucket  dup @ 2 pick c.hlink !  ! ;
+: hash-out  ( conn -- )
+  dup conn-bucket
+  begin dup @ while
+    dup @ 2 pick = if  swap c.hlink @ swap !  exit  then
+    @ c.hlink
+  repeat 2drop ;
+
+: new-conn  ( -- conn )  \ from the free list, or new
   free-conns @ ?dup if  dup c.link @ free-conns !  else  /conn reserve  then
   dup /conn-header 0 fill
   base-rto over c.rto !
@@ -98,7 +131,8 @@ variable free-conns            \ recycled ones
     dup @ 2 pick = if  swap c.link @ swap !  exit  then
     @
   repeat 2drop ;
-: free-conn  ( conn -- )  dup conns unlink  free-conns @ over c.link !  free-conns ! ;
+: free-conn  ( conn -- )
+  dup hash-out  dup conns unlink  free-conns @ over c.link !  free-conns ! ;
 
 \ ---- Sequence numbers: 32 bits, wrapping
 
@@ -206,10 +240,11 @@ variable i-data  variable i-len  variable i-sport  variable i-dport
 : i-flag?  ( bit -- flag )  i-flags @ and 0<> ;
 
 : find-conn  ( -- conn | 0 )  \ the live connection the segment belongs to
-  conns @ begin dup while
+  ip-source i-sport @ i-dport @ bucket @
+  begin dup while
     dup c.rport @ i-sport @ =  over c.lport @ i-dport @ = and
     over c.rip @ ip-source = and  over c.state @ closed <> and  if exit then
-    c.link @
+    c.hlink @
   repeat ;
 
 : options-mss  ( segment hlen -- )  \ the MSS option of a SYN; 536 without one
@@ -238,17 +273,32 @@ create rst-conn  /conn-header allot
     rst-conn 0 f-rst f-ack or control-out
   then ;
 
+: new-iss  ( -- seq )  \ RFC 6528: a clock, plus a keyed hash of the addresses and ports
+  ip-source i-sport @ i-dport @ isn-key tuple-hash  counter 4 rshift +  $ffffffff and ;
+
+: count-list  ( conn -- n )  0 swap begin ?dup while swap 1+ swap c.link @ repeat ;
+: half-open  ( -- n )  \ connections still in the handshake
+  0 conns @ begin ?dup while
+    dup c.state @ syn-received = if swap 1+ swap then  c.link @
+  repeat ;
+: room?  ( -- flag )  \ a new connection is within the caps
+  conns @ count-list max-conns @ <  half-open max-half-open @ < and ;
+
 : open-conn  ( -- )  \ a SYN to a listening port: answer it
   new-conn >r
   syn-received r@ c.state !
   i-dport @ r@ c.lport !  i-sport @ r@ c.rport !  ip-source r@ c.rip !
   i-seq @ r@ c.irs !
-  counter 4 rshift $ffffffff and r@ c.iss !
-  i-wnd @ r@ c.snd-wnd !  i-mss @ our-mss min r@ c.mss !
+  new-iss r@ c.iss !
+  i-wnd @ r@ c.snd-wnd !  i-mss @ our-mss min 64 max r@ c.mss !
+  r@ hash-in
   r@ dup c.iss @ f-syn f-ack or control-out
   r> arm-rexmit ;
 
-: release-conn  ( conn -- )  \ it is over: recycle it once the application is done with it
+\ It is over: recycle it once the application is done with it. One still in the
+\ handshake was never handed to an application, so it is recycled now.
+: release-conn  ( conn -- )
+  dup c.state @ syn-received = if dup app-closed flag+ then
   closed over c.state !  0 over c.rexmit !
   dup wake-owner
   dup app-closed flag? if free-conn else drop then ;
@@ -268,7 +318,9 @@ create rst-conn  /conn-header allot
 : fin-acked-in  ( conn -- )  \ what our FIN being acknowledged changes
   dup fin-acked flag? 0= if drop exit then
   dup c.state @
-  dup fin-wait-1 = if  drop fin-wait-2 swap c.state ! exit  then
+  dup fin-wait-1 = if                               \ they may never send theirs: time out
+    drop  fin-wait-2 over c.state !  fin-wait-ms deadline swap c.timeout ! exit
+  then
   dup closing = if  drop time-wait! exit  then
   last-ack = if release-conn else drop then ;
 
@@ -296,9 +348,21 @@ create rst-conn  /conn-header allot
 : receiving?  ( conn -- flag )  \ in a state that takes data
   c.state @  dup established =  over fin-wait-1 = or  swap fin-wait-2 = or ;
 
+\ RFC 5961. A reset counts only at exactly the next sequence number; elsewhere in
+\ the window it gets a challenge ACK, which a real peer answers with an exact
+\ reset. An acknowledgement must lie between what we sent and a window before
+\ what was acknowledged, or the segment is dropped.
+: challenge  ( conn -- )  dup ack-now flag+ tcp-output ;
+: rst-in  ( conn -- )
+  i-seq @ over rcv-nxt = if  release-conn exit  then
+  i-seq @ over rcv-nxt - $ffffffff and  over rx-room u< if challenge else drop then ;
+: ack-ok?  ( conn -- flag )
+  dup snd-nxt over snd-una - s32  swap i-ack @ swap snd-una - s32   ( sent n )
+  tuck < 0=  swap -65535 < 0= and ;
+
 : segment-in  ( conn -- )
   >r
-  f-rst i-flag? if  r> release-conn exit  then
+  f-rst i-flag? if  r> rst-in exit  then
   r@ c.state @ syn-received = if
     f-syn i-flag? if  r@ dup c.iss @ f-syn f-ack or control-out  r> drop exit  then
     f-ack i-flag? 0=  i-ack @ r@ c.iss @ 1+ $ffffffff and <>  or if  r> drop exit  then
@@ -307,6 +371,7 @@ create rst-conn  /conn-header allot
   then
   f-syn i-flag? if  r@ ack-now flag+  r> tcp-output exit  then
   f-ack i-flag? 0= if  r> drop exit  then
+  r@ ack-ok? 0= if  r> challenge exit  then
   i-wnd @ r@ c.snd-wnd !
   r@ acked
   r@ fin-acked-in
@@ -327,7 +392,9 @@ create rst-conn  /conn-header allot
   f-syn i-flag? if  dup r@ options-mss  then
   drop r> drop
   find-conn ?dup if  segment-in exit  then
-  f-syn i-flag?  f-ack i-flag? 0= and  i-dport @ listener-of 0<> and if  open-conn exit  then
+  f-syn i-flag?  f-ack i-flag? 0= and  i-dport @ listener-of 0<> and if
+    room? if open-conn then exit                    \ beyond the caps: drop it, they will retry
+  then
   refuse ;
 ' tcp-in proto-tcp ip-handler!
 
@@ -339,7 +406,9 @@ create rst-conn  /conn-header allot
   close-wait swap c.state ! ;
 
 : retransmit  ( conn -- )  \ from the oldest unacknowledged byte, with a longer timeout
-  dup c.retries @ max-retries < 0= if               \ give up
+  dup c.retries @
+  over c.state @ syn-received = if max-syn-retries @ else max-retries then
+  < 0= if                                           \ give up
     dup dup snd-nxt f-rst control-out  release-conn exit
   then
   1 over c.retries +!
@@ -357,7 +426,7 @@ create rst-conn  /conn-header allot
   conns @ begin ?dup while
     dup c.link @ swap                               ( next conn )
     dup c.rexmit @ ?dup if  expired? if dup retransmit then  then
-    dup c.state @ time-wait = if
+    dup c.state @  dup time-wait =  swap fin-wait-2 = or if
       dup c.timeout @ expired? if dup release-conn then
     then
     drop
@@ -422,7 +491,6 @@ create crlf  13 c, 10 c,
   dup c.state @ closed = if  free-conn exit  then
   dup fin-queued flag+  tcp-output ;
 
-: count-list  ( conn -- n )  0 swap begin ?dup while swap 1+ swap c.link @ repeat ;
 : .tcp  ( -- )  \ connections live and pooled
   ." connections " conns @ count-list (.) type
   ." , pooled " free-conns @ count-list (.) type ;

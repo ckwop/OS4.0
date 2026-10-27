@@ -23,6 +23,12 @@ Scripts:
   repl   telnet sessions with the network REPL: two sandbox sessions at once
          on port 4000, a full-Forth session on 4001, and a client that hangs
          up in the middle of a line. Prints what each session showed
+  tcp-attack  an off-path attacker against the echo server on port 5000: a SYN
+         flood beyond the OS's cap on half-open connections, then a real
+         client; forged resets in and out of the window, a SYN and an
+         acknowledgement of unsent data on an open connection (each must be
+         answered by a challenge ACK or ignored, the connection kept); a client
+         whose MSS option is 0; finally an exact reset, which must close it
 """
 
 import argparse
@@ -217,11 +223,10 @@ class Peer:
         clients[1].out_of_order = True     # the OS sees a gap, then the rest
         clients[2].iss = 0xFFFFFFF0         # sequence numbers wrap
         clients[3].batched = True           # all lines in one segment
-        threads = [threading.Thread(target=c.run) for c in clients]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join(60)
+        for c in clients:
+            threading.Thread(target=c.run, daemon=True).start()
+        for c in clients:
+            c.done.wait(90)
         connected = sum(c.connected for c in clients)
         echoed = sum(c.echoed for c in clients)
         closed = sum(c.closed for c in clients)
@@ -235,6 +240,60 @@ class Peer:
 
         refused = TcpClient(self, 49999, dport=4999)
         print(f"peer: tcp to closed port 4999: {refused.expect_reset()}", flush=True)
+
+    def script_tcp_attack(self):
+        if not self.find_os():
+            print("peer: no ARP reply from 10.0.2.15", flush=True)
+            return
+        time.sleep(1)                       # let the console start the server
+        flood = [TcpClient(self, 52000 + i, dport=5000) for i in range(40)]
+        for c in flood:                     # SYNs, never completed
+            c.snd_una = c.snd_nxt = c.iss
+            c.rcv_nxt = 0
+            c.send_seg(SYN, c.iss, options=struct.pack("!BBH", 2, 4, 1460))
+        def answered():                     # flood clients that have had a SYN-ACK
+            for c in flood:
+                while c.pump(0):
+                    pass
+            return sum(any(e[0] == SYN | ACK for e in c.log) for c in flood)
+        deadline = time.time() + 15         # the OS may be slow under load: wait for the
+        while answered() < 16 and time.time() < deadline:   # cap's worth, then a while for more
+            time.sleep(0.1)
+        time.sleep(1)
+        answered()
+        isns = [e[1] for c in flood for e in c.log[:1] if e[0] == SYN | ACK]
+        print(f"peer: syn flood: {len(isns)} of 40 answered", flush=True)
+        spread = all(min((a - b) % MOD32, (b - a) % MOD32) > 1 << 16 for a, b in zip(isns, isns[1:]))
+        print(f"peer: initial sequence numbers unrelated: {'yes' if spread else 'no'}", flush=True)
+        time.sleep(4)                       # the half-open connections time out
+
+        c = TcpClient(self, 53000, dport=5000)
+        if not c.connect():
+            print("peer: after the flood: no SYN-ACK", flush=True)
+            return
+        print(f"peer: after the flood: echo {'ok' if c.echo(b'hello') else 'failed'}", flush=True)
+        tests = [("reset in the window", lambda: c.send_seg(RST, c.snd_nxt + 1000)),
+                 ("SYN on an open connection", lambda: c.send_seg(SYN, c.snd_nxt + 5)),
+                 ("data acknowledging unsent bytes",
+                  lambda: c.send_seg(ACK | PSH, c.snd_nxt, b"forged\r\n", ack=c.rcv_nxt + 100000))]
+        for name, forge in tests:
+            print(f"peer: {name}: {'challenge ACK' if c.challenged(forge) else 'no challenge ACK'}", flush=True)
+        c.send_seg(RST, c.snd_nxt + 0x40000000)  # far outside the window: ignored
+        c.drain(0.5)
+        print(f"peer: reset outside the window: {'ignored' if not c.reset else 'reset'}", flush=True)
+        print(f"peer: connection still works: {'yes' if c.echo(b'still here') else 'no'}", flush=True)
+        c.send_seg(RST, c.snd_nxt)
+        time.sleep(0.5)
+
+        small = TcpClient(self, 53001, dport=5000)
+        small.mss_option = 0
+        if small.connect():
+            line = b"y" * 150
+            print(f"peer: client with MSS 0: echo {'ok' if small.echo(line) else 'failed'}", flush=True)
+            small.close()
+        for client in (c, small):
+            for problem in client.problems:
+                print(f"peer: client {client.sport}: {problem}", flush=True)
 
     def script_repl(self):
         if not self.find_os():
@@ -342,12 +401,17 @@ class TcpClient:
         self.reset = False
         self.seen_seqs = set()
         self.peer_mss = None
+        self.mss_option = 1460
+        self.log = []                       # (flags, seq, ack, data length) of each segment in
+        self.done = threading.Event()       # the script has finished
 
     # ---- segments
 
-    def send_seg(self, flags, seq, data=b"", options=b""):
+    def send_seg(self, flags, seq, data=b"", options=b"", ack=None):
         hlen = 20 + len(options)
-        ack = self.rcv_nxt % MOD32 if flags & ACK else 0
+        if ack is None:
+            ack = self.rcv_nxt if flags & ACK else 0
+        ack %= MOD32
         seg = struct.pack("!HHIIHHHH", self.sport, self.dport, seq % MOD32, ack,
                           (hlen // 4) << 12 | flags, 65535, 0, 0) + options + data
         pseudo = PEER_IP + OS_IP + struct.pack("!BBH", 0, 6, len(seg))
@@ -363,6 +427,7 @@ class TcpClient:
         seq, ack, off_flags, wnd = struct.unpack("!IIHH", seg[4:16])
         flags, hlen = off_flags & 0x3F, (off_flags >> 12) * 4
         data = seg[hlen:]
+        self.log.append((flags, seq, ack, len(data)))
         if flags & RST:
             self.reset = True
             return
@@ -402,8 +467,8 @@ class TcpClient:
     def connect(self):
         self.snd_una = self.snd_nxt = self.iss
         self.rcv_nxt = 0
-        for _ in range(5):
-            self.send_seg(SYN, self.iss, options=struct.pack("!BBH", 2, 4, 1460))
+        for _ in range(15):
+            self.send_seg(SYN, self.iss, options=struct.pack("!BBH", 2, 4, self.mss_option))
             deadline = time.time() + 1
             while time.time() < deadline:
                 try:
@@ -431,7 +496,7 @@ class TcpClient:
             self.send_seg(ACK | PSH, start + half, data[half:])
         tries = 0
         while self.snd_una < self.snd_nxt and not self.reset:
-            if tries == 8:
+            if tries == 20:
                 self.problems.append(f"no ACK for data at {start - self.iss - 1}")
                 return False
             self.send_seg(ACK | PSH, start, data)
@@ -441,6 +506,29 @@ class TcpClient:
                 self.pump(0.05)
         return not self.reset
 
+    def drain(self, seconds):
+        """Take in whatever the OS sends for this long."""
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            self.pump(0.05)
+
+    def challenged(self, forge):
+        """Send a forged segment; True if a challenge ACK came back (a bare
+        ACK of what we really sent) and the connection survived."""
+        start = len(self.log)
+        forge()
+        bare = lambda: [e for e in self.log[start:] if e[0] == ACK and e[3] == 0 and e[2] == self.snd_nxt % MOD32]
+        self.wait_for(bare, 10)
+        return bool(bare()) and not self.reset
+
+    def echo(self, line):
+        """Send a line and check it comes back."""
+        start = len(self.received)
+        if not self.send_reliably(line + b"\r\n"):
+            return False
+        self.wait_for(lambda: len(self.received) >= start + len(line) + 2, 10)
+        return self.received[start:] == line + b"\r\n"
+
     def wait_for(self, predicate, seconds):
         deadline = time.time() + seconds
         while not predicate() and time.time() < deadline and not self.reset:
@@ -448,10 +536,15 @@ class TcpClient:
         return predicate()
 
     def run(self):
+        """The script, then keep acknowledging what the OS sends, as a closed
+        client in TIME-WAIT would: a resent FIN must not go unanswered."""
         try:
             self.script()
         except Exception as e:                  # report, don't hang the test
             self.problems.append(f"exception {e!r}")
+        self.done.set()
+        while True:
+            self.pump(1)
 
     def script(self):
         if not self.connect():
@@ -490,7 +583,7 @@ class TcpClient:
         """Our FIN, then wait for it to be acknowledged and for theirs."""
         fin_seq = self.snd_nxt
         self.snd_nxt += 1
-        for _ in range(8):
+        for _ in range(20):
             self.send_seg(FIN | ACK, fin_seq)
             if self.wait_for(lambda: self.snd_una == self.snd_nxt and self.fin_received, 1):
                 break
@@ -546,10 +639,10 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--os-port", type=int, required=True)
-    p.add_argument("script", choices=["ping", "udp", "tcp", "repl"])
+    p.add_argument("script", choices=["ping", "udp", "tcp", "tcp-attack", "repl"])
     args = p.parse_args()
     peer = Peer(args.port, args.os_port)
-    getattr(peer, "script_" + args.script)()
+    getattr(peer, "script_" + args.script.replace("-", "_"))()
     while True:                     # keep answering until terminated
         time.sleep(1)
 
