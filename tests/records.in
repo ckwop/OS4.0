@@ -1,0 +1,17 @@
+\ Crash-safe records (forth/records.fs): two copies, the newest valid one wins
+create r1 100 allot
+: text1  s" first version" ;  : text2  s" second, longer version" ;
+r1 100 20 record@ .
+text1 20 record!  r1 100 20 record@ r1 swap type
+text2 20 record!  r1 100 20 record@ r1 swap type
+20 copy-seq .  21 copy-seq .
+\ a torn write: spoil the newer copy, and the older one is read
+21 block 30 + 1 swap +!  update  save-buffers  21 copy-seq .
+r1 100 20 record@ r1 swap type
+\ the next write goes over the spoiled copy
+text2 20 record!  20 copy-seq .  21 copy-seq .  r1 100 20 record@ r1 swap type
+pad 1001 20 record!
+\ --- reboot ---
+create r1 100 allot
+r1 100 20 record@ r1 swap type
+r1 6 20 record@ .  r1 6 type

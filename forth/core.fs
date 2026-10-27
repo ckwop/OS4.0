@@ -173,13 +173,14 @@ variable leaves
 : loop   ( C: leaves dest -- )  postpone (loop) ,  resolve-leaves leaves ! ; immediate compile-only
 : +loop  ( C: leaves dest -- )  postpone (+loop) ,  resolve-leaves leaves ! ; immediate compile-only
 
-\ ---- Memory
+\ ---- Memory. CMOVE, CMOVE> and FILL are kernel primitives (measured hot
+\ spots); these are their definitions, which tests/reference checks.
 
-: cmove   ( src dst u -- )  0 ?do  over i + c@  over i + c!  loop 2drop ;
-: cmove>  ( src dst u -- )
+: cmove-ref   ( src dst u -- )  0 ?do  over i + c@  over i + c!  loop 2drop ;
+: cmove>-ref  ( src dst u -- )
   begin dup while  1- >r  over r@ + c@  over r@ + c!  r>  repeat drop 2drop ;
 : move    ( src dst u -- )  >r 2dup u< if r> cmove> else r> cmove then ;
-: fill    ( addr u c -- )  swap 0 ?do  2dup swap i + c!  loop 2drop ;
+: fill-ref    ( addr u c -- )  swap 0 ?do  2dup swap i + c!  loop 2drop ;
 : count   ( addr -- addr+1 c )  dup 1+ swap c@ ;
 : /string ( addr u n -- addr+n u-n )  tuck - >r + r> ;
 : 2!      ( x1 x2 addr -- )  swap over ! cell+ ! ;

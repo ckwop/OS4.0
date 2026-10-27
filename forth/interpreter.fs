@@ -133,7 +133,8 @@ forth-wordlist context !  1 #order !             \ the console's; new tasks copy
 \ Terminal input. The Forth echoes what is typed: neither a serial console nor
 \ a telnet session in character mode does. KEY lets other tasks run while waiting.
 user eof                        \ the terminal's input has ended
-: rubout  ( -- )  8 emit space 8 emit ;
+user hidden                     \ ACCEPT does not echo: for passwords
+: rubout  ( -- )  hidden @ if exit then  8 emit space 8 emit ;
 : accept  ( addr max -- u )  \ Enter ends the line; Ctrl-D on an empty line ends input
   >r 0 begin key
     dup 10 = over 13 = or if drop space nip r> drop exit then
@@ -142,7 +143,7 @@ user eof                        \ the terminal's input has ended
     dup 9 = if drop bl then
     dup 8 = over 127 = or if drop dup if 1- rubout then 0 then
     dup bl < if drop else
-      over r@ < if  >r 2dup + r@ swap c! 1+ r> emit  else drop then
+      over r@ < if  >r 2dup + r@ swap c! 1+ r> hidden @ if drop else emit then  else drop then
     then
   again ;
 -271 message: end of input

@@ -174,6 +174,8 @@ boot_files:
 	bootfile "forth/errors.fs"
 	bootfile "forth/tasks.fs"
 	bootfile "forth/random.fs"
+	bootfile "forth/crypto.fs"
+	bootfile "forth/records.fs"
 	bootfile "forth/net/eth.fs"
 	bootfile "forth/net/arp.fs"
 	bootfile "forth/net/ip.fs"

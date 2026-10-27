@@ -422,20 +422,41 @@ create rst-conn  /conn-header allot
   dup fin-sent flag?  over fin-acked flag? 0= and if dup unsend-fin then
   tcp-output ;
 
+: abort-connection  ( conn -- )  \ reset it now, whatever is queued
+  dup c.state @ closed = if drop exit then
+  dup dup snd-nxt f-rst control-out  release-conn ;
+
+\ A closed connection's time is up: the end of TIME-WAIT or FIN-WAIT-2, or of
+\ its linger time, if the other end would not take what was queued.
+: timed-out  ( conn -- )
+  dup c.state @  dup time-wait =  swap fin-wait-2 = or if  release-conn exit  then
+  abort-connection ;
+
 : tcp-timers  ( -- )
   conns @ begin ?dup while
     dup c.link @ swap                               ( next conn )
     dup c.rexmit @ ?dup if  expired? if dup retransmit then  then
-    dup c.state @  dup time-wait =  swap fin-wait-2 = or if
-      dup c.timeout @ expired? if dup release-conn then
+    dup c.state @ closed <> if                      \ not just released by RETRANSMIT
+      dup c.timeout @ ?dup if  expired? if dup timed-out then  then
     then
     drop
   repeat ;
 
 \ ---- For the application. Words that wait sleep until the network task wakes
-\ them. A connection must not be used after CLOSE-CONNECTION.
+\ them, or until the task's IO-TIMEOUT runs out: then they throw -273, and a
+\ send that made no progress for that long first resets the connection. A
+\ connection must not be used after CLOSE-CONNECTION.
 
+-273 message: timed out
+user io-timeout                 \ ms a word may wait on the other end; 0: for ever
+user io-until                   \ when the current wait ends, or 0
 user cur-conn                   \ the connection SEND or GET-LINE is working on
+60000 constant linger-ms        \ how long a closed connection may take to send what is queued
+
+: io-start  ( -- )  io-timeout @ ?dup if deadline else 0 then io-until ! ;
+: io-wait   ( -- )  \ sleep until woken; throw -273 if the time is up
+  up@ cur-conn @ c.owner !
+  io-until @ ?dup if  dup expired? if drop -273 throw then  stop-until  else  stop  then ;
 
 : open?  ( conn -- flag )  \ we can still send on it
   dup c.state @  dup established =  swap close-wait = or  swap fin-queued flag? 0= and ;
@@ -443,11 +464,14 @@ user cur-conn                   \ the connection SEND or GET-LINE is working on
 \ Queue data on cur-conn, sending only when we must wait for room. Throws -269
 \ once the connection is closed.
 : (send)  ( addr len -- )
+  io-start
   begin dup while
     cur-conn @ open? 0= if 2drop -269 throw then
     cur-conn @ tx-room ?dup 0= if
-      cur-conn @ tcp-output  up@ cur-conn @ c.owner !  stop
+      cur-conn @ tcp-output
+      ['] io-wait catch ?dup if  cur-conn @ abort-connection throw  then
     else
+      io-start                                      \ progress: the time starts again
       over min                                      ( addr len n )
       dup 0 ?do  2 pick i + c@  cur-conn @ c.tx-queued @ i + /tx 1- and  cur-conn @ c.tx + c!  loop
       dup cur-conn @ c.tx-queued +!
@@ -474,7 +498,7 @@ create crlf  13 c, 10 c,
 \ Read a line into addr, without its CR LF, waiting for one. A line longer than
 \ max is cut short. -1 once the other end has finished and nothing is left.
 : get-line  ( addr max conn -- len | -1 )
-  cur-conn !
+  cur-conn !  io-start
   begin
     cur-conn @ line-length  dup 0< 0= if
       >r  r@ min  2dup take  r> 1+ consumed  strip-cr exit
@@ -483,12 +507,15 @@ create crlf  13 c, 10 c,
     cur-conn @ fin-received flag?  cur-conn @ c.state @ closed = or if
       cur-conn @ rx-unread ?dup if  min 2dup take  dup consumed  nip  else  2drop -1  then exit
     then
-    up@ cur-conn @ c.owner !  stop
+    io-wait
   again ;
 
-: close-connection  ( conn -- )  \ send what is queued, then a FIN; then let it go
+\ Send what is queued, then a FIN; then let it go. If that has not finished
+\ within LINGER-MS, the connection is reset.
+: close-connection  ( conn -- )
   dup app-closed flag+
   dup c.state @ closed = if  free-conn exit  then
+  linger-ms deadline over c.timeout !
   dup fin-queued flag+  tcp-output ;
 
 : .tcp  ( -- )  \ connections live and pooled

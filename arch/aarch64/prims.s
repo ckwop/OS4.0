@@ -450,3 +450,147 @@ pause_end:
 	defcode	"bye", w_bye			// ( -- )
 	mov	x0, #0
 	b	hal_bye
+
+// ---- A measured hot spot: SHA-256's block function (FIPS 180-4). In Forth
+// a block took 27 ms under emulation, so a password hash took minutes.
+// crypto.fs has COMPRESS-REF, the Forth definition, which tests/reference
+// checks against this. The state is eight cells, each a 32-bit word; w is
+// room for the 64-word message schedule (256 bytes); k is the 64 round
+// constants, a cell each. Working variables a-h are w4-w11.
+
+	defcode	"sha256-block", w_sha256block	// ( block state w k -- )
+	POP	x3
+	POP	x2
+	POP	x1
+	POP	x0
+	mov	x12, #0				// the schedule: 16 big-endian words,
+1:	ldr	w13, [x0, x12, lsl #2]
+	rev	w13, w13
+	str	w13, [x2, x12, lsl #2]
+	add	x12, x12, #1
+	cmp	x12, #16
+	b.lo	1b
+2:	sub	x13, x12, #2			// then W[i] = sigma1(W[i-2]) + W[i-7]
+	ldr	w14, [x2, x13, lsl #2]		//   + sigma0(W[i-15]) + W[i-16]
+	ror	w15, w14, #17
+	eor	w15, w15, w14, ror #19
+	eor	w15, w15, w14, lsr #10
+	sub	x13, x12, #15
+	ldr	w14, [x2, x13, lsl #2]
+	ror	w24, w14, #7
+	eor	w24, w24, w14, ror #18
+	eor	w24, w24, w14, lsr #3
+	add	w15, w15, w24
+	sub	x13, x12, #16
+	ldr	w14, [x2, x13, lsl #2]
+	add	w15, w15, w14
+	sub	x13, x12, #7
+	ldr	w14, [x2, x13, lsl #2]
+	add	w15, w15, w14
+	str	w15, [x2, x12, lsl #2]
+	add	x12, x12, #1
+	cmp	x12, #64
+	b.lo	2b
+	ldp	x4, x5, [x1]
+	ldp	x6, x7, [x1, #16]
+	ldp	x8, x9, [x1, #32]
+	ldp	x10, x11, [x1, #48]
+	mov	x12, #0
+3:	ror	w13, w8, #6			// t1 = h + Sigma1(e) + Ch(e,f,g) + K[i] + W[i]
+	eor	w13, w13, w8, ror #11
+	eor	w13, w13, w8, ror #25
+	and	w14, w8, w9
+	bic	w15, w10, w8
+	eor	w14, w14, w15
+	add	w13, w13, w14
+	add	w13, w13, w11
+	ldr	x14, [x3, x12, lsl #3]
+	add	w13, w13, w14
+	ldr	w14, [x2, x12, lsl #2]
+	add	w13, w13, w14
+	ror	w14, w4, #2			// t2 = Sigma0(a) + Maj(a,b,c)
+	eor	w14, w14, w4, ror #13
+	eor	w14, w14, w4, ror #22
+	and	w15, w4, w5
+	and	w24, w4, w6
+	eor	w15, w15, w24
+	and	w24, w5, w6
+	eor	w15, w15, w24
+	add	w14, w14, w15
+	mov	w11, w10			// h = g, g = f, f = e, e = d + t1,
+	mov	w10, w9				// d = c, c = b, b = a, a = t1 + t2
+	mov	w9, w8
+	add	w8, w7, w13
+	mov	w7, w6
+	mov	w6, w5
+	mov	w5, w4
+	add	w4, w13, w14
+	add	x12, x12, #1
+	cmp	x12, #64
+	b.lo	3b
+	ldp	x12, x13, [x1]			// add a-h into the state
+	add	w12, w12, w4
+	add	w13, w13, w5
+	stp	x12, x13, [x1]
+	ldp	x12, x13, [x1, #16]
+	add	w12, w12, w6
+	add	w13, w13, w7
+	stp	x12, x13, [x1, #16]
+	ldp	x12, x13, [x1, #32]
+	add	w12, w12, w8
+	add	w13, w13, w9
+	stp	x12, x13, [x1, #32]
+	ldp	x12, x13, [x1, #48]
+	add	w12, w12, w10
+	add	w13, w13, w11
+	stp	x12, x13, [x1, #48]
+	NEXT
+
+// ---- Measured hot spots: memory copies and fills. In Forth they cost about
+// 11 us a byte under emulation, so moving a block buffer took 11 ms. core.fs
+// has CMOVE-REF, CMOVE>-REF and FILL-REF, which tests/reference checks.
+
+	defcode	"cmove", w_cmove		// ( src dst u -- ) copy, lowest address first
+	POP	x2
+	POP	x1
+	POP	x0
+	cbz	x2, 2f
+1:	ldrb	w12, [x0], #1
+	strb	w12, [x1], #1
+	subs	x2, x2, #1
+	b.ne	1b
+2:	NEXT
+
+	defcode	"cmove>", w_cmoveup		// ( src dst u -- ) copy, highest address first
+	POP	x2
+	POP	x1
+	POP	x0
+	cbz	x2, 2f
+1:	subs	x2, x2, #1
+	ldrb	w12, [x0, x2]
+	strb	w12, [x1, x2]
+	b.ne	1b
+2:	NEXT
+
+	defcode	"fill", w_fill			// ( addr u c -- )
+	POP	x2
+	POP	x1
+	POP	x0
+	cbz	x1, 2f
+1:	strb	w2, [x0], #1
+	subs	x1, x1, #1
+	b.ne	1b
+2:	NEXT
+
+// SHA-256's output: the state's eight 32-bit words, big-endian, at addr.
+	defcode	"sha256-out", w_sha256out	// ( state addr -- )
+	POP	x1
+	POP	x0
+	mov	x12, #0
+1:	ldr	x13, [x0, x12, lsl #3]
+	rev	w13, w13
+	str	w13, [x1, x12, lsl #2]
+	add	x12, x12, #1
+	cmp	x12, #8
+	b.lo	1b
+	NEXT

@@ -80,7 +80,13 @@ docker run --rm --cap-add NET_ADMIN --device /dev/net/tun -v "${PWD}:/src" os4 m
 
 ### Network REPL
 
-The OS serves Forth over telnet. Port 4000 is a sandbox: arithmetic, the stack and printing, but no compiling and no access to memory or the rest of the dictionary. Port 4001 is the full Forth, as on the console. Each session runs in its own task with its own stack, number base and buffers, and `bye` ends it.
+The OS serves Forth over telnet. Port 4000 is a sandbox: arithmetic, the stack and printing, but no compiling and no access to memory or the rest of the dictionary. Port 4001 is the full Forth, as on the console, after the admin password. Each session runs in its own task with its own stack, number base and buffers; `bye` ends it, and so do ten minutes without input. Each port takes a limited number of sessions at once (16 and 4).
+
+Port 4001 turns everyone away until you set the admin password on the console. It is kept, hashed, on the data disk, so this is needed once per disk:
+
+```forth
+set-admin-password      \ asks twice; nothing you type is shown
+```
 
 To try it from Windows, boot with both ports published to your machine only:
 
@@ -90,7 +96,7 @@ docker run --rm -it -p 127.0.0.1:4000:4000 -p 127.0.0.1:4001:4001 -v "${PWD}:/sr
 
 Then, from another terminal, `telnet localhost 4000` (or 4001). Windows ships its telnet client switched off; turn it on once from an administrator PowerShell with `dism /online /Enable-Feature /FeatureName:TelnetClient`, or use PuTTY with the connection type set to Telnet.
 
-Port 4001 has no login yet, so it must never be reachable from the internet (docs/tech-debt.md TD-23). `make tcp-check` runs eight sandbox sessions and a full-Forth one from the container's own TCP stack.
+Even with its password, keep port 4001 to your own machine (the `127.0.0.1:` above). `make tcp-check` runs eight sandbox sessions and a full-Forth one from the container's own TCP stack.
 
 ### TCP
 

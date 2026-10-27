@@ -48,6 +48,7 @@ user next-free                                    \ the next task in the pool's 
 : wake   ( task -- )  0 swap task-status field! ;
 : sleep  ( task -- )  dup 1 swap task-status field!  0 swap task-wake field! ;
 : ms     ( n -- )  counter-hz 1000 / *  counter +  task-wake !  1 task-status !  pause ;
+: stop-until  ( u -- )  task-wake !  1 task-status !  pause ;  \ until woken or counter value u
 
 variable free-tasks                                \ pooled tasks with nothing to do
 

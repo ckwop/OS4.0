@@ -17,11 +17,11 @@ user after-cr                  \ the last character in was a CR
 \ ---- Input
 
 : conn-byte  ( -- c | -1 )  \ the next byte, waiting for it; -1 once input has ended
-  term-conn @ cur-conn !
+  term-conn @ cur-conn !  io-start                  \ throws -273 after IO-TIMEOUT idle
   begin
     cur-conn @ rx-unread if  cur-conn @ dup c.rx-out @ rx@  1 consumed exit  then
     cur-conn @ fin-received flag?  cur-conn @ c.state @ closed = or if  -1 exit  then
-    up@ cur-conn @ c.owner !  stop
+    io-wait
   again ;
 
 : skip-subnegotiation  ( -- )

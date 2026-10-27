@@ -1,12 +1,13 @@
 OS 4.0
 \ An off-path attacker against a line echo server (tools/netpeer.py tcp-attack)  ok
 variable served  ok
-: serve ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat drop close-connection 1 served +! ;  ok
+: (serve) ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat 2drop ;  ok
+: serve ( conn -- ) 10000 io-timeout !  dup ['] (serve) catch if drop then  close-connection  1 served +! ;  ok
 : line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;  ok
 1 max-syn-retries !  16 max-half-open !  ok
 task server  ' line-server server start  ok
-: settled? ( -- flag ) served @ 2 = conns @ 0= and ;  ok
-: settle ( -- ) 60000 deadline begin 200 ms settled? over expired? or until drop ;  ok
+: settled? ( -- flag ) served @ 3 = conns @ 0= and ;  ok
+: settle ( -- ) 80000 deadline begin 200 ms settled? over expired? or until drop ;  ok
 settle .tcp ." , half-open " half-open . connections 0, pooled 16, half-open 0  ok
 1000 ms  ok
 --- peer ---
@@ -19,3 +20,4 @@ peer: data acknowledging unsent bytes: challenge ACK
 peer: reset outside the window: ignored
 peer: connection still works: yes
 peer: client with MSS 0: echo ok
+peer: reader that never reads: reset by the OS

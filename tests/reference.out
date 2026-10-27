@@ -6,3 +6,16 @@ OS 4.0
 : agree ( addr u -- flag ) 2dup latest @ search-list >r latest @ search-list-ref r> = ;  ok
 s" dup" agree .  s" DUP" agree .  s" no-such-word" agree .  s" agree" agree . -1 -1 -1 -1  ok
 s" Swap" latest @ search-list 0<> .  s" no-such-word" latest @ search-list . -1 0  ok
+\ SHA256-BLOCK against COMPRESS-REF: two blocks, chained  ok
+create blk64 64 allot  : fill64 ( -- ) 64 0 do i 37 * 11 + blk64 i + c! loop ;  fill64  ok
+create state1 8 cells allot  ok
+sha-init blk64 compress blk64 compress  sha-h state1 8 cells-move  ok
+sha-init blk64 compress-ref blk64 compress-ref  sha-h 8 cells state1 8 cells compare 0= . -1  ok
+\ CMOVE, CMOVE> and FILL against their Forth definitions, overlapping both ways  ok
+create m1 40 allot  create m2 40 allot  ok
+: setup ( -- ) 40 0 do  i 3 * dup m1 i + c!  m2 i + c!  loop ;  ok
+: same? ( -- flag ) m1 40 m2 40 compare 0= ;  ok
+setup  m1 m1 7 + 20 cmove  m2 m2 7 + 20 cmove-ref  same? . -1  ok
+setup  m1 7 + m1 20 cmove>  m2 7 + m2 20 cmove>-ref  same? . -1  ok
+setup  m1 3 + 30 $5a fill  m2 3 + 30 $5a fill-ref  same? . -1  ok
+setup  m1 m2 0 cmove  m1 0 0 fill  same? .  m1 1+ c@ . -1 3  ok

@@ -20,9 +20,11 @@ Scripts:
          from the OS, one sends out of order, one's sequence numbers wrap, one sends
          all its lines in a single segment. Then a SYN to closed port 4999
          must be reset
-  repl   telnet sessions with the network REPL: two sandbox sessions at once
-         on port 4000, a full-Forth session on 4001, and a client that hangs
-         up in the middle of a line. Prints what each session showed
+  repl   telnet sessions with the network REPL: port 4001 before an admin
+         password is set; two sandbox sessions at once and a third the full
+         door turns away; a full-Forth session after a wrong password; an idle
+         session the OS ends; and a client that hangs up in the middle of a
+         line. Prints what each session showed
   tcp-attack  an off-path attacker against the echo server on port 5000: a SYN
          flood beyond the OS's cap on half-open connections, then a real
          client; forged resets in and out of the window, a SYN and an
@@ -291,6 +293,15 @@ class Peer:
             line = b"y" * 150
             print(f"peer: client with MSS 0: echo {'ok' if small.echo(line) else 'failed'}", flush=True)
             small.close()
+
+        stalled = TcpClient(self, 53002, dport=5000)  # sends, but never takes the echoes
+        if stalled.connect():
+            stalled.window = 0
+            for j in range(100):
+                if not stalled.send_reliably(f"stalled line {j:3} ".encode() + b"z" * 80 + b"\r\n"):
+                    break
+            reset = stalled.wait_for(lambda: stalled.reset, 40)
+            print(f"peer: reader that never reads: {'reset by the OS' if reset else 'not reset'}", flush=True)
         for client in (c, small):
             for problem in client.problems:
                 print(f"peer: client {client.sport}: {problem}", flush=True)
@@ -300,16 +311,24 @@ class Peer:
             print("peer: no ARP reply from 10.0.2.15", flush=True)
             return
         time.sleep(1)
+        probe = TcpClient(self, 51004, dport=4001)    # before the console sets a password
         a, b = TcpClient(self, 51000, dport=4000), TcpClient(self, 51001, dport=4000)
+        full = TcpClient(self, 51005, dport=4000)     # the door allows two
         admin = TcpClient(self, 51002, dport=4001)
+        idle = TcpClient(self, 51006, dport=4000)
         quitter = TcpClient(self, 51003, dport=4000)
-        sessions = [("sandbox A", a), ("sandbox B", b), ("full Forth", admin), ("hang-up", quitter)]
-        for _, c in sessions[:2]:
+        sessions = [("no password", probe), ("sandbox A", a), ("sandbox B", b), ("door full", full),
+                    ("full Forth", admin), ("idle", idle), ("hang-up", quitter)]
+        if probe.connect():
+            probe.wait_for(lambda: probe.fin_received, 10)
+        for _, c in sessions[1:3]:
             if c.connect():
                 c.connected = True
                 c.wait_for_text("leave.\r\n")
             else:
                 c.problems.append("no SYN-ACK")
+        if full.connect():
+            full.wait_for(lambda: full.fin_received, 10)
         steps = [(a, "2 3 + .", "ok"), (a, "hex ff .", "ok"), (b, "ff .", "?"),
                  (a, "decimal 1 2 3", "ok"), (b, ".s", "ok"), (a, ".s", "ok"),
                  (a, "here .", "?"), (a, ": sq dup * ;", "?"), (a, "words", "ok"),
@@ -318,7 +337,24 @@ class Peer:
             if c.connected and not c.problems:
                 c.send_reliably(line.encode() + b"\r\n")
                 c.wait_for_text(end + "\r\n")
-        if admin.connect():
+        for c in (a, b):
+            c.wait_for(lambda: c.fin_received, 10)
+        if idle.connect():                      # says nothing: the OS ends it
+            idle.wait_for_text("leave.\r\n")
+        for attempt in range(20):               # the console may not have set it yet
+            if admin.connect():
+                admin.wait_for(lambda: b"Password: " in admin.received or admin.fin_received, 10)
+                if b"Password: " in admin.received:
+                    break
+                admin.close()
+            time.sleep(1)
+            admin = TcpClient(self, 51010 + attempt, dport=4001)
+        sessions[4] = ("full Forth", admin)
+        if b"Password: " in admin.received:     # a wrong password, then the right one
+            admin.wait_for_text("Password: ")
+            admin.send_reliably(b"wrong\r\n")
+            admin.wait_for_text("Password: ")
+            admin.send_reliably(b"secret\r\n")
             admin.wait_for_text("leave.\r\n")
             for line in [": sq dup * ; 7 sq .", "here 0<> .", "bye"]:
                 admin.send_reliably(line.encode() + b"\r\n")
@@ -326,10 +362,11 @@ class Peer:
         if quitter.connect():                   # a partial line, then hang up
             quitter.wait_for_text("leave.\r\n")
             quitter.send_reliably(b"1 2 + .")
-            time.sleep(0.5)
+            quitter.close()                     # the OS runs what it has, then closes
         for _, c in sessions:
-            c.wait_for(lambda: c.fin_received, 10)
-            c.close()
+            if not c.closed:
+                c.wait_for(lambda: c.fin_received, 20)
+                c.close()
         for name, c in sessions:
             for line in c.transcript().rstrip("\n").split("\n"):
                 print(f"peer: {name}| {line}", flush=True)
@@ -402,6 +439,7 @@ class TcpClient:
         self.seen_seqs = set()
         self.peer_mss = None
         self.mss_option = 1460
+        self.window = 65535                 # what we advertise
         self.log = []                       # (flags, seq, ack, data length) of each segment in
         self.done = threading.Event()       # the script has finished
 
@@ -413,7 +451,7 @@ class TcpClient:
             ack = self.rcv_nxt if flags & ACK else 0
         ack %= MOD32
         seg = struct.pack("!HHIIHHHH", self.sport, self.dport, seq % MOD32, ack,
-                          (hlen // 4) << 12 | flags, 65535, 0, 0) + options + data
+                          (hlen // 4) << 12 | flags, self.window, 0, 0) + options + data
         pseudo = PEER_IP + OS_IP + struct.pack("!BBH", 0, 6, len(seg))
         seg = seg[:16] + struct.pack("!H", checksum(pseudo + seg)) + seg[18:]
         self.peer.send_ip(6, seg)
@@ -445,7 +483,7 @@ class TcpClient:
                 self.drop_first_data = False  # pretend it never arrived
                 return
         offset = (seq - self.rcv_nxt) % MOD32
-        if data and offset == 0:
+        if data and offset == 0 and self.window:   # a closed window takes nothing
             self.received += data
             self.rcv_nxt += len(data)
         if flags & FIN and (seq + len(data) - self.rcv_nxt) % MOD32 == 0 and not self.fin_received:

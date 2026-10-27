@@ -1,0 +1,26 @@
+\ SHA-256, HMAC-SHA-256 and PBKDF2 against Python's hashlib (FIPS 180-4, RFC 4231 and RFC 7914 vectors)
+create digest 32 allot
+: .digest  ( -- )  base @ hex  32 0 do  digest i + c@ 0 <# # # #> type  loop  base !  space ;
+create text 1000 allot
+: counting  ( n -- addr n )  dup 0 ?do  i text i + c!  loop  text swap ;
+: as  ( n c -- addr n )  text 2 pick rot fill  text swap ;
+s" " digest sha256 .digest
+s" abc" digest sha256 .digest
+1000 counting digest sha256 .digest
+55 char a as digest sha256 .digest
+56 char a as digest sha256 .digest
+64 char a as digest sha256 .digest
+create key20 20 allot  key20 20 $0b fill
+s" Hi There" key20 20 digest hmac-sha256 .digest
+: pass  s" password" ;  : salt  s" salt" ;   \ compiled: interpreted S" strings share one buffer
+create key131 131 allot  key131 131 $aa fill
+s" Test Using Larger Than Block-Size Key - Hash Key First" key131 131 digest hmac-sha256 .digest
+pass salt 1 digest pbkdf2 .digest
+pass salt 2 digest pbkdf2 .digest
+pass salt 4096 digest pbkdf2 .digest
+\ password hashes: salted, so the same password hashes differently
+100 hash-iterations !
+create pw1 /password allot  create pw2 /password allot
+s" swordfish" pw1 hash-password  s" swordfish" pw2 hash-password
+s" swordfish" pw1 password? .  s" swordfish" pw2 password? .  s" Swordfish" pw1 password? .
+pw1 pw.hash 32 pw2 pw.hash 32 compare 0<> .  pw1 pw.iterations @ .

@@ -14,8 +14,9 @@ import time
 CLIENTS, LINES = 8, 50
 
 
-def open_session(port):
-    """Connect and read the greeting; None if the OS does not answer."""
+def open_session(port, password=None):
+    """Connect, log in if a password is given, and read the greeting; None if
+    the OS does not answer."""
     for _ in range(20):                         # the OS may still be starting
         try:
             s = socket.create_connection(("127.0.0.1", port), timeout=10)
@@ -25,6 +26,8 @@ def open_session(port):
                 if not chunk:
                     break
                 got += chunk
+                if password and got.endswith(b"Password: "):
+                    s.sendall(password + b"\r\n")
             if b"leave.\r\n" in got:
                 return s
             s.close()
@@ -69,7 +72,7 @@ def sandbox_client(n, results):
 
 
 def admin_client():
-    s = open_session(4001)
+    s = open_session(4001, b"secret")           # tcp-check.in sets it
     if s is None:
         return "could not connect"
     s.sendall(b": cube dup dup * * ;\r\n5 cube .\r\nbye\r\n")

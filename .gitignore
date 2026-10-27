@@ -18,3 +18,4 @@ tests/**/*.actual
 Thumbs.db
 desktop.ini
 .DS_Store
+__pycache__/

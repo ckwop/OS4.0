@@ -1,4 +1,11 @@
-: sessions-done? ( -- flag ) conns @ 0= free-conns @ count-list 4 = and ;
+\ The network REPL (tools/netpeer.py repl): port 4001 before and after an admin password, a full sandbox door, an idle session
+2 sandbox-door door.limit !  8000 session-idle !  100 hash-iterations !
+: probed? ( -- flag ) sessions-served @ 0> ;
+: wait-probe ( -- ) 20000 deadline begin 100 ms probed? over expired? or until drop ;
+wait-probe set-admin-password
+secret
+secret
+: sessions-done? ( -- flag ) conns @ 0=  sessions-served @ 6 < 0= and  sessions-refused @ 0> and ;
 : wait-sessions ( -- ) 60000 deadline begin 200 ms sessions-done? over expired? or until drop ;
-wait-sessions .tcp
+wait-sessions  conns @ count-list .  sandbox-door door.count @ .  admin-door door.count @ .  sessions-refused @ .
 1000 ms

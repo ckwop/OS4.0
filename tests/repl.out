@@ -1,9 +1,19 @@
 OS 4.0
-: sessions-done? ( -- flag ) conns @ 0= free-conns @ count-list 4 = and ;  ok
+\ The network REPL (tools/netpeer.py repl): port 4001 before and after an admin password, a full sandbox door, an idle session  ok
+2 sandbox-door door.limit !  8000 session-idle !  100 hash-iterations !  ok
+: probed? ( -- flag ) sessions-served @ 0> ;  ok
+: wait-probe ( -- ) 20000 deadline begin 100 ms probed? over expired? or until drop ;  ok
+wait-probe set-admin-password New admin password:  
+Again:  
+Admin password set.
+ ok
+: sessions-done? ( -- flag ) conns @ 0=  sessions-served @ 6 < 0= and  sessions-refused @ 0> and ;  ok
 : wait-sessions ( -- ) 60000 deadline begin 200 ms sessions-done? over expired? or until drop ;  ok
-wait-sessions .tcp connections 0, pooled 4 ok
+wait-sessions  conns @ count-list .  sandbox-door door.count @ .  admin-door door.count @ .  sessions-refused @ . 0 0 0 1  ok
 1000 ms  ok
 --- peer ---
+peer: no password| No admin password is set: set one on the console with set-admin-password.
+peer: no password: closed
 peer: sandbox A| OS 4.0 sandbox. Type bye to leave.
 peer: sandbox A| 2 3 + . 5  ok
 peer: sandbox A| hex ff . FF  ok
@@ -20,11 +30,20 @@ peer: sandbox B| ff . ff ?
 peer: sandbox B| .s <0>  ok
 peer: sandbox B| bye  ok
 peer: sandbox B: closed
+peer: door full| Too many sessions: try again later.
+peer: door full: closed
+peer: full Forth| Password:  
+peer: full Forth| Wrong password.
+peer: full Forth| Password:  
 peer: full Forth| OS 4.0 full Forth. Type bye to leave.
 peer: full Forth| : sq dup * ; 7 sq . 49  ok
 peer: full Forth| here 0<> . -1  ok
 peer: full Forth| bye  ok
 peer: full Forth: closed
+peer: idle| OS 4.0 sandbox. Type bye to leave.
+peer: idle| 
+peer: idle| timed out
+peer: idle: closed
 peer: hang-up| OS 4.0 sandbox. Type bye to leave.
 peer: hang-up| 1 2 + . 3  ok
 peer: hang-up: closed

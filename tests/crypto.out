@@ -1,0 +1,27 @@
+OS 4.0
+\ SHA-256, HMAC-SHA-256 and PBKDF2 against Python's hashlib (FIPS 180-4, RFC 4231 and RFC 7914 vectors)  ok
+create digest 32 allot  ok
+: .digest  ( -- )  base @ hex  32 0 do  digest i + c@ 0 <# # # #> type  loop  base !  space ;  ok
+create text 1000 allot  ok
+: counting  ( n -- addr n )  dup 0 ?do  i text i + c!  loop  text swap ;  ok
+: as  ( n c -- addr n )  text 2 pick rot fill  text swap ;  ok
+s" " digest sha256 .digest E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855  ok
+s" abc" digest sha256 .digest BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD  ok
+1000 counting digest sha256 .digest A8AF099BF2E878609558DBF69D8F88F4A31040A8CF84B549A0CFA912F12FFC3F  ok
+55 char a as digest sha256 .digest 9F4390F8D30C2DD92EC9F095B65E2B9AE9B0A925A5258E241C9F1E910F734318  ok
+56 char a as digest sha256 .digest B35439A4AC6F0948B6D6F9E3C6AF0F5F590CE20F1BDE7090EF7970686EC6738A  ok
+64 char a as digest sha256 .digest FFE054FE7AE0CB6DC65C3AF9B61D5209F439851DB43D0BA5997337DF154668EB  ok
+create key20 20 allot  key20 20 $0b fill  ok
+s" Hi There" key20 20 digest hmac-sha256 .digest B0344C61D8DB38535CA8AFCEAF0BF12B881DC200C9833DA726E9376C2E32CFF7  ok
+: pass  s" password" ;  : salt  s" salt" ;   \ compiled: interpreted S" strings share one buffer  ok
+create key131 131 allot  key131 131 $aa fill  ok
+s" Test Using Larger Than Block-Size Key - Hash Key First" key131 131 digest hmac-sha256 .digest 60E431591EE0B67F0D8A26AACBF5B77F8E0BC6213728C5140546040F0EE37F54  ok
+pass salt 1 digest pbkdf2 .digest 120FB6CFFCF8B32C43E7225256C4F837A86548C92CCC35480805987CB70BE17B  ok
+pass salt 2 digest pbkdf2 .digest AE4D0C95AF6B46D32D0ADFF928F06DD02A303F8EF3C251DFD6E2D85A95474C43  ok
+pass salt 4096 digest pbkdf2 .digest C5E478D59288C841AA530DB6845C4C8D962893A001CE4E11A4963873AA98134A  ok
+\ password hashes: salted, so the same password hashes differently  ok
+100 hash-iterations !  ok
+create pw1 /password allot  create pw2 /password allot  ok
+s" swordfish" pw1 hash-password  s" swordfish" pw2 hash-password  ok
+s" swordfish" pw1 password? .  s" swordfish" pw2 password? .  s" Swordfish" pw1 password? . -1 -1 0  ok
+pw1 pw.hash 32 pw2 pw.hash 32 compare 0<> .  pw1 pw.iterations @ . -1 100  ok

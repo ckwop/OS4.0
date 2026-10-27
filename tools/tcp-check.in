@@ -1,1 +1,4 @@
+100 hash-iterations !  set-admin-password
+secret
+secret
 20000 ms .tcp
