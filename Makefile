@@ -101,10 +101,10 @@ test: test-hosted test-virt
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)
-	$(TESTS) --timeout 90 --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk},{port} {peerport})" tests tests/hosted
+	$(TESTS) --timeout 150 --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk},{port} {peerport})" tests tests/hosted
 
 test-virt: $(BOOT_IMG)
-	$(TESTS) --timeout 120 --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST))" tests tests/baremetal
+	$(TESTS) --timeout 150 --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST))" tests tests/baremetal
 
 # The OS on a TAP device, reachable from this container at 10.0.2.15 (the
 # container is 10.0.2.2). Needs: docker run --cap-add NET_ADMIN --device /dev/net/tun

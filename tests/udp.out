@@ -1,12 +1,14 @@
 OS 4.0
 echo-service  ok
-: heard ( data len -- ) ." heard from " udp-peer-ip .ip ." :" udp-peer-port (.) type ." : " type cr ;  ok
+variable heard?  ok
+: heard ( data len -- ) ." heard from " udp-peer-ip .ip ." :" udp-peer-port (.) type ." : " type cr  true heard? ! ;  ok
 ' heard 5000 udp-bind  ok
-1500 ms  ok
-s" hello, peer" 5000 ip 10.0.2.2 7 udp-send .  500 ms -1 heard from 10.0.2.2:7: hello, peer
+: to-peer ( addr u -- flag ) 10000 deadline >r  begin 2dup 5000 [ ip 10.0.2.2 ] literal 7 udp-send 0= while  r@ expired? if 2drop r> drop false exit then 100 ms  repeat 2drop r> drop true ;  ok
+: wait-heard ( -- ) 5000 deadline begin heard? @ over expired? or 0= while 50 ms repeat drop ;  ok
+s" hello, peer" to-peer .  wait-heard -1 heard from 10.0.2.2:7: hello, peer
  ok
 5000 udp-unbind  ok
-s" again" 5000 ip 10.0.2.2 7 udp-send .  500 ms -1  ok
+s" again" to-peer .  500 ms -1  ok
 5000 ms  ok
 --- peer ---
 peer: udp echo of 0 bytes: ok

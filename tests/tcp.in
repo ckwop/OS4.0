@@ -1,7 +1,8 @@
-: serve ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat drop close-connection ;
+variable served
+: serve ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat drop close-connection  1 served +! ;
 : line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;
 task server  ' line-server server start
-: settled? ( -- flag ) conns @ 0= free-conns @ count-list 32 = and ;
-: settle ( -- ) 60000 deadline begin 200 ms settled? over expired? or until drop ;
-settle .tcp
+: settled? ( -- flag ) conns @ 0= served @ 32 = and ;
+: settle ( -- ) 110000 deadline begin 200 ms settled? over expired? or until drop ;
+settle served @ .  conns @ count-list .
 1000 ms

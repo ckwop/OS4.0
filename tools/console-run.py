@@ -21,6 +21,7 @@ Usage: console-run.py command [args ...]
 
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import threading
@@ -28,6 +29,21 @@ import threading
 BANNER = b"OS 4.0\n"
 CTRL_D = b"\x04"
 REBOOT_MARKER = b"\\ --- reboot ---"
+current = []                    # the running system and its output so far
+peers = []                      # the network peer, if one is running
+
+
+def terminated(signum, frame):
+    """Told to stop (a test that timed out): show how far the console got."""
+    if current:
+        proc, output = current
+        proc.kill()
+        start = max(output.find(BANNER), 0)
+        sys.stdout.buffer.write(bytes(output[start:]) + b"\n[terminated]\n")
+        sys.stdout.buffer.flush()
+    for peer in peers:
+        peer.kill()
+    os._exit(1)
 
 
 def run_once(command, data, on_banner=None):
@@ -42,6 +58,7 @@ def run_once(command, data, on_banner=None):
         proc.stdin.flush()
 
     output = bytearray()
+    current[:] = [proc, output]
     typing = None
     while True:
         chunk = os.read(proc.stdout.fileno(), 4096)
@@ -62,6 +79,7 @@ def run_once(command, data, on_banner=None):
 
 
 def main():
+    signal.signal(signal.SIGTERM, terminated)
     parts = [[]]
     for line in sys.stdin.buffer.read().splitlines(keepends=True):
         if line.rstrip(b"\r\n") == REBOOT_MARKER:
@@ -76,6 +94,7 @@ def main():
         if peer is None and os.environ.get("OS4_PEER"):
             peer = subprocess.Popen(shlex.split(os.environ["OS4_PEER"]),
                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            peers.append(peer)
 
     status = 0
     for part in parts:

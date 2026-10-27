@@ -125,7 +125,8 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 8 | TCP, many connections | Done |
 | 9 | Network REPL | Done |
 | 9a | Hardened base | In progress |
-| 10 | MUD engine | Not started |
+| 9b | Applications: an app is screens on the data disk, loaded at boot; apps live in their own repositories and build against a versioned `os4` image | Not started |
+| 10 | MUD engine (in its own repository, `os4-mud`, as the first application) | Not started |
 | 11 | Fargate deployment | Not started |
 | 12 | EC2 AMI | Not started |
 | 13 | x86-64 port | Not started |

@@ -382,6 +382,7 @@ create rst-conn  /conn-header allot
   r> tcp-output ;
 
 : tcp-in  ( segment len -- )
+  for-me? 0= if 2drop exit then                     \ never a connection to a broadcast
   2dup  ip-source rx-ip ip-dst + n32@ 2 pick proto-tcp pseudo-sum  -rot sum16 fold
   if 2drop exit then
   over tcp-flags + n16@  dup $3f and i-flags !  12 rshift 4 *     ( segment len hlen )
@@ -432,14 +433,16 @@ create rst-conn  /conn-header allot
   dup c.state @  dup time-wait =  swap fin-wait-2 = or if  release-conn exit  then
   abort-connection ;
 
-: tcp-timers  ( -- )
+: conn-timers  ( conn -- )
+  dup c.rexmit @ ?dup if  expired? if dup retransmit then  then
+  dup c.state @ closed <> if                        \ not just released by RETRANSMIT
+    dup c.timeout @ ?dup if  expired? if dup timed-out then  then
+  then
+  drop ;
+: tcp-timers  ( -- )  \ a connection whose timers throw is released, and the rest go on
   conns @ begin ?dup while
     dup c.link @ swap                               ( next conn )
-    dup c.rexmit @ ?dup if  expired? if dup retransmit then  then
-    dup c.state @ closed <> if                      \ not just released by RETRANSMIT
-      dup c.timeout @ ?dup if  expired? if dup timed-out then  then
-    then
-    drop
+    ['] conn-timers catch if  ['] release-conn catch if drop then  then
   repeat ;
 
 \ ---- For the application. Words that wait sleep until the network task wakes
@@ -517,6 +520,7 @@ create crlf  13 c, 10 c,
   dup c.state @ closed = if  free-conn exit  then
   linger-ms deadline over c.timeout !
   dup fin-queued flag+  tcp-output ;
+: drop-connection  ( conn -- )  dup abort-connection close-connection ;  \ reset it, and let it go
 
 : .tcp  ( -- )  \ connections live and pooled
   ." connections " conns @ count-list (.) type

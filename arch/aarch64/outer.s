@@ -75,10 +75,8 @@ do_quit:
 	cbz	x0, 1f
 	ldr	x1, =var_source		// boot files loaded: input is the terminal now
 	str	xzr, [x1]
-	isb				// the watchdog counts from here, not from boot
-	mrs	x2, cntvct_el0
-	ldr	x1, =var_task_since
-	str	x2, [x1]
+	ldr	x1, =var_task_ticks	// the watchdog counts from here, not from boot
+	str	xzr, [x1]
 	mov	x8, x0
 	br	x8
 1:	ldr	IP, =quit_thread
@@ -262,8 +260,10 @@ try_throw:
 1:	ret
 
 // watchdog_sub: x0 interrupted pc -> x0 pc to resume at instead, or 0. Called
-// on every timer tick, with interrupts off. If the running task has gone
-// var_watchdog counter ticks without pausing, it is sent to watchdog_throw.
+// on every timer tick, with interrupts off. If the running task has had
+// var_watchdog ticks without pausing, it is sent to watchdog_throw. Ticks, not
+// clock time: when the host stalls us, ticks are missed rather than piled up,
+// so a stall is never blamed on the task that happened to be running.
 // Never in the middle of PAUSE, and only once the system is up.
 	.global	watchdog_sub
 watchdog_sub:
@@ -282,14 +282,13 @@ watchdog_sub:
 	ldr	x2, =pause_end
 	cmp	x0, x2
 	b.lo	9f
-1:	ldr	x3, =var_task_since
+1:	ldr	x3, =var_task_ticks
 	ldr	x4, [x3]
-	isb
-	mrs	x5, cntvct_el0
-	sub	x6, x5, x4
-	cmp	x6, x1
+	add	x4, x4, #1
+	str	x4, [x3]
+	cmp	x4, x1
 	b.lo	9f
-	str	x5, [x3]			// one throw per stretch
+	str	xzr, [x3]			// one throw per stretch
 	ldr	x0, =watchdog_throw
 	ret
 9:	mov	x0, #0

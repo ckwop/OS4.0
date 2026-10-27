@@ -205,8 +205,8 @@ var_boot_line:	.quad	0		// its line number, for error reports
 var_quit:	.quad	0		// xt of the Forth QUIT loop, set by interpreter.fs
 var_throw:	.quad	0		// xt of THROW, set by core.fs; kernel errors throw through it
 var_errname:	.quad	0, 0		// ( addr len ) as 2! stores it: the word an error is about
-var_task_since:	.quad	0		// counter value when the running task was switched in
-var_watchdog:	.quad	0		// counter ticks a task may run without pausing; 0: off
+var_task_ticks:	.quad	0		// timer ticks the running task has had since it was switched in
+var_watchdog:	.quad	0		// timer ticks a task may run without pausing; 0: off
 var_sp0:	.quad	0		// hardware sp at start-up, restored by abort
 var_dict_owner:	.quad	0		// the task extending the dictionary, or 0 (core.fs CLAIM)
 

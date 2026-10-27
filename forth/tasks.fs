@@ -72,16 +72,33 @@ create task-thread  ' run-task ,                 \ where a started task begins
 : start-with  ( x xt task -- )  \ run xt in task with x on its stack
   3 (start) ;
 
-\ ---- The pool: tasks made on demand, reused once their work is done. There is
-\ no limit but memory (DECISIONS.md #71).
+\ ---- The pool: tasks made on demand, reused once their work is done, up to
+\ MAX-WORKERS of them (DECISIONS.md #71). Beyond that SPAWN throws -275, which
+\ the caller must handle: a server turns the client away.
 
+-275 message: no free task
+variable workers                                   \ pooled tasks made so far
+variable max-workers  64 max-workers !
 : spawn  ( x xt -- task )  \ run xt with x in a pooled task
   free-tasks @ ?dup if
     dup next-free >user @ free-tasks !
   else
-    s" worker" new-task  true over pooled field!
+    workers @ max-workers @ < 0= if -275 throw then
+    s" worker" new-task  true over pooled field!  1 workers +!
   then
   dup >r start-with r> ;
+
+\ ---- Supervision. A system task (the network, a listener) runs its loop
+\ under RESTARTING: whatever ends the loop, an error or a return, is reported
+\ and the loop starts again a second later, so one fault cannot stop the
+\ service for good, nor spin.
+
+variable restarts                                 \ how often a system task has been restarted
+: restarting  ( xt -- )  \ run xt for ever
+  begin
+    dup catch ?dup if  ['] report catch if drop then  then
+    1 restarts +!  1000 ms
+  again ;
 
 \ ---- Looking at tasks
 
@@ -95,7 +112,7 @@ create task-thread  ' run-task ,                 \ where a started task begins
 
 \ ---- The watchdog and the terminal
 
-: watchdog  ( ms -- )  counter-hz 1000 / *  watchdog-limit ! ;   \ 0 turns it off
+: watchdog  ( ms -- )  dup if 10 / 1 max then  watchdog-limit ! ;   \ in 10 ms ticks; 0 turns it off
 5000 watchdog
 
 \ Others run while we wait. The timer ticks every 10 ms, so polling more often

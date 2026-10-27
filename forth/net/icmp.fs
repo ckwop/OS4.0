@@ -49,6 +49,7 @@ variable pong                   \ sequence number of the last reply to us
   drop  dup icmp-ident + n16@ ping-ident = if  icmp-seq + n16@ pong !  else drop then ;
 
 : icmp-in  ( message len -- )
+  dup /icmp-echo <  if 2drop exit then             \ every ICMP message has 8 bytes of header
   2dup checksum if 2drop exit then
   over icmp-type + c@  dup 8 = if drop echo-reply exit then
   0= if echo-in else 2drop then ;

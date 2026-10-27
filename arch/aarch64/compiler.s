@@ -124,7 +124,7 @@ dodoes:
 	defconst "f-hidden", w_fhidden, F_HIDDEN	// in the byte after the link
 	defconst "f-compile-only", w_fconly, F_CONLY
 	defconst "f-length", w_flength, F_LENMASK
-	defconst "watchdog-limit", w_watchdog, var_watchdog // ( -- addr ) counter ticks; 0: off
+	defconst "watchdog-limit", w_watchdog, var_watchdog // ( -- addr ) 10 ms timer ticks; 0: off
 	defuser	"base", w_base, U_BASE		// ( -- addr )
 	defuser	"state", w_state, U_STATE	// ( -- addr ) true while compiling
 	defuser	">in", w_toin, U_TOIN		// ( -- addr )

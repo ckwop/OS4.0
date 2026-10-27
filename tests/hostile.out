@@ -1,0 +1,42 @@
+OS 4.0
+\ Malformed frames at every layer, random ones, and hostile telnet clients (tools/netpeer.py hostile)  ok
+echo-service  1 max-syn-retries !  ok
+variable served  ok
+: (serve) ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat 2drop ;  ok
+: serve ( conn -- ) 10000 io-timeout !  dup ['] (serve) catch if drop then  close-connection  1 served +! ;  ok
+: line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;  ok
+task server  ' line-server server start  ok
+variable peer-done  ok
+: done ( data len -- ) 2drop true peer-done ! ;  ok
+' done 5001 udp-bind  ok
+: spin ( data len -- ) 2drop begin again ;  ok
+' spin 5002 udp-bind  ok
+: settled? ( -- flag ) peer-done @  conns @ 0= and  served @ 1 = and  sessions-served @ 3 = and ;  ok
+: settle ( -- ) 80000 deadline begin 200 ms settled? over expired? or until drop ;  ok
+settle peer-done @ . served @ . sessions-served @ .  conns @ count-list . -1 1 3 0  ok
+1000 ms  ok
+--- peer ---
+peer: before: answering
+peer: malformed ethernet: 12 frames, still answering
+peer: malformed arp: 65 frames, still answering
+peer: malformed ip: 24 frames, still answering
+peer: malformed icmp: 13 frames, still answering
+peer: malformed udp: 8 frames, still answering
+peer: malformed tcp: 23 frames, still answering
+peer: SYN to the broadcast address: ignored
+peer: replies sent to a forged group MAC: 0
+peer: largest ping: ok
+peer: random bytes: 600 frames, still answering
+peer: telnet: another session answers while one types slowly: yes
+peer: telnet slow typist: ok
+peer: telnet subnegotiation 3000 bytes long: ok
+peer: telnet every command and option: ok
+peer: telnet an escaped 255 in a line: ok
+peer: telnet control characters in a line: ok
+peer: telnet CR NUL line end: ok
+peer: telnet a 5000-byte line: ok
+peer: telnet a line end inside a subnegotiation: ok
+peer: a UDP handler that never returns: still answering
+peer: afterwards: tcp echo ok
+peer: afterwards: udp echo ok
+peer: afterwards: answering

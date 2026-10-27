@@ -1,8 +1,10 @@
 echo-service
-: heard ( data len -- ) ." heard from " udp-peer-ip .ip ." :" udp-peer-port (.) type ." : " type cr ;
+variable heard?
+: heard ( data len -- ) ." heard from " udp-peer-ip .ip ." :" udp-peer-port (.) type ." : " type cr  true heard? ! ;
 ' heard 5000 udp-bind
-1500 ms
-s" hello, peer" 5000 ip 10.0.2.2 7 udp-send .  500 ms
+: to-peer ( addr u -- flag ) 10000 deadline >r  begin 2dup 5000 [ ip 10.0.2.2 ] literal 7 udp-send 0= while  r@ expired? if 2drop r> drop false exit then 100 ms  repeat 2drop r> drop true ;
+: wait-heard ( -- ) 5000 deadline begin heard? @ over expired? or 0= while 50 ms repeat drop ;
+s" hello, peer" to-peer .  wait-heard
 5000 udp-unbind
-s" again" 5000 ip 10.0.2.2 7 udp-send .  500 ms
+s" again" to-peer .  500 ms
 5000 ms

@@ -41,13 +41,18 @@ def run_test(index, path, args):
             env["OS4_PEER"] = f.read().strip().format(**fill)
 
     with open(path, "rb") as stdin:
+        proc = subprocess.Popen(shlex.split(args.cmd.format(**fill)), stdin=stdin, env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
         try:
-            run = subprocess.run(shlex.split(args.cmd.format(**fill)), stdin=stdin, env=env,
-                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                                 timeout=args.timeout)
-            output = run.stdout
-        except subprocess.TimeoutExpired as e:
-            output = (e.stdout or b"") + f"\n[timed out after {args.timeout} s]\n".encode()
+            output = proc.communicate(timeout=args.timeout)[0]
+        except subprocess.TimeoutExpired:
+            proc.terminate()                    # console-run then shows how far it got
+            try:
+                output = proc.communicate(timeout=10)[0]
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                output = proc.communicate()[0]
+            output += f"[timed out after {args.timeout} s]\n".encode()
     if os.path.exists(name + ".filter"):
         output = subprocess.run(["sed", "-f", name + ".filter"], input=output,
                                 stdout=subprocess.PIPE, check=True).stdout

@@ -35,18 +35,24 @@ variable 'no-protocol  ' 2drop 'no-protocol !   \ ( payload len -- ) for the res
   +  swap dup 16 rshift swap $ffff and + +
   swap dup 16 rshift swap $ffff and + + ;
 
+\ Every length is checked against the ones around it before it is used: the
+\ header within the frame, the packet within the frame and at least its header.
+: ip-check  ( len -- ihl total true | false )  \ a whole, unfragmented packet for us
+  rx-ip ip-ver-ihl + c@  dup 4 rshift 4 <> if  2drop false exit  then
+  15 and 4 *  2dup <  over /ip < or if  2drop false exit  then      ( len ihl )
+  rx-ip over checksum if  2drop false exit  then
+  rx-ip ip-length + n16@  rot over < if  2drop false exit  then    ( ihl total )
+  2dup > if  2drop false exit  then
+  rx-ip ip-fragment + n16@ $3fff and if  2drop false exit  then
+  rx-ip ip-dst + n32@  dup my-ip @ =  swap broadcast-ip = or 0= if  2drop false exit  then
+  ip-source bad-source? if  2drop false exit  then
+  true ;
 : ip-in  ( len -- )  \ an IPv4 packet of up to len bytes in rx-frame
-  rx-ip >r
-  r@ ip-ver-ihl + c@  dup 4 rshift 4 <> if  2drop r> drop exit  then
-  15 and 4 *                                     ( len ihl )
-  dup /ip < if  2drop r> drop exit  then
-  r@ over checksum if  2drop r> drop exit  then
-  r@ ip-length + n16@  rot over < if  2drop r> drop exit  then   ( ihl total )
-  r@ ip-fragment + n16@ $3fff and if  2drop r> drop exit  then
-  r@ ip-dst + n32@  dup my-ip @ =  swap broadcast-ip = or 0= if  2drop r> drop exit  then
+  ip-check 0= if exit then
   ip-source dup on-link? if  rx-frame eth-src + swap arp-learn  else drop then
-  over - swap r@ + swap                          ( payload len )
-  r> ip-protocol + c@ cells ip-handlers + @ ?dup if execute else 'no-protocol @ execute then ;
+  over - swap rx-ip + swap                       ( payload len )
+  rx-ip ip-protocol + c@ cells ip-handlers + @ ?dup if execute else 'no-protocol @ execute then ;
+: for-me?  ( -- flag )  rx-ip ip-dst + n32@ my-ip @ = ;   \ not a broadcast
 
 \ Send len bytes of payload, already at ip-payload in tx-frame, to dst. False if
 \ dst's MAC is not known yet: an ARP request has gone out instead; try again.

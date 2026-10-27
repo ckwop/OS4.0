@@ -299,16 +299,12 @@
 	b	3f
 2:	cmp	UP, x28
 	b.ne	1b
-	isb					// nothing can run: wait for an interrupt.
-	mrs	x0, cntvct_el0			// Idling is not running too long.
-	ldr	x1, =var_task_since
-	str	x0, [x1]
+	ldr	x1, =var_task_ticks		// nothing can run: wait for an interrupt.
+	str	xzr, [x1]			// Idling is not running too long.
 	bl	hal_idle
 	b	1b
-3:	isb
-	mrs	x0, cntvct_el0
-	ldr	x1, =var_task_since
-	str	x0, [x1]
+3:	ldr	x1, =var_task_ticks
+	str	xzr, [x1]
 	ldr	DSP, [UP, #U_SP]
 	ldr	RSP, [UP, #U_RP]
 	ldr	TOS, [DSP], #8

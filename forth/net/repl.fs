@@ -85,24 +85,27 @@ create admin-door    admin-port , ' admin-session , 4 , 0 ,
   dup >r  s" Too many sessions: try again later." r@ ['] send-line catch if drop 2drop then
   r> close-connection  0 io-timeout !  1 sessions-refused +! ;
 
-: serve-door  ( door -- )  \ forever: each connection gets a task of its own
+\ A connection gets a task of its own, or one to turn it away if the door is
+\ full; with no task to be had, it is reset.
+: away  ( conn -- )
+  dup ['] turn-away ['] spawn catch if  2drop drop-connection  else  2drop  then ;
+: admit  ( conn door -- )
+  dup door.count @  over door.limit @ < 0= if  drop away exit  then
+  1 over door.count +!
+  over ['] run-session ['] spawn catch
+  if  2drop  -1 swap door.count +!  drop-connection  else  drop 2drop  then ;
+
+: serve-door  ( door -- )  \ forever
   dup door.port @ listen
-  begin
-    dup door.port @ accept-connection
-    over door.count @  2 pick door.limit @ < if
-      1 2 pick door.count +!  ['] run-session spawn drop
-    else
-      ['] turn-away spawn drop
-    then
-  again ;
+  begin  dup door.port @ accept-connection  over admit  again ;
 : sandbox-doors  ( -- )  sandbox-door serve-door ;
 : admin-doors    ( -- )  admin-door serve-door ;
 
 task sandbox-listener
 task admin-listener
-: start-repl  ( -- )
+: start-repl  ( -- )  \ the listeners are supervised: see RESTARTING
   net-up? if
-    ['] sandbox-doors sandbox-listener start
-    ['] admin-doors admin-listener start
+    ['] sandbox-doors ['] restarting sandbox-listener start-with
+    ['] admin-doors ['] restarting admin-listener start-with
   then ;
 start-repl

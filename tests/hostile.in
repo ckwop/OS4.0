@@ -1,0 +1,16 @@
+\ Malformed frames at every layer, random ones, and hostile telnet clients (tools/netpeer.py hostile)
+echo-service  1 max-syn-retries !
+variable served
+: (serve) ( conn -- ) begin pad 256 2 pick get-line dup 0< 0= while pad swap 2 pick send-line repeat 2drop ;
+: serve ( conn -- ) 10000 io-timeout !  dup ['] (serve) catch if drop then  close-connection  1 served +! ;
+: line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;
+task server  ' line-server server start
+variable peer-done
+: done ( data len -- ) 2drop true peer-done ! ;
+' done 5001 udp-bind
+: spin ( data len -- ) 2drop begin again ;
+' spin 5002 udp-bind
+: settled? ( -- flag ) peer-done @  conns @ 0= and  served @ 1 = and  sessions-served @ 3 = and ;
+: settle ( -- ) 80000 deadline begin 200 ms settled? over expired? or until drop ;
+settle peer-done @ . served @ . sessions-served @ .  conns @ count-list .
+1000 ms

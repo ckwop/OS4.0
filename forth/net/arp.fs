@@ -25,8 +25,8 @@ variable arps-answered
 : arp-find   ( ip -- mac | 0 )
   #arp 0 do  dup i arp-entry @ = if  drop i arp-entry cell+ unloop exit  then  loop
   drop 0 ;
-: arp-learn  ( mac ip -- )
-  dup 0= if 2drop exit then
+: arp-learn  ( mac ip -- )  \ not for a group MAC, nor an address no host has
+  dup 0=  over bad-source? or  2 pick group-mac? or if 2drop exit then
   dup arp-find ?dup if
     nip
   else
@@ -60,8 +60,10 @@ create arp-frame 64 allot
 : arp-reply  ( request -- )  \ answer the request at that address
   ['] (arp-reply) tx-lock locked ;
 
-: arp-in  ( packet -- )  \ an ARP packet; ignore any not about us
-  dup arp-htype + n16@ 1 =  over arp-ptype + n16@ type-ipv4 = and 0= if drop exit then
+: arp-in  ( packet len -- )  \ an ARP packet; ignore any not about us
+  /arp < if drop exit then
+  dup arp-htype + n16@ 1 =  over arp-ptype + n16@ type-ipv4 = and
+  over arp-hlen + c@ 6 = and  over arp-plen + c@ 4 = and 0= if drop exit then
   dup arp-tpa + n32@ my-ip @ <> if drop exit then
   dup arp-sha + over arp-spa + n32@ arp-learn
   dup arp-oper + n16@ 1 = if arp-reply else drop then ;

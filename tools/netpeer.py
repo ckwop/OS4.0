@@ -25,6 +25,10 @@ Scripts:
          door turns away; a full-Forth session after a wrong password; an idle
          session the OS ends; and a client that hangs up in the middle of a
          line. Prints what each session showed
+  hostile  malformed frames at every layer (Ethernet, ARP, IP, ICMP, UDP, TCP),
+         then hundreds of random ones, checking after each batch that the OS
+         still answers a ping; telnet sessions with a slow typist and with
+         rubbish of every kind; finally TCP and UDP echoes must still work
   tcp-attack  an off-path attacker against the echo server on port 5000: a SYN
          flood beyond the OS's cap on half-open connections, then a real
          client; forged resets in and out of the window, a SYN and an
@@ -35,6 +39,7 @@ Scripts:
 
 import argparse
 import queue
+import random
 import socket
 import struct
 import sys
@@ -45,6 +50,7 @@ PEER_MAC = bytes.fromhex("52550a000202")
 PEER_IP = bytes([10, 0, 2, 2])
 OS_IP = bytes([10, 0, 2, 15])
 BROADCAST = b"\xff" * 6
+MULTICAST = bytes.fromhex("01005e000001")
 ETH_IP, ETH_ARP = 0x0800, 0x0806
 
 
@@ -65,6 +71,54 @@ def mac_text(mac):
     return ":".join(f"{b:02x}" for b in mac)
 
 
+# ---- Packets built field by field, any of which may be wrong on purpose
+
+def ip_packet(payload, protocol=1, version=4, ihl=5, total=None, frag=0, src=PEER_IP, dst=OS_IP,
+              options=b"", good_checksum=True):
+    header = struct.pack("!BBHHHBBH4s4s", version << 4 | ihl, 0,
+                         20 + len(options) + len(payload) if total is None else total,
+                         1, frag, 64, protocol, 0, src, dst) + options
+    value = checksum(header) if good_checksum else 0x1234
+    return header[:10] + struct.pack("!H", value) + header[12:] + payload
+
+
+def icmp_message(message):
+    """An ICMP message with its checksum filled in, if it is long enough to have one."""
+    if len(message) < 4:
+        return message
+    message = message[:2] + b"\0\0" + message[4:]
+    return message[:2] + struct.pack("!H", checksum(message)) + message[4:]
+
+
+def echo_request(ident, seq, data, reply=False):
+    return icmp_message(struct.pack("!BBHHH", 0 if reply else 8, 0, 0, ident, seq) + data)
+
+
+def arp_packet(htype=1, ptype=ETH_IP, hlen=6, plen=4, oper=1, sha=PEER_MAC, spa=PEER_IP,
+               tha=bytes(6), tpa=OS_IP):
+    return struct.pack("!HHBBH6s4s6s4s", htype, ptype, hlen, plen, oper, sha, spa, tha, tpa)
+
+
+def tcp_segment(sport, dport, flags, seq=1000, ack=0, offset=None, options=b"", data=b"",
+                src=PEER_IP, dst=OS_IP, good_checksum=True):
+    hlen = 20 + len(options)
+    words = hlen // 4 if offset is None else offset
+    seg = struct.pack("!HHIIHHHH", sport, dport, seq, ack, words << 12 | flags, 65535, 0, 0) + options + data
+    pseudo = src + dst + struct.pack("!BBH", 0, 6, len(seg))
+    value = checksum(pseudo + seg) if good_checksum else 0x1234
+    return seg[:16] + struct.pack("!H", value) + seg[18:]
+
+
+def fix_checksum(protocol, body, src=PEER_IP, dst=OS_IP):
+    """Random bytes with a right checksum, so that they get past it."""
+    where = {1: 2, 6: 16, 17: 6}[protocol]
+    body = body[:where] + b"\0\0" + body[where + 2:]
+    if protocol == 17:
+        body = body[:4] + struct.pack("!H", len(body)) + body[6:]
+    pseudo = b"" if protocol == 1 else src + dst + struct.pack("!BBH", 0, protocol, len(body))
+    return body[:where] + struct.pack("!H", checksum(pseudo + body) or 0xFFFF) + body[where + 2:]
+
+
 class Peer:
     def __init__(self, port, os_port):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -77,6 +131,7 @@ class Peer:
         self.unreachables = queue.Queue()
         self.tcp_queues = {}            # our TCP port -> queue of (packet, segment)
         self.ident = 0x7E57
+        self.misaddressed = 0           # IP packets for us sent to some other MAC
         threading.Thread(target=self.receive, daemon=True).start()
 
     def send(self, dst_mac, eth_type, payload):
@@ -103,43 +158,51 @@ class Peer:
     def receive(self):
         while True:
             frame = self.sock.recv(4096)
-            src, eth_type, body = frame[6:12], struct.unpack("!H", frame[12:14])[0], frame[14:]
-            if eth_type == ETH_ARP and len(body) >= 28:
-                oper, sha, spa, tpa = struct.unpack("!6xH6s4s6x4s", body[:28])
-                if tpa != PEER_IP:
-                    continue
-                if oper == 1:
-                    self.send(sha, ETH_ARP, self.arp(2, sha, spa))
-                elif oper == 2:
-                    self.arp_replies.put((sha, spa))
-            elif eth_type == ETH_IP and len(body) >= 20:
-                ihl = (body[0] & 15) * 4
-                total = struct.unpack("!H", body[2:4])[0]
-                protocol, dst = body[9], body[16:20]
-                if dst != PEER_IP:
-                    continue
-                packet, message = body[:total], body[ihl:total]
-                if protocol == 1 and message[0] == 8:          # echo request: answer it
+            try:
+                self.take(frame)
+            except (IndexError, struct.error):      # a frame too short to make sense of
+                pass
+
+    def take(self, frame):
+        src, eth_type, body = frame[6:12], struct.unpack("!H", frame[12:14])[0], frame[14:]
+        if eth_type == ETH_ARP and len(body) >= 28:
+            oper, sha, spa, tpa = struct.unpack("!6xH6s4s6x4s", body[:28])
+            if tpa != PEER_IP:
+                return
+            if oper == 1:
+                self.send(sha, ETH_ARP, self.arp(2, sha, spa))
+            elif oper == 2:
+                self.arp_replies.put((sha, spa))
+        elif eth_type == ETH_IP and len(body) >= 20:
+            ihl = (body[0] & 15) * 4
+            total = struct.unpack("!H", body[2:4])[0]
+            protocol, dst = body[9], body[16:20]
+            if dst != PEER_IP:
+                return
+            if frame[:6] != PEER_MAC:
+                self.misaddressed += 1
+            packet, message = body[:total], body[ihl:total]
+            if protocol == 1 and message[0] == 8:          # echo request: answer it
+                self.os_mac = self.os_mac or src
+                reply = b"\0\0\0\0" + message[4:]
+                reply = reply[:2] + struct.pack("!H", checksum(reply)) + reply[4:]
+                self.send_ip(1, reply)
+            elif protocol == 1 and message[0] == 0:        # echo reply: for the script
+                self.echo_replies.put((packet, ihl, message))
+            elif protocol == 1 and message[0] == 3:        # destination unreachable
+                self.unreachables.put((packet, ihl, message))
+            elif protocol == 6 and len(message) >= 20:
+                dport = struct.unpack("!H", message[2:4])[0]
+                q = self.tcp_queues.get(dport)
+                if q:
+                    q.put((packet, message))
+            elif protocol == 17 and len(message) >= 8:
+                sport, dport = struct.unpack("!HH", message[:4])
+                if dport == 7:                             # our echo service
                     self.os_mac = self.os_mac or src
-                    reply = b"\0\0\0\0" + message[4:]
-                    reply = reply[:2] + struct.pack("!H", checksum(reply)) + reply[4:]
-                    self.send_ip(1, reply)
-                elif protocol == 1 and message[0] == 0:        # echo reply: for the script
-                    self.echo_replies.put((packet, ihl, message))
-                elif protocol == 1 and message[0] == 3:        # destination unreachable
-                    self.unreachables.put((packet, ihl, message))
-                elif protocol == 6 and len(message) >= 20:
-                    dport = struct.unpack("!H", message[2:4])[0]
-                    q = self.tcp_queues.get(dport)
-                    if q:
-                        q.put((packet, message))
-                elif protocol == 17 and len(message) >= 8:
-                    sport, dport = struct.unpack("!HH", message[:4])
-                    if dport == 7:                             # our echo service
-                        self.os_mac = self.os_mac or src
-                        self.send_ip(17, self.udp_segment(7, sport, message[8:]))
-                    else:
-                        self.udp_replies.put((packet, ihl, message))
+                    self.send_ip(17, self.udp_segment(7, sport, message[8:]))
+                else:
+                    self.udp_replies.put((packet, ihl, message))
 
     def find_os(self):
         deadline = time.time() + 20
@@ -225,10 +288,11 @@ class Peer:
         clients[1].out_of_order = True     # the OS sees a gap, then the rest
         clients[2].iss = 0xFFFFFFF0         # sequence numbers wrap
         clients[3].batched = True           # all lines in one segment
+        start = time.time()
         for c in clients:
             threading.Thread(target=c.run, daemon=True).start()
         for c in clients:
-            c.done.wait(90)
+            c.done.wait(max(0, start + 100 - time.time()))  # report before the console gives up
         connected = sum(c.connected for c in clients)
         echoed = sum(c.echoed for c in clients)
         closed = sum(c.closed for c in clients)
@@ -412,8 +476,215 @@ class Peer:
             verdict = ", ".join(problems) or "data and checksums ok"
             print(f"peer: echo reply {seq} from {ip_text(packet[12:16])}: {verdict}", flush=True)
 
+    # ---- hostile input
+
+    def raw(self, frame):
+        """Any bytes at all, as one frame."""
+        self.sock.sendto(frame, self.os_addr)
+
+    def alive(self):
+        """The OS still answers a ping (three tries)."""
+        for _ in range(3):
+            self.alive_seq = getattr(self, "alive_seq", 1000) + 1
+            self.send_ip(1, echo_request(self.ident, self.alive_seq, b"still there?"))
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                try:
+                    packet, ihl, message = self.echo_replies.get(timeout=max(0.01, deadline - time.time()))
+                except queue.Empty:
+                    break
+                if message[4:8] == struct.pack("!HH", self.ident, self.alive_seq):
+                    return True
+        return False
+
+    def script_hostile(self):
+        if not self.find_os():
+            print("peer: no ARP reply from 10.0.2.15", flush=True)
+            return
+        time.sleep(1)                       # let the console start the servers
+        print(f"peer: before: {'answering' if self.alive() else 'not answering'}", flush=True)
+        rng = random.Random(4)
+        os_mac = self.os_mac
+        eth = lambda eth_type, body: os_mac + PEER_MAC + struct.pack("!H", eth_type) + body
+        echo = echo_request(0x4242, 1, b"x" * 8)
+        arp = lambda **f: arp_packet(**f)
+        def tcp(dport=5000, **f):
+            f.setdefault("sport", 60000 + rng.randrange(999))
+            return tcp_segment(dport=dport, **f)
+
+        layers = [
+            ("ethernet", [b"\x01", os_mac, os_mac + PEER_MAC, eth(ETH_IP, b"")[:13],
+                          eth(ETH_IP, b""), eth(ETH_ARP, b""), eth(0x86DD, bytes(40)),
+                          eth(0, b"zero"), eth(ETH_IP, b"\xff" * 1500), eth(ETH_ARP, bytes(1586)),
+                          os_mac + BROADCAST + eth(ETH_IP, ip_packet(echo))[12:],
+                          os_mac + MULTICAST + eth(ETH_IP, ip_packet(echo))[12:]]),
+            ("arp", [eth(ETH_ARP, p) for p in [
+                b"", arp()[:8], arp()[:27], arp(htype=6), arp(ptype=0x86DD), arp(hlen=0),
+                arp(plen=0), arp(hlen=255, plen=255), arp(oper=99),
+                arp(spa=OS_IP), arp(spa=b"\xff" * 4), arp(spa=bytes([224, 0, 0, 1])), arp(spa=bytes(4))]
+                + [arp(sha=bytes([2, 0, 0, 0, 0, i]), spa=bytes([10, 0, 2, 100 + i])) for i in range(50)]
+                + [arp(sha=BROADCAST), arp(sha=MULTICAST)]]),
+            ("ip", [eth(ETH_IP, p) for p in [
+                ip_packet(echo, version=6), ip_packet(echo, version=0)]
+                + [ip_packet(echo, ihl=n) for n in range(5)]
+                + [ip_packet(echo, ihl=15), ip_packet(echo, total=10), ip_packet(echo, total=0),
+                   ip_packet(echo, total=19), ip_packet(echo, total=200), ip_packet(echo, total=0xFFFF),
+                   ip_packet(echo, good_checksum=False), ip_packet(echo, frag=0x2000),
+                   ip_packet(echo, frag=0x0010), ip_packet(echo, src=OS_IP),
+                   ip_packet(echo, src=b"\xff" * 4), ip_packet(echo, src=bytes([224, 0, 0, 1])),
+                   ip_packet(echo, dst=bytes([10, 0, 2, 99])), ip_packet(b"???", protocol=99),
+                   ip_packet(b"???", protocol=99, dst=b"\xff" * 4),
+                   ip_packet(echo, options=b"\x01\x01\x01\x00"), ip_packet(b"")[:19]]]),
+            ("icmp", [eth(ETH_IP, ip_packet(m)) for m in
+                      [icmp_message(bytes(n)) for n in range(8)]
+                      + [echo[:2] + b"\0\0" + echo[4:], icmp_message(b"\x0d" + bytes(19)),
+                         icmp_message(b"\x03\x03" + bytes(6)), icmp_message(b"\x05\x01" + bytes(30)),
+                         echo_request(0x4F53, 7, b"", reply=True)]]),
+            ("udp", [eth(ETH_IP, ip_packet(p, protocol=17)) for p in [
+                b"", struct.pack("!HH", 40000, 7), struct.pack("!HHHH", 40000, 7, 0, 0),
+                struct.pack("!HHHH", 40000, 7, 7, 0) + b"x", struct.pack("!HHHH", 40000, 7, 9, 0),
+                struct.pack("!HHHH", 40000, 7, 0xFFFF, 0) + b"x",
+                self.udp_segment(40000, 7, b"bad checksum")[:6] + b"\x12\x34" + b"bad checksum"]]
+                + [eth(ETH_IP, ip_packet(self.udp_segment(40000, 9, b"to all", dst=b"\xff" * 4),
+                                         protocol=17, dst=b"\xff" * 4))]),
+            ("tcp", [eth(ETH_IP, ip_packet(p, protocol=6, dst=d)) for p, d in [
+                (b"", OS_IP), (tcp(flags=SYN)[:10], OS_IP), (tcp(flags=SYN)[:19], OS_IP),
+                (tcp(flags=SYN, offset=0), OS_IP), (tcp(flags=SYN, offset=1), OS_IP),
+                (tcp(flags=SYN, offset=4), OS_IP), (tcp(flags=SYN, offset=15), OS_IP),
+                (tcp(flags=SYN, offset=6), OS_IP),
+                (tcp(flags=SYN, options=b"\x02\x00\x05\xb4"), OS_IP),
+                (tcp(flags=SYN, options=b"\x02\x01\x05\xb4"), OS_IP),
+                (tcp(flags=SYN, options=b"\x02\xff\x05\xb4"), OS_IP),
+                (tcp(flags=SYN, options=b"\x01\x01\x02\x04"), OS_IP),
+                (tcp(flags=SYN, options=b"\x01" * 40), OS_IP),
+                (tcp(flags=SYN, options=b"\x1e\x0a" + bytes(10)), OS_IP),
+                (tcp(flags=0x3F), OS_IP), (tcp(flags=SYN | FIN), OS_IP), (tcp(flags=SYN | RST), OS_IP),
+                (tcp(flags=0), OS_IP), (tcp(flags=FIN), OS_IP), (tcp(flags=0x20), OS_IP),
+                (tcp(dport=4999, flags=SYN | FIN, data=b"data with a SYN"), OS_IP),
+                (tcp(flags=SYN, good_checksum=False), OS_IP),
+                (tcp(flags=SYN, sport=60999, dst=b"\xff" * 4), b"\xff" * 4)]]),
+        ]
+        to_all = self.tcp_queues[60999] = queue.Queue()     # for the SYN to the broadcast address
+        for name, frames in layers:
+            for frame in frames:
+                self.raw(frame)
+            time.sleep(0.5)
+            print(f"peer: malformed {name}: {len(frames)} frames, "
+                  f"{'still answering' if self.alive() else 'not answering'}", flush=True)
+
+        print(f"peer: SYN to the broadcast address: {'ignored' if to_all.empty() else 'answered'}", flush=True)
+        print(f"peer: replies sent to a forged group MAC: {self.misaddressed}", flush=True)
+
+        big = echo_request(self.ident, 77, bytes(range(256)) * 5 + bytes(192))   # 1472 bytes of data
+        self.send_ip(1, big)
+        try:
+            while True:
+                packet, ihl, message = self.echo_replies.get(timeout=5)
+                if message[4:8] == big[4:8]:
+                    break
+            print(f"peer: largest ping: {'ok' if message[8:] == big[8:] else 'wrong data'}", flush=True)
+        except queue.Empty:
+            print("peer: largest ping: no reply", flush=True)
+
+        frames = []                         # junk, then junk behind good headers so it reaches the parsers
+        for _ in range(200):
+            body = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 300)))
+            frames.append(eth(rng.choice([ETH_IP, ETH_ARP, rng.randrange(65536)]), body))
+        for _ in range(400):
+            protocol = rng.choice([1, 6, 17, rng.randrange(256)])
+            body = bytes(rng.randrange(256) for _ in range(rng.randrange(0, 300)))
+            if rng.random() < 0.5 and protocol in (1, 6, 17) and len(body) >= 20:
+                body = fix_checksum(protocol, body)
+            frames.append(eth(ETH_IP, ip_packet(body, protocol=protocol)))
+        for frame in frames:
+            self.raw(frame)
+        time.sleep(0.5)
+        print(f"peer: random bytes: {len(frames)} frames, "
+              f"{'still answering' if self.alive() else 'not answering'}", flush=True)
+
+        self.hostile_telnet()
+
+        self.send_ip(17, self.udp_segment(40005, 5002, b"spin"))  # a handler that never returns
+        time.sleep(1)
+        print(f"peer: a UDP handler that never returns: "
+              f"{'still answering' if self.alive() else 'not answering'}", flush=True)
+
+        last = TcpClient(self, 61000, dport=5000)
+        if last.connect():
+            print(f"peer: afterwards: tcp echo {'ok' if last.echo(b'after it all') else 'failed'}", flush=True)
+            last.close()
+        else:
+            print("peer: afterwards: no SYN-ACK", flush=True)
+        self.send_ip(17, self.udp_segment(40003, 7, b"udp after it all"))
+        try:
+            got = self.udp_replies.get(timeout=5)[2][8:]
+            print(f"peer: afterwards: udp echo {'ok' if got == b'udp after it all' else 'wrong'}", flush=True)
+        except queue.Empty:
+            print("peer: afterwards: no udp echo", flush=True)
+        print(f"peer: afterwards: {'answering' if self.alive() else 'not answering'}", flush=True)
+        for _ in range(5):                  # tell the console we are done
+            self.send_ip(17, self.udp_segment(40004, 5001, b"done"))
+            time.sleep(0.2)
+
+    def hostile_telnet(self):
+        """Telnet clients of the sandbox: a slow typist, who must not hold up
+        anyone else, and one who sends every kind of rubbish."""
+        slow, quick, junk = (TcpClient(self, p, dport=4000) for p in (61010, 61011, 61012))
+        clients = [("slow typist", slow), ("quick", quick), ("rubbish", junk)]
+        for name, c in clients:
+            if not (c.connect() and c.wait_for_text("leave.\r\n")):
+                print(f"peer: telnet {name}: no session", flush=True)
+                return
+        for ch in b"1 2 ":
+            slow.send_reliably(bytes([ch]))
+            time.sleep(0.2)
+        quick.send_reliably(b"6 7 * .\r\n")
+        print(f"peer: telnet: another session answers while one types slowly: "
+              f"{'yes' if quick.wait_for_text('42  ok\r\n', 5) else 'no'}", flush=True)
+        for ch in b"+ .\r\n":
+            slow.send_reliably(bytes([ch]))
+            time.sleep(0.2)
+        print(f"peer: telnet slow typist: {'ok' if slow.wait_for_text('3  ok\r\n') else 'no answer'}", flush=True)
+
+        IAC = 255
+        cases = [
+            ("subnegotiation 3000 bytes long",
+             bytes([IAC, 250, 24]) + b"x" * 3000 + bytes([IAC, 240]) + b"2 2 + .\r\n", "4  ok\r\n"),
+            ("every command and option",
+             b"".join(bytes([IAC, c, 1]) if c >= 251 else bytes([IAC, c]) for c in range(236, 255) if c != 250)
+             + b"\r\n3 3 + .\r\n", "6  ok\r\n"),
+            ("an escaped 255 in a line", bytes([IAC, IAC]) + b"\r\n" + b"4 4 + .\r\n", "8  ok\r\n"),
+            ("control characters in a line", b"5\x00 5\x01 +\x07 \x1b.\r\n", "10  ok\r\n"),
+            ("CR NUL line end", b"6 6 + .\r\0", "12  ok\r\n"),
+            ("a 5000-byte line", b"x" * 5000 + b"\r\n7 7 + .\r\n", "14  ok\r\n"),
+            ("a line end inside a subnegotiation", bytes([IAC, 250]) + b"\r\n"
+             + bytes([IAC, 240]) + b"8 8 + .\r\n", "16  ok\r\n"),
+        ]
+        for name, data, answer in cases:
+            for i in range(0, len(data), 1000):
+                junk.send_reliably(data[i:i + 1000])
+            print(f"peer: telnet {name}: {'ok' if junk.wait_for_text(answer) else 'no answer'}", flush=True)
+        for _, c in clients:
+            c.send_reliably(b"bye\r\n")
+        for _, c in clients:
+            c.wait_for(lambda: c.fin_received, 10)
+            c.close()
+        for name, c in clients:
+            for problem in c.problems:
+                print(f"peer: telnet {name}: {problem}", flush=True)
+
 
 MOD32 = 1 << 32
+
+
+def backoff(budget):
+    """Times to wait between resends, doubling from 1 s to 8 s, as real TCP
+    backs off: resending at a fixed rate to a receiver that has fallen behind
+    only queues more stale segments in front of the ones it needs."""
+    end, wait = time.time() + budget, 1
+    while time.time() < end:
+        yield min(wait, max(0.05, end - time.time()))
+        wait = min(wait * 2, 8)
 FIN, SYN, RST, PSH, ACK = 1, 2, 4, 8, 16
 
 
@@ -505,9 +776,9 @@ class TcpClient:
     def connect(self):
         self.snd_una = self.snd_nxt = self.iss
         self.rcv_nxt = 0
-        for _ in range(15):
+        for wait in backoff(30):
             self.send_seg(SYN, self.iss, options=struct.pack("!BBH", 2, 4, self.mss_option))
-            deadline = time.time() + 1
+            deadline = time.time() + wait
             while time.time() < deadline:
                 try:
                     packet, seg = self.q.get(timeout=max(0.01, deadline - time.time()))
@@ -532,17 +803,17 @@ class TcpClient:
             self.out_of_order = False
             half = len(data) // 2
             self.send_seg(ACK | PSH, start + half, data[half:])
-        tries = 0
-        while self.snd_una < self.snd_nxt and not self.reset:
-            if tries == 20:
-                self.problems.append(f"no ACK for data at {start - self.iss - 1}")
-                return False
+        for wait in backoff(40):
+            if self.snd_una >= self.snd_nxt or self.reset:
+                return not self.reset
             self.send_seg(ACK | PSH, start, data)
-            tries += 1
-            deadline = time.time() + 1
+            deadline = time.time() + wait
             while self.snd_una < self.snd_nxt and time.time() < deadline:
                 self.pump(0.05)
-        return not self.reset
+        if self.snd_una >= self.snd_nxt or self.reset:
+            return not self.reset
+        self.problems.append(f"no ACK for data at {start - self.iss - 1}")
+        return False
 
     def drain(self, seconds):
         """Take in whatever the OS sends for this long."""
@@ -621,9 +892,9 @@ class TcpClient:
         """Our FIN, then wait for it to be acknowledged and for theirs."""
         fin_seq = self.snd_nxt
         self.snd_nxt += 1
-        for _ in range(20):
+        for wait in backoff(30):
             self.send_seg(FIN | ACK, fin_seq)
-            if self.wait_for(lambda: self.snd_una == self.snd_nxt and self.fin_received, 1):
+            if self.wait_for(lambda: self.snd_una == self.snd_nxt and self.fin_received, wait):
                 break
         if self.reset:
             self.problems.append("reset by the OS")
@@ -677,7 +948,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--os-port", type=int, required=True)
-    p.add_argument("script", choices=["ping", "udp", "tcp", "tcp-attack", "repl"])
+    p.add_argument("script", choices=["ping", "udp", "tcp", "tcp-attack", "repl", "hostile"])
     args = p.parse_args()
     peer = Peer(args.port, args.os_port)
     getattr(peer, "script_" + args.script.replace("-", "_"))()

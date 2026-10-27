@@ -45,6 +45,9 @@ variable my-ip      ip 10.0.2.15 my-ip !
 variable netmask    ip 255.255.255.0 netmask !
 variable gateway    ip 10.0.2.2 gateway !
 $ffffffff constant broadcast-ip
+: bad-source?  ( ip -- flag )  \ no packet comes from ours, a broadcast or a multicast address
+  dup my-ip @ =  swap $e0000000 u< 0= or ;
+: group-mac?  ( addr -- flag )  c@ 1 and 0<> ;   \ broadcast or multicast: never a sender
 
 \ ---- Ethernet frames: destination MAC, source MAC, type, then the payload.
 
