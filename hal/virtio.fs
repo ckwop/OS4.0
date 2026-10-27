@@ -123,7 +123,8 @@ $74726976 constant virtio-magic
 \ Wait for the device to use one more chain, letting other tasks run meanwhile.
 \ Callers hold a lock for the queue (blocks-lock for the disk, tx-lock for the
 \ network), so no other task can submit to it in between.
-: vq-wait  ( vq -- )
+: vq-wait-len  ( vq -- len )  \ and the length the device wrote
   device-timeout deadline >r
   begin dup vq-used? 0= while  r@ expired? if  r> 2drop -263 throw  then  pause  repeat
-  r> drop  vq-take 2drop ;
+  r> drop  vq-take nip ;
+: vq-wait  ( vq -- )  vq-wait-len drop ;

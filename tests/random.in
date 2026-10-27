@@ -1,0 +1,15 @@
+\ SipHash-2-4 against the reference vectors: key 00..0f, message 00..n-1
+create msg 80 allot
+: fill-msg  ( addr n -- )  0 ?do  i over i + c!  loop drop ;
+: vector  ( addr n -- h )  2dup fill-msg  $0706050403020100 $0f0e0d0c0b0a0908 siphash ;
+hex
+msg 1+ 0 vector u.  msg 1+ 1 vector u.  msg 1+ 7 vector u.
+msg 1+ 8 vector u.  msg 1+ f vector u.  msg f vector u.
+msg 1+ 10 vector u.  msg 3 + 3f vector u.
+1 3f rotl u.  1 1 rotl u.
+decimal
+\ random numbers and the entropy HAL
+random random <> .  random-key2 <> .
+create seed 32 allot  seed 32 0 fill  seed 32 entropy
+: any?  ( addr u -- flag )  0 -rot 0 ?do  dup i + c@ rot or swap  loop drop 0<> ;
+seed 32 any? .

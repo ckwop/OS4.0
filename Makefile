@@ -40,7 +40,7 @@ VIRT_CMD    = qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m
               -drive file=$(BOOT_IMG),format=raw,if=virtio,readonly=on \
               -drive file=$(1),format=raw,if=none,id=data,cache=writeback \
               -device virtio-blk-device,drive=data -global virtio-mmio.force-legacy=false \
-              $(2) -device virtio-net-device,netdev=net
+              $(2) -device virtio-net-device,netdev=net -device virtio-rng-device
 
 comma   := ,
 CONSOLE := python3 tools/console-run.py

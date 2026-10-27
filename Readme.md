@@ -118,6 +118,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 7 | UDP | Done |
 | 8 | TCP, many connections | Done |
 | 9 | Network REPL | Done |
+| 9a | Hardened base | In progress |
 | 10 | MUD engine | Not started |
 | 11 | Fargate deployment | Not started |
 | 12 | EC2 AMI | Not started |
