@@ -1,0 +1,83 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "5 · Tasks",
+  "description": "The code behind lecture 5 (docs/course/05-tasks.html): what a task is, how pause switches between tasks, and how the system keeps one bad task from harming the rest. About ten minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour walks through the code from **lecture 5, Tasks**, in the same order as the lecture.\n\nEach step opens a file and highlights a line. Read the note, look at the code around it, then press **Next** (or `Ctrl+Right`).\n\nIf you haven't watched the lecture yet, it's `docs/course/05-tasks.html`."
+    },
+    {
+      "file": "forth/tasks.fs",
+      "pattern": "/user /dstack \\+ /rstack \\+ /buffers \\+ constant /task",
+      "title": "A task is a block of memory",
+      "description": "A task's size: its **user area** (512 bytes of per-task variables), a **data stack** and a **return stack** (2 KiB each), and **buffers** for text and numbers. About 5.4 KiB in all.\n\nThe constants `/dstack` and `/rstack` are just above."
+    },
+    {
+      "file": "forth/tasks.fs",
+      "pattern": ": new-task  \\( name len -- task \\)",
+      "title": "Making a task",
+      "description": "`new-task` takes the memory with `reserve` (never `allot`: another task might be halfway through compiling), copies the creator's user area, then fills in the new task's own fields with `field!`, which stores into *another* task's user area.\n\nThe last two lines link it into the ring, just before the console."
+    },
+    {
+      "file": "arch/aarch64/prims.s",
+      "pattern": "defcode\\s+\"pause\"",
+      "title": "pause: the task switch",
+      "description": "One of the few words in assembly, because it runs all the time.\n\n- **Save**: `RPUSH IP` and the cached top of stack, then both stack pointers into the user area.\n- **Find**: from label `1:` follow `U_LINK` round the ring; a status of 0 means ready, and a sleeper whose wake time has passed is made ready.\n- **Restore**: from label `3:`, load the next task's stack pointers, pop its IP, and `NEXT`.\n\nIf nothing can run, `hal_idle` waits for the next 10 ms timer tick."
+    },
+    {
+      "file": "forth/tasks.fs",
+      "pattern": ": stop   \\( -- \\)",
+      "title": "Sleeping and waking",
+      "description": "Three one-line words over two fields of the user area:\n\n- `stop`: not ready, no wake time; only another task's `wake` brings it back.\n- `wake`: set another task's status to 0 (ready).\n- `ms`: a wake time some milliseconds from now; `pause` makes it ready once the counter passes it."
+    },
+    {
+      "file": "forth/tasks.fs",
+      "pattern": ": run-task  \\( i\\*x xt -- \\)",
+      "title": "A task's whole life",
+      "description": "Every started task runs `run-task`: the work under `catch`, a report if it threw, back to the pool if it is pooled, then `stop` for good."
+    },
+    {
+      "file": "forth/tasks.fs",
+      "pattern": ": \\(start\\)",
+      "title": "How a task starts",
+      "description": "`(start)` doesn't call anything. It lays out the task's stacks as if it had paused: the work's xt on the data stack, and `task-thread` (a cell holding `run-task`) on the return stack. The next `pause` that reaches this task \"resumes\" into `run-task`."
+    },
+    {
+      "file": "forth/tasks.fs",
+      "pattern": ": spawn  \\( x xt -- task \\)",
+      "title": "The pool",
+      "description": "A free worker if there is one; otherwise a new one while there are fewer than `max-workers` (64); otherwise throw -275. Callers must catch that: see `admit` in `forth/net/repl.fs`."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": ": locked  \\( i\\*x xt sem -- j\\*x \\)",
+      "title": "Sharing across a pause",
+      "description": "A semaphore is two cells: its holder and a count. `get` (just above) pauses until it is free, and counts up if this task already holds it. `locked` runs an xt holding the semaphore and releases it however the xt ends.\n\nUse one for anything shared that a task uses **across** a pause."
+    },
+    {
+      "file": "forth/tasks.fs",
+      "pattern": ": restarting  \\( xt -- \\)",
+      "title": "Supervision",
+      "description": "System tasks run their loop under `restarting`: whatever ends the loop is reported, and the loop starts again a second later."
+    },
+    {
+      "file": "forth/net/net.fs",
+      "pattern": ": net-loop",
+      "title": "Catch per item",
+      "description": "Inside the loop, each frame (and the TCP timers) runs under its own `catch`. A bad packet costs one packet, counted in `net-errors`."
+    },
+    {
+      "file": "arch/aarch64/outer.s",
+      "pattern": "watchdog_sub:",
+      "title": "The watchdog",
+      "description": "Called on every 10 ms timer tick. It counts the ticks the running task has had since it last paused (`pause` resets the count), and at the limit redirects the task to throw -262. It counts ticks rather than clock time, so a host stall isn't blamed on whichever task was running."
+    },
+    {
+      "file": "tests/watchdog.in",
+      "pattern": "spin",
+      "title": "The tests",
+      "description": "Every feature has a transcript test: this `.in` file is typed at the console, and the output must match `watchdog.out` exactly. `tests/tasks.in` covers starting, sleeping and waking.\n\nThat's the tour. The coaching questions are on the lecture's last slide."
+    }
+  ]
+}

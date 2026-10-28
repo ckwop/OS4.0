@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tasks · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body>
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">5 · Tasks</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/05-tasks.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide">
+  <div class="kicker">Lecture 5 of 12 · about 12 minutes</div>
+  <h1>Tasks</h1>
+  <p class="lede">How one CPU serves the console, the network and every telnet session at once, by taking turns.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">What a task is, and how <code>pause</code> switches between them</li>
+    <li data-step="2">Sleeping, waking, and giving a task work</li>
+    <li data-step="3">Sharing safely, failing safely, and the watchdog</li>
+  </ul>
+  <div class="talk">
+    <p>Welcome to lecture five, on tasks. This is the part of OS 4.0 that lets one processor look after many things at once: the console you type at, the network stack, and every telnet session that connects.</p>
+    <p>We'll look at what a task actually is in memory, and at the word <span data-say="pause">pause</span>, which is how the system moves from one task to the next. Then we'll see how a task sleeps, how it's woken, and how it's given work to do.</p>
+    <p>Finally, three things that keep the system trustworthy: how tasks share data without trampling on each other, what happens when a task fails, and the watchdog, which catches a task that never gives anyone else a turn. Use the transcript button if you'd rather read along, and the arrow keys to move at your own pace.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <h2>One CPU, many jobs, taking turns</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 520 230" role="img" aria-label="Four tasks taking turns on one CPU; each turn ends at a pause">
+        <text x="10" y="45">console</text>
+        <text x="10" y="90">net-task</text>
+        <text x="10" y="135">session A</text>
+        <text x="10" y="180">session B</text>
+        <rect class="box blue" x="110" y="28" width="60" height="26" rx="4"/>
+        <rect class="box blue" x="330" y="28" width="40" height="26" rx="4"/>
+        <rect class="box green" x="170" y="73" width="30" height="26" rx="4"/>
+        <rect class="box green" x="370" y="73" width="35" height="26" rx="4"/>
+        <rect class="box accent" x="200" y="118" width="55" height="26" rx="4"/>
+        <rect class="box accent" x="405" y="118" width="50" height="26" rx="4"/>
+        <rect class="box" x="255" y="163" width="75" height="26" rx="4"/>
+        <rect class="box" x="455" y="163" width="50" height="26" rx="4"/>
+        <g class="fill-accent">
+          <rect x="168" y="24" width="3" height="34"/><rect x="198" y="69" width="3" height="34"/>
+          <rect x="253" y="114" width="3" height="34"/><rect x="328" y="159" width="3" height="34"/>
+          <rect x="368" y="24" width="3" height="34"/><rect x="403" y="69" width="3" height="34"/>
+          <rect x="453" y="114" width="3" height="34"/><rect x="503" y="159" width="3" height="34"/>
+        </g>
+        <line class="line" x1="110" y1="208" x2="505" y2="208"/>
+        <text class="small" x="110" y="225">time →</text>
+        <text class="small" x="300" y="225">each orange mark is a pause</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2">A task runs until it calls <code>pause</code>, or a word that waits</li>
+      <li data-step="3">Between two pauses it is alone: nothing changes under it</li>
+      <li data-step="4">The price: a task that never pauses stops everyone</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Here's the whole idea in one picture. Time runs from left to right, and there are four tasks: the console, the network task, and two telnet sessions. Only one runs at any moment, and they take turns.</p>
+    <p>The orange marks are the important part. A task runs until it calls <span data-say="pause">pause</span>, or calls a word that waits, such as reading a key or waiting for a network packet. Every waiting word calls pause in its loop. This is cooperative multitasking: each task decides when to give way. Nothing ever interrupts a task to run another one.</p>
+    <p>That buys something precious. Between two pauses, a task is completely alone. No other task can change a variable under its feet, so most code needs no locking at all. That's why the network stack and the interpreter can be written so simply.</p>
+    <p>The price is just as clear. A task that loops forever without pausing would stop the whole machine. We'll come back to how the system protects itself from that at the end of the lecture.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <h2>A task is a block of memory</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 520 290" role="img" aria-label="A task's memory: user area, data stack, return stack and buffers, about 5.4 kilobytes">
+        <rect class="box accent" x="20" y="20" width="200" height="44" rx="4"/>
+        <text x="34" y="47">user area</text>
+        <rect class="box blue" x="20" y="64" width="200" height="88"/>
+        <text x="34" y="113">data stack</text>
+        <rect class="box green" x="20" y="152" width="200" height="88"/>
+        <text x="34" y="201">return stack</text>
+        <rect class="box faint" x="20" y="240" width="200" height="34" rx="4"/>
+        <text x="34" y="262">buffers</text>
+        <text x="236" y="40">512 bytes: this task's</text>
+        <text x="236" y="58" class="small">base, state, handler, search order, terminal…</text>
+        <text x="236" y="113">2 KiB (256 cells)</text>
+        <text x="236" y="201">2 KiB (256 cells)</text>
+        <text x="236" y="256">896 bytes: pad, input line,</text>
+        <text x="236" y="272" class="small">strings, number conversion</text>
+        <rect class="fill-accent" x="8" y="20" width="4" height="44"/>
+        <text x="236" y="80" class="small"><tspan class="mono">x23</tspan> points here while the task runs</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2">Its size is the sum of the four parts</li>
+      <li data-step="3">A <code>user</code> variable lives in the user area: one copy per task</li>
+      <li data-step="4">Memory comes from <code>reserve</code>, never <code>allot</code></li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="forth/tasks.fs"><span class="c">/user /dstack + /rstack + /buffers +</span> constant <span class="w">/task</span>
+
+: <span class="w">new-task</span>  ( name len -- task )  <span class="c">\ a task, asleep, at the end of the ring</span>
+  /task reserve &gt;r                                <span class="c">\ not from the dictionary: see CLAIM</span>
+  up@ r@ /user move                               <span class="c">\ start from a copy of this task's</span></pre>
+    <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:new-task">forth/tasks.fs › new-task</a></div>
+  </div>
+  <div class="talk">
+    <p>So what is a task? Just a block of memory, about five and a half kilobytes. At the top is the user area, five hundred and twelve bytes holding everything that belongs to this task alone: its number base, whether it's compiling, its error handler, its search order, and the vectors that say where its terminal is. Then come its own data stack and return stack, two kilobytes each, and some buffers for text and numbers.</p>
+    <p>Here's how a task is made. Its size is the sum of those four parts. New-task reserves that much memory, then copies the user area of the task that created it, so a new task starts life with its parent's settings.</p>
+    <p>Register <span data-say="x twenty-three">x23</span> always points at the user area of the running task. When you define a variable with the word <span data-say="user">user</span> instead of <span data-say="variable">variable</span>, every task gets its own copy, found through that register. Anything an interpreting task uses must be a user variable, never a global.</p>
+    <p>Notice that the memory comes from <span data-say="reserve">reserve</span>, which takes it from the far end of the dictionary space. It never uses <span data-say="allot">allot</span>, because a task can be created while another task is halfway through compiling a definition, and its memory must not land in the middle of that definition.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <h2>The tasks form a ring</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 520 290" role="img" aria-label="Tasks linked in a ring: console, net-task, sandbox-listener, admin-listener, a worker">
+        <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-accent" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <circle class="line" cx="260" cy="150" r="120"/>
+        <path class="line accent" d="M 304 39 A 120 120 0 0 1 362 86" marker-end="url(#arrow)"/>
+        <text x="340" y="48" class="mono">pause</text>
+        <rect class="box blue" x="196" y="13" width="128" height="34" rx="6"/><text x="260" y="35" text-anchor="middle">console</text>
+        <rect class="box green" x="310" y="96" width="128" height="34" rx="6"/><text x="374" y="118" text-anchor="middle">net-task</text>
+        <rect class="box" x="290" y="226" width="140" height="34" rx="6"/><text x="360" y="248" text-anchor="middle">sandbox-listener</text>
+        <rect class="box" x="90" y="226" width="140" height="34" rx="6"/><text x="160" y="248" text-anchor="middle">admin-listener</text>
+        <rect class="box accent" x="82" y="96" width="128" height="34" rx="6"/><text x="146" y="118" text-anchor="middle">worker</text>
+        <text x="260" y="284" class="small" text-anchor="middle">each task's user area holds the link to the next</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2"><code>task-link</code>: the next task in the ring</li>
+      <li data-step="2">New tasks join just before the console</li>
+      <li data-step="3"><code>task-status</code>: 0 ready, 1 not; <code>task-wake</code>: when to wake</li>
+      <li data-step="4">Try <code>.tasks</code> on the console to see the ring</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>All the tasks are linked into a ring. On a freshly booted system you'll find the console, the network task, and the two listeners of the network REPL, plus a worker task for each telnet session that's open.</p>
+    <p>The link lives in each task's user area, in a field called task-link. A new task is inserted just before the console, so the ring always starts and ends there. Pause simply walks round this ring, going clockwise in the picture, looking for the next task that can run.</p>
+    <p>How does it know which can run? Two more fields. Task-status is zero when the task is ready, and one when it isn't. Task-wake holds the time at which a sleeping task should wake up, or zero if it's waiting for someone else to wake it.</p>
+    <p>You can see the ring for yourself. Type <span data-say="dot tasks">.tasks</span> at the console and it lists every task with its state: running, ready, sleeping, or stopped.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <h2><code>pause</code>: the whole task switch</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="arch/aarch64/prims.s">  RPUSH  IP
+  str    TOS, [DSP, #-8]!
+  str    DSP, [UP, #U_SP]
+  str    RSP, [UP, #U_RP]
+  mov    x28, UP          <span class="c">// the search ends back at this task</span>
+1: ldr   UP, [UP, #U_LINK]
+  ldr    x0, [UP, #U_STATUS]
+  cbz    x0, 3f           <span class="c">// ready</span>
+  <span class="c">…</span>
+3: ldr   x1, =var_task_ticks
+  str    xzr, [x1]
+  ldr    DSP, [UP, #U_SP]
+  ldr    RSP, [UP, #U_RP]
+  ldr    TOS, [DSP], #8
+  RPOP   IP
+  NEXT</pre>
+      <div class="src"><a href="../../arch/aarch64/prims.s" data-ref="arch/aarch64/prims.s:pause">arch/aarch64/prims.s › pause</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1"><b>Save</b>: the place in the code, the top of stack, both stack pointers</li>
+      <li data-step="2"><b>Find</b>: follow the link to a task that is ready, or whose time has come</li>
+      <li data-step="3"><b>Restore</b>: its stack pointers, its place in the code, and carry on</li>
+      <li data-step="4">Nothing ready? <code>wfi</code>: sleep until the next 10 ms tick</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>This is pause itself, one of the few words written in assembly, because it runs constantly. It has three steps. First, save. The running task's place in the code, the instruction pointer, goes onto its own return stack, and the cached top of its data stack goes onto its data stack. Then both stack pointers are written into its user area.</p>
+    <p>Second, find. The user-area register is replaced by the link to the next task, and its status is checked. If the status is zero, it's ready. If it's asleep with a wake time that has passed, it's made ready. Otherwise, on round the ring.</p>
+    <p>Third, restore. Load that task's stack pointers from its user area, pop its saved top of stack and instruction pointer, and run the next word. That task now carries on from exactly where it last paused. Notice how little there is to switch: a Forth task's whole state is its instruction pointer, its two stacks and its user area.</p>
+    <p>If the search comes all the way round and nothing can run, the processor waits for an interrupt. The timer ticks every ten milliseconds, so a sleeping task is never more than one tick late, and an idle machine uses almost no power.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <h2>Sleeping and waking</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 520 240" role="img" aria-label="States: ready, sleeping until a time, stopped until woken">
+        <defs><marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <rect class="box green" x="20" y="96" width="130" height="46" rx="8"/><text x="85" y="124" text-anchor="middle">ready</text>
+        <rect class="box blue" x="350" y="16" width="150" height="46" rx="8"/><text x="425" y="44" text-anchor="middle">sleeping</text>
+        <rect class="box accent" x="350" y="178" width="150" height="46" rx="8"/><text x="425" y="206" text-anchor="middle">stopped</text>
+        <path class="line" d="M 150 106 L 346 34" marker-end="url(#arrow2)"/>
+        <text x="200" y="52" class="mono">n ms</text>
+        <path class="line" d="M 350 54 L 154 122" marker-end="url(#arrow2)"/>
+        <text x="236" y="112" class="small">its time comes</text>
+        <path class="line" d="M 150 132 L 346 196" marker-end="url(#arrow2)"/>
+        <text x="210" y="190" class="mono">stop</text>
+        <path class="line" d="M 350 214 L 154 146" marker-end="url(#arrow2)"/>
+        <text x="236" y="146" class="small">another task: </text><text x="236" y="160" class="mono">wake</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="1"><b>ready</b>: runs on its next turn</li>
+      <li data-step="1"><b>sleeping</b>: until a time</li>
+      <li data-step="1"><b>stopped</b>: until another task wakes it</li>
+      <li data-step="3">A listener <code>stop</code>s in <code>accept-connection</code>; the network task <code>wake</code>s it when a client arrives</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="forth/tasks.fs">: <span class="w">stop</span>   ( -- )  1 task-status !  0 task-wake !  pause ;   <span class="c">\ until another task wakes this one</span>
+: <span class="w">wake</span>   ( task -- )  0 swap task-status field! ;
+: <span class="w">ms</span>     ( n -- )  counter-hz 1000 / *  counter +  task-wake !  1 task-status !  pause ;</pre>
+    <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:ms">forth/tasks.fs › ms</a></div>
+  </div>
+  <div class="talk">
+    <p>A task is in one of three states. Ready means it will run on its next turn. Sleeping means it's waiting for a time. Stopped means it's waiting for another task to wake it.</p>
+    <p>All three words are tiny Forth definitions. <span data-say="em ess">ms</span> works out the counter value some milliseconds from now, stores it as the wake time, marks the task not ready, and pauses. Pause will make it ready again once the counter passes that value. Stop marks the task not ready with no wake time at all, so only another task can bring it back. And wake just sets another task's status to zero, through the field-store word, which reaches into that task's user area.</p>
+    <p>Here's a real example. A listener waiting for a telnet connection is stopped inside accept-connection, costing nothing. When a connection arrives, the network task queues it and wakes the listener, which runs on its next turn.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <h2>Giving a task work</h2>
+  <div data-step="1">
+    <pre class="code" data-src="forth/tasks.fs">: <span class="w">run-task</span>  ( i*x xt -- )  <span class="c">\ a task's whole life: run xt, report how it ended, sleep</span>
+  catch ?dup if  ['] report catch if drop then  then   <span class="c">\ its terminal may be gone</span>
+  unclaim  0 state !
+  pooled @ if  free-tasks @ next-free !  up@ free-tasks !  then   <span class="c">\ back to the pool</span>
+  begin stop again ;</pre>
+    <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:run-task">forth/tasks.fs › run-task</a></div>
+  </div>
+  <div class="cols below">
+    <div class="figure" data-step="2">
+      <svg viewBox="0 0 410 200" role="img" aria-label="A started task's stacks are laid out as if it had paused: xt on the data stack, the address of run-task on the return stack">
+        <text x="20" y="24" class="small">data stack</text>
+        <rect class="box blue" x="20" y="34" width="150" height="36" rx="4"/><text x="95" y="57" text-anchor="middle" class="mono">xt</text>
+        <rect class="box faint" x="20" y="70" width="150" height="36" rx="4"/><text x="95" y="93" text-anchor="middle" class="mono">x (start-with)</text>
+        <text x="220" y="24" class="small">return stack</text>
+        <rect class="box green" x="220" y="34" width="160" height="36" rx="4"/><text x="300" y="57" text-anchor="middle" class="mono">task-thread</text>
+        <path class="line accent" d="M 300 72 L 300 140"/>
+        <rect class="box accent" x="200" y="140" width="200" height="40" rx="6"/><text x="300" y="165" text-anchor="middle" class="mono">run-task</text>
+        <text x="20" y="160" class="small">the first pause into the task</text>
+        <text x="20" y="176" class="small">"resumes" at run-task</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2">A new task is simply a task that hasn't run yet</li>
+      <li data-step="3"><code>' word task start</code></li>
+      <li data-step="3"><code>x ' word task start-with</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Every task spends its whole life in this one word, run-task. It runs the work it was given under catch. If the work throws an error, it reports it, carefully, because a session's terminal may already be gone. Then it tidies up, returns itself to the pool if it came from one, and stops for good.</p>
+    <p>The neat part is how a task gets into run-task in the first place. Start doesn't call anything. It lays out the new task's stacks exactly as if the task had paused: the work's execution token on the data stack, and on the return stack the address of a cell that holds run-task. The next time pause comes round to that task, it restores those stacks and carries on, and carrying on means running run-task. There's no special first-run path at all: a new task is simply a task that hasn't run yet.</p>
+    <p>To use it, give start an execution token and a task. Start-with also passes one value, such as the connection a session should serve.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <h2>The pool: a task per client, within limits</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 520 220" role="img" aria-label="spawn takes a free worker, or makes one up to 64, or throws -275">
+        <defs><marker id="arrow3" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <rect class="box blue" x="10" y="88" width="120" height="44" rx="8"/><text x="70" y="115" text-anchor="middle" class="mono">spawn</text>
+        <path class="line" d="M 130 100 L 196 44" marker-end="url(#arrow3)"/>
+        <path class="line" d="M 130 110 L 196 110" marker-end="url(#arrow3)"/>
+        <path class="line" d="M 130 120 L 196 176" marker-end="url(#arrow3)"/>
+        <rect class="box green" x="200" y="22" width="300" height="44" rx="8"/><text x="214" y="49">a free worker from the pool</text>
+        <rect class="box" x="200" y="88" width="300" height="44" rx="8"/><text x="214" y="115">a new worker, while fewer than 64</text>
+        <rect class="box accent" x="200" y="154" width="300" height="44" rx="8"/><text x="214" y="181" class="mono">-275 throw: turn the client away</text>
+      </svg>
+    </div>
+    <div>
+      <pre class="code" data-src="forth/tasks.fs" data-step="2">: <span class="w">spawn</span>  ( x xt -- task )  <span class="c">\ run xt with x in a pooled task</span>
+  free-tasks @ ?dup if
+    dup next-free &gt;user @ free-tasks !
+  else
+    workers @ max-workers @ &lt; 0= if -275 throw then
+    s" worker" new-task  true over pooled field!  1 workers +!
+  then
+  dup &gt;r start-with r&gt; ;</pre>
+      <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:spawn">forth/tasks.fs › spawn</a></div>
+    </div>
+  </div>
+  <div class="talk">
+    <p>Servers want one task per client, so each session has its own stacks and its own terminal. Making a new task every time would slowly eat memory, so there's a pool.</p>
+    <p>Spawn first looks for a worker that has finished its previous job. Remember that run-task puts a pooled task back on the free list when its work ends. If there isn't one, spawn makes a new worker, but only while there are fewer than sixty-four. Beyond that it throws <span data-say="minus two seven five">-275</span>, no free task.</p>
+    <p>That limit matters. A flood of connections can't exhaust memory; at worst, new clients are turned away. Which means anything that spawns must be ready for that throw. The REPL's listener catches it and drops just that connection, rather than dying itself.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <h2>Sharing across a pause: semaphores</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/core.fs" data-step="1">: <span class="w">get</span>  ( sem -- )
+  dup @ up@ = if  cell+ 1 swap +!  exit  then
+  begin dup @ while pause repeat
+  up@ over !  cell+ 1 swap ! ;</pre>
+      <pre class="code" data-src="forth/core.fs" style="margin-top:12px" data-step="2">: <span class="w">locked</span>  ( i*x xt sem -- j*x )  dup &gt;r get  catch  r&gt; release  throw ;</pre>
+      <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:locked">forth/core.fs › locked</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The rule: anything shared that is used <b>across</b> a pause needs a lock</li>
+      <li data-step="2"><code>['] (word) some-lock locked</code> releases even on errors</li>
+      <li data-step="3">The locks in the base: <code>blocks-lock</code>, <code>tx-lock</code>, <code>files-lock</code>, and <code>claim</code> for the dictionary</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Earlier I said that between two pauses a task is alone, so it needs no locks. The flip side is the rule on this slide: if a task uses something shared across a pause, it does need one. Reading a disk block is the classic case. The task asks the device for the block, then pauses while it waits, and another task must not grab that buffer in the meantime.</p>
+    <p>A semaphore here is two cells: which task holds it, and how many times. Get waits, pausing politely, until nobody holds it, then takes it. If the task already holds it, get just counts up, so a word that holds a lock can call another word that takes the same lock. Locked is the way to use one: it runs a word holding the semaphore, and releases it however that word ends, even if it throws an error.</p>
+    <p>The base has a few of these. Blocks-lock guards the block buffers, tx-lock the network's send buffer, and files-lock the app disk. And the dictionary itself is claimed by whichever task is compiling, so two telnet sessions can't build definitions into each other.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <h2>When a task fails, it costs one item</h2>
+  <div class="cols even">
+    <div>
+      <pre class="code" data-src="forth/tasks.fs" data-step="1">: <span class="w">restarting</span>  ( xt -- )  <span class="c">\ run xt for ever</span>
+  begin
+    dup catch ?dup if  ['] report catch if drop then  then
+    1 restarts +!  1000 ms
+  again ;</pre>
+      <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:restarting">forth/tasks.fs › restarting</a></div>
+    </div>
+    <div>
+      <pre class="code" data-src="forth/net/net.fs" data-step="2">: <span class="w">net-loop</span>  ( -- )
+  begin
+    ['] tcp-timers catch if  1 net-errors +!  then
+    rx-frame net-poll ?dup if
+      ['] frame-in catch if  drop 1 net-errors +!  then  pause
+    else  10 ms  then
+  again ;</pre>
+      <div class="src"><a href="../../forth/net/net.fs" data-ref="forth/net/net.fs:net-loop">forth/net/net.fs › net-loop</a></div>
+    </div>
+  </div>
+  <div class="callout" data-step="3">Two layers: <b>catch per item</b> inside the loop, and <b>restarting</b> around the loop.</div>
+  <div class="talk">
+    <p>Errors in Forth are thrown and caught, and tasks use that in two layers.</p>
+    <p>The outer layer is restarting. System tasks, like the network task and the REPL listeners, don't run their loop directly. They run it under restarting, which catches whatever ended the loop, reports it, waits a second so a persistent fault can't spin, and starts the loop again. A service can stumble, but it can't stop for good.</p>
+    <p>The inner layer is inside the loop itself. Here's the network task's loop. Every received frame is handled under its own catch, and so are the TCP timers. A malformed packet that trips an error costs exactly one packet, counted in net-errors, and the next frame is handled as normal. The same pattern runs through the base: catch per item, a frame or a connection, so one fault costs one item.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <h2>The watchdog</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 170" role="img" aria-label="Timer ticks every 10 ms add to a count that pause resets; at 500 ticks the task is stopped with -262">
+      <text x="10" y="30" class="small">timer ticks, every 10 ms</text>
+      <g class="fill-muted">
+        <rect x="20" y="44" width="2" height="18"/><rect x="50" y="44" width="2" height="18"/><rect x="80" y="44" width="2" height="18"/><rect x="110" y="44" width="2" height="18"/>
+        <rect x="140" y="44" width="2" height="18"/><rect x="170" y="44" width="2" height="18"/><rect x="200" y="44" width="2" height="18"/><rect x="230" y="44" width="2" height="18"/>
+        <rect x="260" y="44" width="2" height="18"/><rect x="290" y="44" width="2" height="18"/><rect x="320" y="44" width="2" height="18"/><rect x="350" y="44" width="2" height="18"/>
+        <rect x="380" y="44" width="2" height="18"/><rect x="410" y="44" width="2" height="18"/><rect x="440" y="44" width="2" height="18"/><rect x="470" y="44" width="2" height="18"/>
+        <rect x="500" y="44" width="2" height="18"/><rect x="530" y="44" width="2" height="18"/><rect x="560" y="44" width="2" height="18"/><rect x="590" y="44" width="2" height="18"/>
+      </g>
+      <text x="17" y="86" class="mono">1</text><text x="47" y="86" class="mono">2</text><text x="77" y="86" class="mono">3</text>
+      <rect class="fill-accent" x="93" y="40" width="4" height="56"/><text x="70" y="114" class="mono">pause</text>
+      <text x="107" y="86" class="mono">1</text><text x="137" y="86" class="mono">2</text>
+      <rect class="fill-accent" x="153" y="40" width="4" height="56"/><text x="130" y="114" class="mono">pause</text>
+      <text x="167" y="86" class="mono">1</text><text x="197" y="86" class="mono">2</text><text x="227" y="86" class="mono">3</text><text x="257" y="86" class="mono">4</text>
+      <text x="300" y="86" class="mono">…</text>
+      <text x="580" y="86" class="mono">500</text>
+      <rect class="box accent" x="640" y="40" width="250" height="56" rx="8"/>
+      <text x="654" y="64" class="mono">-262 throw</text>
+      <text x="654" y="84" class="small">in the task that would not pause</text>
+      <text x="170" y="150" class="small">a task that never pauses: the count climbs until the watchdog stops it (5 s by default)</text>
+    </svg>
+  </div>
+  <div class="cols even below">
+    <ul class="points">
+      <li data-step="2">Counts <b>ticks</b> the task has had, not clock time</li>
+      <li data-step="3">The error lands in that task alone: the console, a session, a worker</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="forth/tasks.fs">: <span class="w">watchdog</span>  ( ms -- )  dup if 10 / 1 max then  watchdog-limit ! ;   <span class="c">\ in 10 ms ticks; 0 turns it off</span>
+5000 watchdog</pre>
+    <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:watchdog">forth/tasks.fs › watchdog</a></div>
+  </div>
+  <div class="talk">
+    <p>Now the safety net for cooperative multitasking. The timer interrupts every ten milliseconds, and each tick adds one to a count for the running task. Every time a task pauses, the count goes back to zero; you saw that in pause's restore step.</p>
+    <p>A task that never pauses lets the count climb, and when it reaches the limit, five hundred ticks or five seconds by default, the timer handler makes that task throw <span data-say="minus two six two">-262</span>. It's an ordinary error, so it's caught like any other: by the REPL if it was the console, by run-task if it was a worker. The rest of the system never notices.</p>
+    <p>Why count ticks rather than measure the time? Under emulation the host sometimes stalls the whole virtual machine. With a clock, the stall would be blamed on whichever task happened to be running, perhaps in the middle of holding a lock. Ticks that never arrived are simply never counted.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h2>Try it on the console</h2>
+  <pre class="code" data-step="1"><span class="c">\ a task of your own, asleep until started</span>
+task clock
+: tick-tock  ( -- )  5 0 do  ." tick "  1000 ms  loop ;
+' tick-tock clock start            <span class="c">\ ticks while you keep typing</span>
+.tasks                             <span class="c">\ console running, clock sleeping, …</span></pre>
+  <pre class="code" style="margin-top:14px" data-step="2"><span class="c">\ a word that never pauses</span>
+: spin  ( -- )  begin again ;
+spin                               <span class="c">\ five seconds later: stopped by the watchdog</span></pre>
+  <p class="lede" style="margin-top:16px">Boot with <code>docker run --rm -it os4</code>.</p>
+  <div class="talk">
+    <p>Time to try it. Boot the OS and make a task called clock. Define a word that prints tick five times, sleeping a second between each, and start it in the clock task. You can keep typing at the console while it ticks, because every time the clock sleeps, the console gets its turn. Type <span data-say="dot tasks">.tasks</span> while it runs and you'll see it sleeping.</p>
+    <p>Then define spin, a loop with no pause in it, and run it. The console goes quiet for five seconds, then the watchdog stops it, the REPL reports the error, and you're back at the prompt. Everything else carried on underneath.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2>To think about before the coaching session</h2>
+  <ol class="questions">
+    <li data-step="1">A word reads a block, changes a byte, then calls <code>ms</code> before <code>update</code>. What can go wrong, and what would you change?</li>
+    <li data-step="2">Why does <code>start</code> set up a task's stacks rather than call <code>run-task</code>? What would a separate "first run" path cost?</li>
+    <li data-step="3">The watchdog counts ticks. Can you think of a way a task could still hold up the others without ever being stopped?</li>
+  </ol>
+  <p class="lede" style="margin-top:18px">Next: read the code with the tour <code>.tours/05-tasks.tour</code> in VS Code.</p>
+  <div class="talk">
+    <p>That's tasks. To recap: a task is a block of memory in a ring; pause saves one task and restores the next; tasks sleep, stop and wake through two fields in their user area; and catch, restarting and the watchdog keep one bad task from harming the rest.</p>
+    <p>Here are three questions to think about before the coaching session. There's no need to answer them now. The first is about locks and pauses, the second about how start works, and the third asks you to find a gap in the watchdog. Then, if you'd like to see the real code in your editor, open the code tour for this lecture.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

@@ -58,7 +58,7 @@ TESTS   := python3 tools/run-tests.py --disks /tmp/os4-test-disks --setup "$(TES
 TEST_HOSTED = --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk}$(comma){appdisk},{port} {peerport})"
 TEST_VIRT   = --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST),{appdisk})"
 
-.PHONY: all build image data app run run-hosted run-tap test test-hosted test-virt test-app ping-check tcp-check clean FORCE
+.PHONY: all build image data app run run-hosted run-tap test test-hosted test-virt test-app check-course ping-check tcp-check clean FORCE
 
 all: build
 
@@ -116,7 +116,11 @@ run: $(BOOT_IMG) $(DATA_IMG) $(APP_IMG)
 run-hosted: $(HOSTED) $(DATA_IMG) $(APP_IMG)
 	@$(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG))
 
-test: test-hosted test-virt
+test: check-course test-hosted test-virt
+
+# The course (docs/course) and code tours (.tours) still match the code.
+check-course:
+	python3 tools/check-course.py
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)
