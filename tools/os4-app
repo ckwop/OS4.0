@@ -1,0 +1,34 @@
+#!/bin/sh
+# os4-app: build, test and run an OS 4.0 application (DECISIONS.md #99). An app
+# is a directory holding app.fs, the files it includes, and tests/*.in with
+# their .out transcripts. The base is in $OS4_HOME (/opt/os4 in the image).
+#   os4-app test [DIR]            DIR/tests on both builds, DIR as the app disk
+#   os4-app run [DIR [PORT ...]]  boot bare metal with DIR as the app disk, the
+#                                 console on this terminal, PORTs forwarded
+#                                 (default 4000 4001); the data disk is
+#                                 DIR/build/data.img, kept between runs
+#   os4-app run-hosted [DIR]      the same on the hosted build (no network)
+#   os4-app disk IMAGE [DIR]      just make the app disk
+# DIR defaults to the current directory.
+set -e
+home=${OS4_HOME:-/opt/os4}
+cmd=$1
+[ $# -gt 0 ] && shift
+case "$cmd" in
+    test)
+        exec make -s -C "$home" test-app APP="$(realpath "${1:-.}")" ;;
+    run)
+        dir=$(realpath "${1:-.}")
+        [ $# -gt 0 ] && shift
+        ports=${*:-4000 4001}
+        exec make -s -C "$home" run APP="$dir" DATA_IMG="$dir/build/data.img" PORTS="$ports" ;;
+    run-hosted)
+        dir=$(realpath "${1:-.}")
+        exec make -s -C "$home" run-hosted APP="$dir" DATA_IMG="$dir/build/data.img" ;;
+    disk)
+        [ -n "$1" ] || { echo "usage: os4-app disk IMAGE [DIR]" >&2; exit 2; }
+        exec sh "$home/tools/app-disk.sh" "$1" "$(realpath "${2:-.}")" ;;
+    *)
+        sed -n '2,12s/^# \{0,1\}//p' "$0" >&2
+        exit 2 ;;
+esac

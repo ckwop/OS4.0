@@ -1,0 +1,43 @@
+\ files.in: the app disk, read only (forth/files.fs). Its files are in files.app/; it is FAT16 with 512-byte clusters
+dir
+dir lib
+dir deep/er
+create buf 100 allot
+variable fid
+: show-line  ( -- )  buf 100 fid @ read-line throw if  [char] [ emit buf swap type [char] ] emit  else  drop ." <end>"  then ;
+s" hello.txt" r/o open-file . fid !
+fid @ file-size . . .
+show-line show-line show-line show-line
+fid @ close-file .
+fid @ close-file .
+\ whole files, and a file over many clusters
+s" HELLO.TXT" r/o open-file . fid !  buf 100 fid @ read-file . .  fid @ close-file .
+create big 4000 allot
+s" big.txt" r/o open-file . fid !  big 4000 fid @ read-file . .  fid @ close-file .
+big 5 type  big 2995 + 5 type
+: lines  ( -- n )  0 begin  buf 100 fid @ read-line throw nip  while 1+ repeat ;
+s" big.txt" r/o open-file . fid !  lines .  fid @ close-file .
+s" a long FILE name.txt" r/o open-file . fid !  show-line  fid @ close-file .
+s" /Deep//er/X.txt" r/o open-file . fid !  show-line  fid @ close-file .
+\ what is not there
+s" nope.txt" r/o open-file . .
+s" hello.txt/x" r/o open-file . .
+s" lib" r/o open-file . .
+s" nope/x.txt" r/o open-file . .
+dir nope
+\ loading source
+include lib/words.fs
+3 square .  3 cube .  3 double .  10 sum-to .
+include bad.fs
+' fine drop
+' never
+include lib/outer.fs
+include nope.fs
+\ the pool of open files
+create fids 20 cells allot
+: open-all  ( -- )  20 0 do  s" hello.txt" r/o open-file ?dup if  ." stopped at " i . ." with " . drop unloop exit  then  fids i cells + !  loop ;
+: close-all  ( n -- )  0 ?do  fids i cells + @ close-file drop  loop ;
+open-all
+16 close-all
+open-all
+16 close-all

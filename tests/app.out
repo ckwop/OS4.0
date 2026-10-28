@@ -1,0 +1,12 @@
+OS 4.0
+hello from the app
+main ran
+\ app.in: an app on the app disk (in app.app/), loaded at boot (forth/app.fs)  ok
+greeted @ . 1  ok
+get-order . app-wordlist = . forth-wordlist = . 2 -1 -1  ok
+words main dir greet greeted 
+ ok
+dir the app's own dir
+ ok
+sandbox-port listener-of 0= . -1  ok
+2 3 + . 5  ok

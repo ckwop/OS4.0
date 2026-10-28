@@ -6,14 +6,18 @@ compared with <dir>/<name>.out. If <dir>/<name>.filter exists, it is a sed
 script applied to the output first, to mask values that change from build to
 build (such as code addresses). The output is kept in <dir>/<name>.actual.
 
-Every test gets its own data disk and network ports, so tests can run side by
-side. In the command and in --setup, "{disk}" is replaced by the test's disk
-image, "{port}" by the OS's UDP port for network frames and "{peerport}" by the
-network peer's. If <dir>/<name>.peer exists, it holds the peer's command (with
-the same placeholders), passed to tools/console-run.py as OS4_PEER.
+Every test gets its own data disk, app disk and network ports, so tests can
+run side by side. In the command and in --setup (which may be given more than
+once), "{disk}" is replaced by the test's data disk image, "{appdisk}" by its
+app disk image, "{appdir}" by the directory of files for its app disk
+(<dir>/<name>.app if it exists, else --app, else empty), "{port}" by the OS's
+UDP port for network frames, "{peerport}" by the network peer's and "{tools}"
+by this script's directory (so an app's tests can name tools/netpeer.py). If
+<dir>/<name>.peer exists, it holds the peer's command (with the same
+placeholders), passed to tools/console-run.py as OS4_PEER.
 
-Usage: run-tests.py --cmd "COMMAND {disk}" [--setup "COMMAND {disk}"]
-                    [--jobs N] [--timeout SECONDS] [--disks DIR] DIR ...
+Usage: run-tests.py --cmd "COMMAND {disk}" [--setup "COMMAND {disk}"]...
+                    [--app DIR] [--jobs N] [--timeout SECONDS] [--disks DIR] DIR ...
 """
 
 import argparse
@@ -28,10 +32,12 @@ import sys
 def run_test(index, path, args):
     name = os.path.splitext(path)[0]
     port = args.base_port + 2 * index
-    fill = dict(disk=os.path.join(args.disks, name.replace(os.sep, "-") + ".img"),
-                port=port, peerport=port + 1)
-    if args.setup:
-        setup = subprocess.run(shlex.split(args.setup.format(**fill)), capture_output=True)
+    disk = os.path.join(args.disks, name.replace(os.sep, "-"))
+    fill = dict(disk=disk + ".img", appdisk=disk + "-app.img",
+                appdir=name + ".app" if os.path.isdir(name + ".app") else args.app,
+                port=port, peerport=port + 1, tools=os.path.dirname(os.path.abspath(__file__)))
+    for command in args.setup:
+        setup = subprocess.run(shlex.split(command.format(**fill)), capture_output=True)
         if setup.returncode:
             return name, False, f"setup failed:\n{setup.stdout.decode()}{setup.stderr.decode()}"
     env = dict(os.environ)
@@ -75,7 +81,8 @@ def run_test(index, path, args):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--cmd", required=True)
-    p.add_argument("--setup")
+    p.add_argument("--setup", action="append", default=[])
+    p.add_argument("--app", default="", help="{appdir} for tests without a <name>.app of their own")
     p.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
     p.add_argument("--timeout", type=float, default=30)
     p.add_argument("--disks", default="build/test-disks")

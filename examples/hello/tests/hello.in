@@ -1,0 +1,4 @@
+\ hello.in: a client connects to port 5000 and is greeted (the peer reports what it got)
+: wait-greeted  ( -- )  30000 deadline  begin greeted @ 0= over expired? 0= and while 100 ms repeat drop ;
+wait-greeted greeted @ .
+2000 ms

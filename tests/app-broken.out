@@ -1,0 +1,9 @@
+OS 4.0
+app: app.fs:3: nonsense ?
+\ app-broken.in: an app whose load fails (app-broken.app/); the console still works  ok
+half half
+ ok
+' main main ?
+get-order . app-wordlist = . drop 2 -1  ok
+sandbox-port listener-of 0= . -1  ok
+2 3 + . 5  ok

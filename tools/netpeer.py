@@ -9,7 +9,7 @@ what it finds. It runs until terminated.
 
 It also runs a UDP echo service on its port 7.
 
-Usage: netpeer.py --port PORT --os-port PORT SCRIPT
+Usage: netpeer.py --port PORT --os-port PORT SCRIPT [ARG ...]
 Scripts:
   ping   ARP for the OS, then ping it three times and check each reply
   udp    use the OS's UDP echo service (port 7) with several sizes, with and
@@ -38,6 +38,9 @@ Scripts:
          acknowledgement of unsent data on an open connection (each must be
          answered by a challenge ACK or ignored, the connection kept); a client
          whose MSS option is 0; finally an exact reset, which must close it
+  connect PORT [LINE ...]  for an app's tests: connect to the OS's TCP port
+         (retrying while nothing listens), send each LINE with CR LF, then
+         print what the OS sent until it closed the connection
 """
 
 import argparse
@@ -440,6 +443,26 @@ class Peer:
             print(f"peer: {name}: {'closed' if c.closed else 'not closed'}", flush=True)
             for problem in c.problems:
                 print(f"peer: {name}: {problem}", flush=True)
+
+    def script_connect(self):
+        if not self.find_os():
+            print("peer: no ARP reply from 10.0.2.15", flush=True)
+            return
+        port, lines = int(self.args[0]), self.args[1:]
+        c = TcpClient(self, 51000, dport=port)
+        if not c.connect():
+            print(f"peer: no connection to port {port}", flush=True)
+            return
+        for line in lines:
+            c.send_reliably(line.encode() + b"\r\n")
+        if not c.wait_for(lambda: c.fin_received, 30):
+            c.problems.append("the OS did not close")
+        c.close()
+        for line in c.transcript().rstrip("\n").split("\n"):
+            print(f"peer: {port}| {line}", flush=True)
+        print(f"peer: {port}: {'closed' if c.closed else 'not closed'}", flush=True)
+        for problem in c.problems:
+            print(f"peer: {port}: {problem}", flush=True)
 
     def script_ping(self):
         deadline = time.time() + 20
@@ -999,9 +1022,12 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--os-port", type=int, required=True)
-    p.add_argument("script", choices=["ping", "udp", "tcp", "tcp-attack", "repl", "hostile", "soak"])
+    p.add_argument("script", choices=["ping", "udp", "tcp", "tcp-attack", "repl", "hostile", "soak",
+                                      "connect"])
+    p.add_argument("args", nargs="*", help="the script's arguments")
     args = p.parse_args()
     peer = Peer(args.port, args.os_port)
+    peer.args = args.args
     getattr(peer, "script_" + args.script.replace("-", "_"))()
     while True:                     # keep answering until terminated
         time.sleep(1)

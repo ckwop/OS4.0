@@ -1,7 +1,9 @@
-# OS 4.0 toolchain image: builds the kernel, runs QEMU and runs the tests.
-#   docker build -t os4 .
+# OS 4.0 toolchain image: builds the kernel, runs QEMU and runs the tests; apps
+# depend on a tagged version of it.
+#   docker build -t os4:0.9b -t os4 .
 #   docker run --rm -it os4                          # boot to the Forth prompt on the serial console
 #   docker run --rm -v "${PWD}:/src" os4 make test   # against live source
+#   docker run --rm -v "${PWD}:/app" -w /app os4:0.9b os4-app test   # an app's tests
 FROM debian:trixie-slim
 
 # Limine is not packaged by Debian; pin a commit on its prebuilt-binary branch.
@@ -42,8 +44,13 @@ ENV LIMINE_DIR=/opt/limine \
     UEFI_FIRMWARE=/usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
     PATH=/opt/limine:$PATH
 
-WORKDIR /src
+# The base, built, in /opt/os4: apps build and test against it with os4-app
+# (DECISIONS.md #99). Working on the base itself mounts its source at /src.
+WORKDIR /opt/os4
 COPY . .
-RUN make build image
+RUN make build image \
+    && chmod +x tools/os4-app \
+    && ln -s /opt/os4/tools/os4-app /usr/local/bin/os4-app
+WORKDIR /src
 
-CMD ["make", "run"]
+CMD ["make", "-C", "/opt/os4", "run"]

@@ -1,0 +1,56 @@
+OS 4.0
+\ files.in: the app disk, read only (forth/files.fs). Its files are in files.app/; it is FAT16 with 512-byte clusters  ok
+dir A Long File Name.txt 12
+Deep/
+bad.fs 71
+big.txt 3000
+hello.txt 48
+lib/
+ ok
+dir lib nested.fs 62
+outer.fs 43
+words.fs 224
+ ok
+dir deep/er x.txt 5
+ ok
+create buf 100 allot  ok
+variable fid  ok
+: show-line  ( -- )  buf 100 fid @ read-line throw if  [char] [ emit buf swap type [char] ] emit  else  drop ." <end>"  then ;  ok
+s" hello.txt" r/o open-file . fid ! 0  ok
+fid @ file-size . . . 0 0 48  ok
+show-line show-line show-line show-line [first line][second line][third, with no line feed]<end> ok
+fid @ close-file . 0  ok
+fid @ close-file . -37  ok
+\ whole files, and a file over many clusters  ok
+s" HELLO.TXT" r/o open-file . fid !  buf 100 fid @ read-file . .  fid @ close-file . 0 0 48 0  ok
+create big 4000 allot  ok
+s" big.txt" r/o open-file . fid !  big 4000 fid @ read-file . .  fid @ close-file . 0 0 3000 0  ok
+big 5 type  big 2995 + 5 type 0001
+0600
+ ok
+: lines  ( -- n )  0 begin  buf 100 fid @ read-line throw nip  while 1+ repeat ;  ok
+s" big.txt" r/o open-file . fid !  lines .  fid @ close-file . 0 600 0  ok
+s" a long FILE name.txt" r/o open-file . fid !  show-line  fid @ close-file . 0 [a long name]0  ok
+s" /Deep//er/X.txt" r/o open-file . fid !  show-line  fid @ close-file . 0 [deep]0  ok
+\ what is not there  ok
+s" nope.txt" r/o open-file . . -38 0  ok
+s" hello.txt/x" r/o open-file . . -38 0  ok
+s" lib" r/o open-file . . -38 0  ok
+s" nope/x.txt" r/o open-file . . -38 0  ok
+dir nope non-existent file
+\ loading source  ok
+include lib/words.fs  ok
+3 square .  3 cube .  3 double .  10 sum-to . 9 27 6 55  ok
+include bad.fs bad.fs:3: oops ?
+' fine drop  ok
+' never never ?
+include lib/outer.fs bad.fs:3: oops ?
+include nope.fs non-existent file
+\ the pool of open files  ok
+create fids 20 cells allot  ok
+: open-all  ( -- )  20 0 do  s" hello.txt" r/o open-file ?dup if  ." stopped at " i . ." with " . drop unloop exit  then  fids i cells + !  loop ;  ok
+: close-all  ( n -- )  0 ?do  fids i cells + @ close-file drop  loop ;  ok
+open-all stopped at 16 with -276  ok
+16 close-all  ok
+open-all stopped at 16 with -276  ok
+16 close-all  ok

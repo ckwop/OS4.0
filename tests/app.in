@@ -1,0 +1,7 @@
+\ app.in: an app on the app disk (in app.app/), loaded at boot (forth/app.fs)
+greeted @ .
+get-order . app-wordlist = . forth-wordlist = .
+words
+dir
+sandbox-port listener-of 0= .
+2 3 + .

@@ -5,6 +5,9 @@
 \ Block 0 holds the disk header written by tools/blocks.py: magic, format
 \ version, volume ID and size. A disk without a valid header is read-only, and
 \ block 0 itself is never written.
+\ The data disk is the first disk with a valid header; failing that, the first
+\ whose block 0 does not end in a boot signature (as a FAT disk's does). No
+\ other disk is ever written.
 
 -33 message: block read error
 -34 message: block write error
@@ -25,12 +28,19 @@ variable mounted        \ the header has been read
 variable disk-ok        \ ... and is valid
 variable #blocks        \ blocks usable on this disk
 variable volume-id
+variable data-disk
+
+: header?  ( -- flag )  disk-header 8 s" OS40DISK" compare 0=  disk-header 8 + @ disk-version = and ;
+: boot-signature?  ( -- flag )  disk-header 510 + c@ $55 =  disk-header 511 + c@ $aa = and ;
+: find-data-disk  ( -- )  \ into DATA-DISK, its block 0 into DISK-HEADER
+  #disks 0 ?do  disk-header 0 i blk-read  header? if i data-disk ! unloop exit then  loop
+  #disks 0 ?do  disk-header 0 i blk-read  boot-signature? 0= if i data-disk ! unloop exit then  loop
+  -257 throw ;
 
 : mount  ( -- )  \ read the header, once
   mounted @ if exit then
-  blk-count dup 0= if -257 throw then  #blocks !
-  disk-header 0 blk-read
-  disk-header 8 s" OS40DISK" compare 0=  disk-header 8 + @ disk-version = and  disk-ok !
+  find-data-disk  data-disk @ blk-count #blocks !
+  header? disk-ok !
   disk-ok @ if  disk-header 16 + @ volume-id !  disk-header 24 + @ #blocks @ min #blocks !  then
   true mounted ! ;
 
@@ -73,7 +83,7 @@ variable next-buf                         \ where the search for a free one star
 
 : write-buf  ( i -- )  \ write buffer i back if it was updated
   dup 'dirty @ if
-    dup buf over 'blk @ ?writable blk-write  0 swap 'dirty !
+    dup buf over 'blk @ ?writable data-disk @ blk-write  0 swap 'dirty !
   else drop then ;
 
 : victim  ( -- i )  \ the next unpinned buffer, round robin, written back first
@@ -90,8 +100,8 @@ variable next-buf                         \ where the search for a free one star
 
 : (block)  ( u -- addr )
   dup buf-of 0< if
-    dup dup (buffer) swap  ['] blk-read catch ?dup if
-      nip nip  -1 last-buf @ 'blk !  throw
+    dup dup (buffer) swap  data-disk @ ['] blk-read catch ?dup if
+      nip nip nip  -1 last-buf @ 'blk !  throw
     then
   then (buffer) ;
 
@@ -107,7 +117,7 @@ variable next-buf                         \ where the search for a free one star
 : empty-buffers  ( -- )  ['] (empty-buffers) blocks-lock locked ;  \ discarding changes
 : (flush)  ( -- )  (save-buffers) (empty-buffers) ;
 : flush          ( -- )  ['] (flush) blocks-lock locked ;
-: (sync)   ( -- )  (save-buffers) blk-flush ;
+: (sync)   ( -- )  (save-buffers) data-disk @ blk-flush ;
 : sync           ( -- )  ['] (sync) blocks-lock locked ;  \ durable once this returns
 
 \ ---- Loading source from blocks. A block is 16 lines of 64 characters.

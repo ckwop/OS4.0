@@ -30,7 +30,7 @@ docker run --rm -it -v "${PWD}:/src" os4 make run-hosted  # the same Forth as a 
 
 Booting takes about ten seconds: UEFI firmware, then Limine, then the OS. Leave with `bye`, Ctrl-D on an empty line, or Ctrl-A then x.
 
-Make targets (run inside the container): `build` (the default), `image`, `data`, `run`, `run-hosted`, `test`, `test-hosted`, `test-virt` and `clean`.
+Make targets (run inside the container): `build` (the default), `image`, `data`, `app`, `run`, `run-hosted`, `test`, `test-hosted`, `test-virt`, `test-app` and `clean`.
 
 ### Blocks
 
@@ -109,6 +109,25 @@ task server  ' line-server server start
 .tcp                                   \ connections live and pooled
 ```
 
+### Applications
+
+This repository is the base. An application lives in a repository of its own and depends on a tagged image of the base, `os4:0.9b`, built from here:
+
+```powershell
+docker build -t os4:0.9b -t os4 .
+```
+
+An app is a directory of Forth files with `app.fs` as its entry point, which can `include` the others (paths with `/`, any case). At boot the OS finds the app disk, includes `app.fs` and runs the app's `main`, which starts the app's tasks and returns; the console follows. If loading fails, the OS reports where (`app.fs:12: ...`) and the console still comes up. Without an app, the OS starts the network REPL as above.
+
+The app disk is FAT, made with ordinary tools, and the OS only reads it. Everything the OS writes goes in blocks on the data disk. [examples/hello](examples/hello) greets whoever connects to port 5000. From an app's directory:
+
+```powershell
+docker run --rm -v "${PWD}:/app" -w /app os4:0.9b os4-app test         # its tests/*.in on both builds
+docker run --rm -it -p 127.0.0.1:5000:5000 -v "${PWD}:/app" -w /app os4:0.9b os4-app run . 5000
+```
+
+`os4-app run` keeps the app's data disk in `build/data.img` in the app's directory. On the console, `dir` lists the app disk and `include` loads a file from it.
+
 ### Milestones
 
 Each milestone is done when its acceptance test passes in the Docker image.
@@ -125,7 +144,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 8 | TCP, many connections | Done |
 | 9 | Network REPL | Done |
 | 9a | Hardened base | Done |
-| 9b | Applications: an app is screens on the data disk, loaded at boot; apps live in their own repositories and build against a versioned `os4` image | Not started |
+| 9b | Applications: an app is files on a read-only FAT app disk, `app.fs` its entry point; apps live in their own repositories and build against a versioned `os4` image | Done |
 | 10 | MUD engine (in its own repository, `os4-mud`, as the first application) | Not started |
 | 11 | Fargate deployment | Not started |
 | 12 | EC2 AMI | Not started |

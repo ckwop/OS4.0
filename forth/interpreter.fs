@@ -152,7 +152,7 @@ user hidden                     \ ACCEPT does not echo: for passwords
   tib 'tib !  tib /tib accept  dup #tib !  0 >in !
   0= eof @ and 0= ;
 : prompt  ( -- )  state @ if ."  compiled" else ."  ok" then cr ;
-: reset   ( i*x -- )  begin depth while drop repeat  0 state !  0 error-blk !  unclaim ;
+: reset   ( i*x -- )  begin depth while drop repeat  0 state !  0 error-blk !  0 error-line !  unclaim ;
 
 \ The REPL. Each line runs under CATCH: an error is reported, then the next
 \ line. The dictionary is given up between lines unless a definition is open.

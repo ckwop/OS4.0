@@ -1,0 +1,6 @@
+\ app-broken.in: an app whose load fails (app-broken.app/); the console still works
+half
+' main
+get-order . app-wordlist = . drop
+sandbox-port listener-of 0= .
+2 3 + .

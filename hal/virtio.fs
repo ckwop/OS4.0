@@ -38,14 +38,15 @@ $74726976 constant virtio-magic
 : vm!    ( u base reg -- )  + l! ;
 : vm64!  ( u base reg -- )  + >r  dup $ffffffff and r@ l!  32 rshift r> 4 + l! ;
 
-: virtio-find  ( device-id -- base | 0 )  \ the first transport holding that device
+: virtio-nth  ( device-id n -- base | 0 )  \ the transport holding the nth such device, from 0
   32 0 do
     virtio-mmio-base i $200 * +
     dup vm-magic vm@ virtio-magic =
     over vm-version vm@ 2 = and
-    over vm-device-id vm@ 3 pick = and
-    if nip unloop exit then drop
-  loop drop 0 ;
+    over vm-device-id vm@ 4 pick = and
+    if  over 0= if nip nip unloop exit then  swap 1- swap  then drop
+  loop 2drop 0 ;
+: virtio-find  ( device-id -- base | 0 )  0 virtio-nth ;  \ the first transport holding that device
 
 : status+    ( base bits -- )  over vm-status vm@ or  swap vm-status vm! ;
 : features@  ( base sel -- u )  over vm-features-sel vm!  vm-features vm@ ;

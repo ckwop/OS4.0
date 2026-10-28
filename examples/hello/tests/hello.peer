@@ -1,0 +1,1 @@
+python3 {tools}/netpeer.py --port {peerport} --os-port {port} connect 5000

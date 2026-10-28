@@ -19,20 +19,28 @@ DATA_IMG    ?= $(BUILD)/data.img
 BLOCKS_TOOL := python3 tools/blocks.py
 TEST_SETUP  := $(BLOCKS_TOOL) format --force {disk} --blocks 1024 --volume-id 42
 
+# App disks (DECISIONS.md #99): FAT, read only, made afresh from the directory
+# APP for each run (empty without one); a test's from tests/<name>.app/.
+APP         ?=
+APP_IMG     := $(BUILD)/app.img
+APP_SETUP   := sh tools/app-disk.sh {appdisk} {appdir}
+
 # Hosted: an AArch64 Linux binary run under qemu-aarch64 (milestone 2).
-# Arguments: the data disk, then optionally our UDP port and the peer's, which
-# carry network frames (hal/linux-net.fs).
+# Arguments: the disks, separated by commas, then optionally our UDP port and
+# the peer's, which carry network frames (hal/linux-net.fs).
 HOSTED      := $(BUILD)/forth-hosted
 HOSTED_CMD   = qemu-aarch64 $(HOSTED) $(1) $(2)
 
-# Network backends for the bare-metal NIC: QEMU's user networking (NAT, with the
-# MUD port forwarded) to run; for tests, frames as UDP to the test's own peer.
-NET_USER := -netdev user,id=net,hostfwd=tcp::4000-:4000,hostfwd=tcp::4001-:4001
+# Network backends for the bare-metal NIC: QEMU's user networking (NAT, with
+# the PORTS forwarded) to run; for tests, frames as UDP to the test's own peer.
+PORTS    ?= 4000 4001
+NET_USER  = -netdev user$(comma)id=net$(foreach p,$(PORTS),$(comma)hostfwd=tcp::$(p)-:$(p))
 NET_TEST := -netdev dgram,id=net,local.type=inet,local.host=127.0.0.1,local.port={port},remote.type=inet,remote.host=127.0.0.1,remote.port={peerport}
 
 # Bare metal: Limine boots the kernel on QEMU's virt machine (milestone 3).
 # The boot disk is virtio-pci and read-only (the OS never writes it, and tests
-# share it); the data disk is virtio-mmio, as our driver expects.
+# share it); the data disk and the app disk ($(3), read-only) are virtio-mmio,
+# as our driver expects.
 KERNEL_ELF := $(BUILD)/kernel.elf
 BOOT_IMG   := $(BUILD)/boot.img
 VIRT_CMD    = qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m 1G -nographic \
@@ -40,13 +48,17 @@ VIRT_CMD    = qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m
               -drive file=$(BOOT_IMG),format=raw,if=virtio,readonly=on \
               -drive file=$(1),format=raw,if=none,id=data,cache=writeback \
               -device virtio-blk-device,drive=data -global virtio-mmio.force-legacy=false \
+              -drive file=$(3),format=raw,if=none,id=app,readonly=on \
+              -device virtio-blk-device,drive=app \
               $(2) -device virtio-net-device,netdev=net -device virtio-rng-device
 
 comma   := ,
 CONSOLE := python3 tools/console-run.py
-TESTS   := python3 tools/run-tests.py --disks /tmp/os4-test-disks --setup "$(TEST_SETUP)"
+TESTS   := python3 tools/run-tests.py --disks /tmp/os4-test-disks --setup "$(TEST_SETUP)" --setup "$(APP_SETUP)" --timeout 150
+TEST_HOSTED = --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk}$(comma){appdisk},{port} {peerport})"
+TEST_VIRT   = --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST),{appdisk})"
 
-.PHONY: all build image data run run-hosted run-tap test test-hosted test-virt ping-check tcp-check clean
+.PHONY: all build image data app run run-hosted run-tap test test-hosted test-virt test-app ping-check tcp-check clean FORCE
 
 all: build
 
@@ -89,22 +101,36 @@ $(DATA_IMG):
 	@mkdir -p $(@D)
 	$(BLOCKS_TOOL) format $@
 
+# The app disk, made afresh every time from APP: make run APP=examples/hello
+app: $(APP_IMG)
+
+$(APP_IMG): FORCE
+	@mkdir -p $(@D)
+	@sh tools/app-disk.sh $@ $(APP)
+
 # Boot the bare-metal kernel with the serial console on this terminal.
 # Leave with bye, Ctrl-D, or Ctrl-A then x.
-run: $(BOOT_IMG) $(DATA_IMG)
-	@$(call VIRT_CMD,$(DATA_IMG),$(NET_USER))
+run: $(BOOT_IMG) $(DATA_IMG) $(APP_IMG)
+	@$(call VIRT_CMD,$(DATA_IMG),$(NET_USER),$(APP_IMG))
 
-run-hosted: $(HOSTED) $(DATA_IMG)
-	@$(call HOSTED_CMD,$(DATA_IMG))
+run-hosted: $(HOSTED) $(DATA_IMG) $(APP_IMG)
+	@$(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG))
 
 test: test-hosted test-virt
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)
-	$(TESTS) --timeout 150 --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk},{port} {peerport})" tests tests/hosted
+	$(TESTS) $(TEST_HOSTED) tests tests/hosted
 
 test-virt: $(BOOT_IMG)
-	$(TESTS) --timeout 150 --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST))" tests tests/baremetal
+	$(TESTS) $(TEST_VIRT) tests tests/baremetal
+
+# An app's tests, APP/tests/*.in, on both builds, each with APP as its app
+# disk (unless the test has a <name>.app of its own). APP must be absolute.
+test-app: $(HOSTED) $(BOOT_IMG)
+	@test -d "$(APP)/tests" || { echo "make test-app APP=/path/to/app (with a tests directory)" >&2; exit 2; }
+	$(TESTS) --app $(APP) $(TEST_HOSTED) $(APP)/tests
+	$(TESTS) --app $(APP) $(TEST_VIRT) $(APP)/tests
 
 # The OS on a TAP device, reachable from this container at 10.0.2.15 (the
 # container is 10.0.2.2). Needs: docker run --cap-add NET_ADMIN --device /dev/net/tun
@@ -112,17 +138,17 @@ NET_TAP := -netdev tap$(comma)id=net$(comma)ifname=tap0$(comma)script=no$(comma)
 
 # Boot it with the console on this terminal; ping it from another shell in the
 # same container (docker exec).
-run-tap: $(BOOT_IMG) $(DATA_IMG)
+run-tap: $(BOOT_IMG) $(DATA_IMG) $(APP_IMG)
 	@sh tools/tap-up.sh
-	@$(call VIRT_CMD,$(DATA_IMG),$(NET_TAP))
+	@$(call VIRT_CMD,$(DATA_IMG),$(NET_TAP),$(APP_IMG))
 
 # The milestone 6 acceptance test, literally: boot, ping the OS, shut down.
-ping-check: $(BOOT_IMG) $(DATA_IMG)
-	sh tools/ping-check.sh "$(call VIRT_CMD,$(DATA_IMG),$(NET_TAP))"
+ping-check: $(BOOT_IMG) $(DATA_IMG) $(APP_IMG)
+	sh tools/ping-check.sh "$(call VIRT_CMD,$(DATA_IMG),$(NET_TAP),$(APP_IMG))"
 
 # The OS's TCP against a real stack: the host's, through user networking.
-tcp-check: $(BOOT_IMG) $(DATA_IMG)
-	OS4_PEER="python3 tools/tcp-check.py" $(CONSOLE) $(call VIRT_CMD,$(DATA_IMG),$(NET_USER)) < tools/tcp-check.in
+tcp-check: $(BOOT_IMG) $(DATA_IMG) $(APP_IMG)
+	OS4_PEER="python3 tools/tcp-check.py" $(CONSOLE) $(call VIRT_CMD,$(DATA_IMG),$(NET_USER),$(APP_IMG)) < tools/tcp-check.in
 
 clean:
 	rm -rf $(BUILD) tests/*.actual tests/*/*.actual

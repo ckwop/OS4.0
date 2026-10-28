@@ -7,3 +7,6 @@
 *.elf binary
 *.efi binary
 *.o binary
+
+# Test files kept byte for byte (one has a CRLF line on purpose)
+tests/*.app/** -text

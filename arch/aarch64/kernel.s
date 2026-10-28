@@ -186,7 +186,9 @@ boot_files:
 	bootfile "forth/net/net.fs"
 	bootfile "forth/interpreter.fs"
 	bootfile "forth/sandbox.fs"
+	bootfile "forth/files.fs"
 	bootfile "forth/net/repl.fs"
+	bootfile "forth/app.fs"
 	bootfile "forth/start.fs"	// last: starts the Forth QUIT loop
 boot_files_end:
 

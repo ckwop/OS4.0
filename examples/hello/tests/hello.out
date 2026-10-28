@@ -1,0 +1,9 @@
+OS 4.0
+hello: listening on port 5000
+\ hello.in: a client connects to port 5000 and is greeted (the peer reports what it got)  ok
+: wait-greeted  ( -- )  30000 deadline  begin greeted @ 0= over expired? 0= and while 100 ms repeat drop ;  ok
+wait-greeted greeted @ . 1  ok
+2000 ms  ok
+--- peer ---
+peer: 5000| Hello from an OS 4.0 app. You are visitor number 1
+peer: 5000: closed
