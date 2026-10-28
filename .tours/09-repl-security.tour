@@ -1,0 +1,83 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "9 · The REPL and security",
+  "description": "The code behind lecture 9 (docs/course/09-repl-security.html): terminal vectors, telnet, doors and sessions, wordlists, the sandbox, claiming the dictionary, password hashes, login and random numbers. About fourteen minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 9, The REPL and security**: `forth/output.fs` and `forth/net/telnet.fs` for terminals, `forth/net/repl.fs` for doors and sessions, `forth/interpreter.fs` and `forth/sandbox.fs` for wordlists, `forth/crypto.fs` and `forth/random.fs` underneath."
+    },
+    {
+      "file": "forth/output.fs",
+      "pattern": "^user 'type",
+      "title": "Terminal vectors",
+      "description": "`type`, `key` and `key?` go through user variables, so each task has its own terminal; `bye` does the same in `interpreter.fs` (`'bye`). The console's are set here and inherited by new tasks."
+    },
+    {
+      "file": "forth/net/telnet.fs",
+      "pattern": ": telnet-terminal  \\(",
+      "title": "Telnet",
+      "description": "Point the vectors at the connection and offer WILL ECHO and WILL SUPPRESS-GO-AHEAD. Above: `telnet-key` skips commands and folds CR LF and CR NUL into one line end; `telnet-type` sends LF as CR LF and doubles IAC, holding output while a segment is in flight (Nagle)."
+    },
+    {
+      "file": "forth/net/repl.fs",
+      "pattern": ": admit  \\(",
+      "title": "Doors",
+      "description": "A door is port, setup, limit, count (`sandbox-door`, `admin-door` above). Full: `away` spawns a task to say so. `spawn` failing with -275: the connection is reset. `serve-door` below loops for ever; `start-repl` runs both listeners under `restarting`."
+    },
+    {
+      "file": "forth/net/repl.fs",
+      "pattern": ": session  \\(",
+      "title": "A session",
+      "description": "The terminal, `bye` as end-session, the idle timeout, the setup and REPL under `catch`, then everything put back: `reset`, `only`, echo on, the console terminal, the connection closed."
+    },
+    {
+      "file": "forth/interpreter.fs",
+      "pattern": ": find-name  \\(",
+      "title": "The search order",
+      "description": "`context` and `#order` are user variables: each task has its own order. `find-name` searches it and nothing else. Above: `wordlist`, `set-order`, `only`, `also`, `definitions` and friends."
+    },
+    {
+      "file": "forth/sandbox.fs",
+      "pattern": ": expose  \\(",
+      "title": "The sandbox",
+      "description": "`expose` builds, in `sandbox-wordlist`, a word that calls the original, keeping immediate and compile-only flags. Below: what a stranger gets. `sandbox-session` in `repl.fs` sets the order to this wordlist alone."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": ": claim    \\(",
+      "title": "Claiming the dictionary",
+      "description": "`header`, `,` and `:` claim the dictionary for this task; the REPL `unclaim`s it at the end of a line unless a definition is open; `reset` and `run-task` release it however a task ends. `reserve`, further down, is for memory needed while running."
+    },
+    {
+      "file": "forth/crypto.fs",
+      "pattern": ": hash-password  \\(",
+      "title": "Password hashes",
+      "description": "Iterations (measured once by `calibrate`, at least 1000), a 16-byte random salt, and PBKDF2-HMAC-SHA-256. `password?` below recomputes with the stored salt and count. SHA-256, HMAC and PBKDF2 are at the top of the file; `tests/crypto` checks them against standard vectors."
+    },
+    {
+      "file": "forth/net/repl.fs",
+      "pattern": ": login\\?  \\(",
+      "title": "Logging in",
+      "description": "Three tries, no echo (`read-secret`), the typed text wiped (`forget-secret`), two seconds after each failure. `set-admin-password` above stores the hash as a record in blocks 998 and 999; `admin-session` turns everyone away until one is set."
+    },
+    {
+      "file": "forth/random.fs",
+      "pattern": ": random  \\(",
+      "title": "Random numbers",
+      "description": "SipHash-2-4 of a counter under a key from `entropy` (`seed-random`, below). `siphash` above is also the keyed hash for TCP and record checksums. Only this file calls `entropy`."
+    },
+    {
+      "file": "tests/repl.peer",
+      "pattern": "repl",
+      "title": "The tests",
+      "description": "`tests/repl` drives telnet sessions with `tools/netpeer.py repl`: the admin door before and after a password, two sandbox sessions and a third turned away, a wrong password, an idle session, and a client hanging up mid-line. Its `.out` shows each session's transcript.\n\nNext: lecture 10, applications."
+    },
+    {
+      "file": "docs/tech-debt.md",
+      "pattern": "Must fix before public",
+      "title": "Before going public",
+      "description": "Entries marked **must fix before public** block any internet-facing deployment. Port 4001 stays on 127.0.0.1 regardless."
+    }
+  ]
+}

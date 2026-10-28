@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Applications · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="10-applications">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">10 · Applications</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/10-applications.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 10 of 12 · about 13 minutes</div>
+  <h1>Applications</h1>
+  <p class="lede">How an app lives on its own disk, in its own repository: a read-only FAT file system in Forth, <code>include</code>, start-up, and the <code>os4-app</code> tool.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">The base and the app: two repositories, one image</li>
+    <li data-step="2">The app disk: FAT, read only, in about 270 lines of Forth</li>
+    <li data-step="3">Loading and starting an app, and testing it</li>
+  </ul>
+  <div class="talk">
+    <p>OS 4.0 is a base for applications. The MUD will be the first, but it won't live in this repository. This lecture shows how an application is packaged, found, loaded and started, and how it's tested without touching the base.</p>
+    <p>We'll start with the split between the base and an app. Then the app disk: a FAT file system, read by a small driver written in Forth, which only ever reads. Then include, which loads Forth source from files, and the few lines that start an app at boot.</p>
+    <p>Finally the example app, hello, and the os4-app tool that tests and runs any app against a versioned image of the base.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>The base and the app</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 250" role="img" aria-label="The base repository builds a tagged os4 image; an app repository holds app.fs, its sources and tests, and uses the image's os4-app to test and run">
+      <defs><marker id="a1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="box blue" x="20" y="30" width="250" height="150" rx="10"/><text x="40" y="60">this repository: the base</text>
+      <text x="40" y="90" class="small">kernel, boot files, drivers</text><text x="40" y="112" class="small">tests, tools, this course</text><text x="40" y="150" class="mono">docker build -t os4:0.9b .</text>
+      <rect class="box green" x="330" y="60" width="220" height="90" rx="10"/><text x="440" y="96" text-anchor="middle" class="mono">os4:0.9b</text><text x="440" y="120" text-anchor="middle" class="small">the base in /opt/os4, os4-app</text>
+      <rect class="box accent" x="610" y="30" width="270" height="150" rx="10"/><text x="630" y="60">an app's repository</text>
+      <text x="630" y="90" class="mono">app.fs</text><text x="700" y="90" class="small">the entry point</text>
+      <text x="630" y="112" class="small">the files it includes</text><text x="630" y="134" class="small">tests/*.in and .out</text>
+      <text x="630" y="160" class="mono">os4-app test</text>
+      <path class="line" d="M 270 105 L 326 105" marker-end="url(#a1)"/><path class="line" d="M 606 105 L 554 105" marker-end="url(#a1)"/>
+      <text x="450" y="220" text-anchor="middle" class="small">an app pins a tagged image: the base can move on without breaking it</text>
+    </svg>
+  </div>
+  <ul class="points below">
+    <li data-step="2">Nothing app-specific in the base; nothing of the base's source in an app</li>
+    <li data-step="3"><code>examples/hello</code> stands in for an app repository</li>
+  </ul>
+  <div class="talk">
+    <p>There are two kinds of repository. This one is the base: the kernel, the boot files, the drivers, the tools and the tests. Building it makes a Docker image, tagged with a version, such as <span data-say="O S 4, version 0.9 b">os4:0.9b</span>, which holds the built base and a tool called <span data-say="O S 4 app">os4-app</span>.</p>
+    <p>An application lives in a repository of its own: an entry point called app dot fs, the files it includes, and its own transcript tests. It never contains the base's source. It names a tagged image, and uses that image to test and run itself.</p>
+    <p>That boundary works both ways. The base stays general, with nothing in it for one particular app. And the app pins a version, so the base can change without breaking it until the app chooses to move up.</p>
+    <p>In this repository, examples slash hello plays the part of an app's repository.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>The app disk</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="tools/app-disk.sh">if [ -n "$dir" ] &amp;&amp; [ -e "$dir/.fat16" ]; then
+    mkfs.fat -C -F 16 -s 1 -n OS4APP "$img" 16384 &gt;/dev/null
+else
+    mkfs.fat -C -F 32 -n OS4APP "$img" 65536 &gt;/dev/null
+fi</pre>
+      <div class="src"><a href="../../tools/app-disk.sh">tools/app-disk.sh</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">FAT, made with ordinary tools: <code>mkfs.fat</code>, <code>mcopy</code></li>
+      <li data-step="2">Labelled <code>OS4APP</code>; the app's directory copied in</li>
+      <li data-step="3">Attached read-only; the OS never writes it</li>
+      <li data-step="4">What the app writes goes in blocks on the data disk</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>An app reaches the machine as a disk of its own. The script that makes it is a few lines: format an image as FAT, labelled <span data-say="O S 4 app">OS4APP</span>, and copy the app's directory onto it. FAT thirty-two normally; FAT sixteen if the app asks for it, which the tests use to exercise both.</p>
+    <p>Why FAT? Because ordinary tools on any computer can make one, and so can cloud tooling. Nobody has to learn a custom format to ship an app.</p>
+    <p>The system only reads the app disk. QEMU attaches it read-only as well, belt and braces. An app that needs to keep data, player records for a MUD, say, writes it in blocks on the data disk, through the storage layer from lecture six. That's the clean boundary: FAT for what's only read, blocks for what's written.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Finding the app disk</h2>
+  <pre class="code" data-src="forth/files.fs" data-step="1">: <span class="w">find-app-disk</span>  ( -- )  <span class="c">\ into APP-DISK, once</span>
+  fat-looked @ if exit then  true fat-looked !
+  #disks 0 ?do  i app-disk !  ['] fat-volume? catch if false then  if unloop exit then  loop
+  -1 app-disk ! ;</pre>
+  <div class="src"><a href="../../forth/files.fs" data-ref="forth/files.fs:find-app-disk">forth/files.fs › find-app-disk</a></div>
+  <ul class="points below">
+    <li data-step="2"><code>fat-volume?</code> reads the boot sector: geometry, FAT type, and the label</li>
+    <li data-step="3">FAT16 or FAT32 by cluster count; FAT12 refused (-277)</li>
+    <li data-step="4">Every read goes through the block HAL and one 1 KiB cache, under <code>files-lock</code></li>
+  </ul>
+  <div class="talk">
+    <p>Just like the data disk, the app disk is found by what's on it. Find-app-disk tries each disk in turn. Fat-volume-query reads its boot sector, checks the signature and that the numbers are sane, works out where the tables and the data are, and finally checks the volume label. The first disk labelled <span data-say="O S 4 app">OS4APP</span> wins. A disk whose boot sector is rubbish just throws, which is caught and counts as no.</p>
+    <p>Whether it's FAT sixteen or FAT thirty-two is decided the official way, by counting clusters. FAT twelve, used on tiny disks, isn't supported, and gets an error that says so.</p>
+    <p>Notice there's no new driver here. The file system reads through the same block HAL as everything else, one kilobyte at a time, with a one-block cache, and a lock so that only one task is on the app disk at once.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>Clusters and chains</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 230" role="img" aria-label="A file is a chain of clusters: the directory entry names the first; the FAT holds each cluster's successor">
+        <defs><marker id="a2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-accent" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <rect class="box blue" x="10" y="20" width="170" height="44" rx="6"/><text x="95" y="40" text-anchor="middle" class="mono">app.fs</text><text x="95" y="56" text-anchor="middle" class="small">first cluster 5</text>
+        <text x="10" y="100" class="small">the FAT: each cluster's successor</text>
+        <g class="mono">
+          <rect class="box" x="10" y="110" width="70" height="40"/><text x="45" y="135" text-anchor="middle">5→6</text>
+          <rect class="box" x="80" y="110" width="70" height="40"/><text x="115" y="135" text-anchor="middle">6→9</text>
+          <rect class="box faint" x="150" y="110" width="70" height="40"/><text x="185" y="135" text-anchor="middle">7</text>
+          <rect class="box faint" x="220" y="110" width="70" height="40"/><text x="255" y="135" text-anchor="middle">8</text>
+          <rect class="box" x="290" y="110" width="80" height="40"/><text x="330" y="135" text-anchor="middle">9→end</text>
+        </g>
+        <path class="line accent" d="M 60 64 L 45 106" marker-end="url(#a2)"/>
+        <path class="line accent" d="M 115 154 Q 220 200 325 154" marker-end="url(#a2)"/>
+        <text x="10" y="210" class="small">a loop in a broken chain is caught: at most #clusters steps</text>
+      </svg>
+    </div>
+    <div>
+      <pre class="code" data-src="forth/files.fs" data-step="2">: <span class="w">next-cluster</span>  ( cluster -- cluster' | 0 )  <span class="c">\ 0 at the end of the chain</span>
+  fat-bits @ 32 = if
+    4 * fat-start @ + fat-byte le32 $0fffffff and  dup $0ffffff8 u&lt; 0= if drop 0 exit then
+  else
+    2* fat-start @ + fat-byte le16  dup $fff8 u&lt; 0= if drop 0 exit then
+  then ?cluster ;</pre>
+      <div class="src"><a href="../../forth/files.fs" data-ref="forth/files.fs:next-cluster">forth/files.fs › next-cluster</a></div>
+    </div>
+  </div>
+  <div class="talk">
+    <p>FAT stores files in clusters, runs of sectors. A file's directory entry names its first cluster. The file allocation table, the FAT that gives the system its name, holds one entry per cluster: the number of the next cluster in the file, or a marker for the end.</p>
+    <p>Next-cluster reads that entry, four bytes for FAT thirty-two and two for FAT sixteen, and turns the end marker into zero. Then it checks the result is a real cluster number, because the disk could be damaged, or deliberately made wrong.</p>
+    <p>One more guard sits in the code that follows chains. A broken chain could loop back on itself, and a naive reader would go round for ever. So it counts the clusters it has followed, and if that ever exceeds the number of clusters on the disk, it throws an I O error instead. Even a read-only file system has to distrust its input.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>Paths and names</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/files.fs" data-step="1">: <span class="w">walk-path</span>  ( addr u -- )  <span class="c">\ the file or directory at the path</span>
+  ?volume  0 p-cluster !  unbounded p-size !  true p-dir? !
+  begin skip-slashes dup while
+    p-dir? @ 0= if -38 throw then
+    split lookup
+  repeat 2drop ;</pre>
+      <div class="src"><a href="../../forth/files.fs" data-ref="forth/files.fs:walk-path">forth/files.fs › walk-path</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Start at the root; one directory per <code>/</code></li>
+      <li data-step="2">Long file names are read; short ones shown as <code>NAME.EXT</code></li>
+      <li data-step="3">Names match without regard to case</li>
+      <li data-step="4">Not there: -38, non-existent file</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Opening a file starts with its path. Walk-path begins at the root directory and takes the path apart at each slash. For each part, it looks the name up in the current directory, which must really be a directory, and moves into what it found.</p>
+    <p>Directory entries come in two flavours. Every file has a short name, eight characters and a three-character extension, a relic of the nineteen-eighties. Most also have a long name, stored in extra entries just before it, thirteen characters at a time. The reader puts long names back together, and falls back to the short one when there isn't a long one.</p>
+    <p>Names are matched without regard to case, as Windows does, so an app can include greeting dot fs in whatever case it likes. A name that isn't found throws <span data-say="minus thirty-eight">-38</span>, the standard code for a file that doesn't exist.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="7">
+  <h2>The standard file words</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/files.fs" data-step="1">: <span class="w">open-file</span>  ( addr u fam -- fileid ior )
+  drop  ['] (open-file) ['] lock-files catch ?dup if  &gt;r drop 2drop 0 r&gt;  else 0 then ;</pre>
+      <div class="src"><a href="../../forth/files.fs" data-ref="forth/files.fs:open-file">forth/files.fs › open-file</a></div>
+      <pre class="code below" data-step="2">variable rooms
+s" data/rooms.txt" r/o open-file throw  rooms !
+pad 255 rooms @ read-line throw  <span class="c">( len flag )</span>
+rooms @ close-file throw</pre>
+    </div>
+    <ul class="points">
+      <li data-step="1">Standard Forth: <code>open-file read-file read-line file-size close-file</code></li>
+      <li data-step="2">An <b>ior</b>: 0, or a throw code to pass to <code>throw</code></li>
+      <li data-step="3">Open files from a pool of 16, in <code>reserve</code>d memory (-276 beyond)</li>
+      <li data-step="4"><code>r/o</code> is the only access method there is</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Apps use the standard Forth file words, so Forth programmers already know them. Open-file, read-file, read-line, file-size and close-file.</p>
+    <p>The standard words don't throw. They return an I O result, called an ior, alongside their results: zero for success, or an error code. In OS 4.0 that code is a throw code, so the usual idiom is to pass it straight to throw, as the example here does. Inside, each word does its work under catch and the files lock, and turns any error into the ior.</p>
+    <p>Open files come from a pool of sixteen, in memory taken with reserve, so a leaked file can't grow the dictionary. A seventeenth open fails with too many open files.</p>
+    <p>And read-only is the only access method. There's no word to write a file.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="8">
+  <h2><code>include</code>: loading source from files</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/files.fs" data-step="1">: <span class="w">include-lines</span>  ( f -- )
+  &gt;r  begin  r@ f.buf /line r@ read-line throw  while
+    dup /line = if -278 throw then
+    #tib !  r@ f.buf 'tib !  0 &gt;in !  1 r@ f.line# +!
+    'interpret @ execute  pause
+  repeat  drop r&gt; drop ;</pre>
+      <div class="src"><a href="../../forth/files.fs" data-ref="forth/files.fs:include-lines">forth/files.fs › include-lines</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">A line at a time into the file's own buffer, then <code>interpret</code></li>
+      <li data-step="2">The file stays on the return stack: definitions may span lines</li>
+      <li data-step="3">Lines up to 255 characters (-278 beyond); CR LF is fine</li>
+      <li data-step="4">An error: <code>app.fs:12:</code> from the innermost file</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Include loads Forth source from a file. Underneath, include-lines reads the file a line at a time, into a buffer that belongs to that open file. It points the interpreter's input at the line, counts the line for error reports, and interprets it, pausing after each line so other tasks keep running during a long load.</p>
+    <p>One detail is worth noticing. The file handle is kept on the return stack, not the data stack. That's because a colon definition can span several lines, and while it's open the compiler keeps its own values on the data stack, for if and begin and so on. A file handle there would be buried, or worse, mistaken for one of them. That was a real bug, caught by a test with a multi-line definition.</p>
+    <p>Lines can be up to two hundred and fifty-five characters, and Windows line endings are handled. And an error inside an included file reports the file name and line, from the innermost file, so a mistake in a nested include points at the right place.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="9">
+  <h2>Starting an app</h2>
+  <pre class="code" data-src="forth/app.fs" data-step="1">: <span class="w">(boot-app)</span>  ( -- )
+  s" app.fs" included
+  s" main" app-wordlist search-wordlist if execute then ;
+: <span class="w">boot-app</span>  ( -- )
+  forth-wordlist app-wordlist 2 set-order  app-wordlist set-current
+  ['] (boot-app) catch  forth-wordlist set-current
+  ?dup if  ." app: " .error reset  then ;
+: <span class="w">start-app</span>  ( -- )  app? if boot-app else start-repl then ;</pre>
+  <div class="src"><a href="../../forth/app.fs" data-ref="forth/app.fs:boot-app">forth/app.fs › boot-app</a></div>
+  <ul class="points below">
+    <li data-step="2">The app's words go in <code>app-wordlist</code>, searched first</li>
+    <li data-step="3"><code>main</code>, if the app defines one, starts its tasks and returns</li>
+    <li data-step="4">An error is reported and the console comes up anyway; no app: the network REPL</li>
+  </ul>
+  <div class="talk">
+    <p>Here's the whole of app start-up. Start dot fs calls start-app as the system boots. If the app disk holds app dot fs, boot-app runs; otherwise the base starts the network REPL, as before.</p>
+    <p>Boot-app makes a wordlist for the app, puts it first in the search order, and makes it current, so every definition the app makes goes there, apart from the base's. Then, under catch, it includes app dot fs, and, if the app defined a word called main, runs it. Main's job is to start the app's tasks and return promptly.</p>
+    <p>If anything goes wrong, the error is reported with its file and line, prefixed with app, and the system carries on: the console comes up regardless. A broken app never stops the machine from booting, so you can always get in and look.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="10">
+  <h2>hello: an example app</h2>
+  <pre class="code" data-src="examples/hello/app.fs" data-step="1">: <span class="w">greeter</span>  ( -- )  <span class="c">\ for ever: RESTARTING runs it again if it ends</span>
+  5000 io-timeout !                     <span class="c">\ a client that stops reading is given up</span>
+  hello-port listen
+  begin
+    hello-port accept-connection  dup ['] greet catch if  drop drop-connection  else drop then
+  again ;
+
+task hello-task
+: <span class="w">main</span>  ( -- )
+  ['] greeter ['] restarting hello-task start-with
+  ." hello: listening on port " hello-port (.) type cr ;</pre>
+  <div class="src"><a href="../../examples/hello/app.fs" data-ref="examples/hello/app.fs:main">examples/hello/app.fs › main</a></div>
+  <ul class="points below">
+    <li data-step="2">A task of its own, supervised by <code>restarting</code></li>
+    <li data-step="3">An <code>io-timeout</code>, and a <code>catch</code> per client: the habits from lectures 5 and 8</li>
+  </ul>
+  <div class="talk">
+    <p>Hello is the example app. It greets whoever connects to port five thousand, tells them which visitor they are, and hangs up. Its app dot fs includes a second file, greeting dot fs, just to show include at work.</p>
+    <p>Main does what main should: it starts the greeter in a task of its own, under restarting, so the greeter comes back if it ever stops, and prints a line to say it's listening. Then it returns, and the console comes up.</p>
+    <p>The greeter shows the habits from earlier lectures, in a real app. It sets an IO timeout, so a client that stops reading is given up after five seconds. And each client is greeted under its own catch, so a client that misbehaves costs that client's connection, and the greeter carries on to the next.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-code="11">
+  <h2>Testing and running an app</h2>
+  <div class="cols even">
+    <div>
+      <pre class="code" data-src="examples/hello/tests/hello.out" data-step="1">OS 4.0
+hello: listening on port 5000
+<span class="c">…</span>
+--- peer ---
+peer: 5000| Hello from an OS 4.0 app. You are visitor number 1
+peer: 5000: closed</pre>
+      <div class="src"><a href="../../examples/hello/tests/hello.out">examples/hello/tests/hello.out</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The same transcript tests as the base, with the app as the app disk</li>
+      <li data-step="2">A <code>.peer</code> file connects to the app and reports what came back</li>
+      <li data-step="3"><code>os4-app test</code>: both builds. <code>os4-app run . 5000</code>: boot it, port forwarded</li>
+    </ul>
+  </div>
+  <pre class="code below" data-step="3">docker run --rm -v "${PWD}:/app" -w /app os4:0.9b os4-app test</pre>
+  <div class="talk">
+    <p>An app is tested exactly the way the base is: transcript tests in its tests folder, run on both builds, with the app's own directory made into the app disk for each test.</p>
+    <p>Hello's test shows the app's start-up line after the banner. Its peer file runs the network peer's connect script, which connects to port five thousand and reports what it was sent. That report appears after the dashes at the end of the transcript: the greeting, then the connection closing.</p>
+    <p>The os4-app tool in the image does the work. Test runs the tests on both builds. Run boots the app on bare metal with the ports you name forwarded, keeping its data disk in the app's build folder between runs.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide" data-code="10">
+  <h2>Try it</h2>
+  <pre class="code" data-step="1"><span class="c"># in examples/hello</span>
+docker run --rm -v "${PWD}:/app" -w /app os4:0.9b os4-app test
+docker run --rm -it -p 127.0.0.1:5000:5000 -v "${PWD}:/app" -w /app os4:0.9b os4-app run . 5000
+<span class="c"># then, from Windows:  telnet localhost 5000</span></pre>
+  <pre class="code below" data-step="2"><span class="c">\ on the console of a running app</span>
+dir /                                  <span class="c">\ the app disk's files</span>
+greeted @ .                            <span class="c">\ visitors so far</span>
+include greeting.fs                    <span class="c">\ load a file again</span></pre>
+  <div class="talk">
+    <p>Build the image from the base first, then go into the hello folder. The first command runs its tests on both builds. The second boots it with port five thousand published to your machine, and telnet gets the greeting.</p>
+    <p>On the console of the running app, dir lists the app disk, the app's own variables are right there to look at, and include loads a file from the app disk again. The full Forth is always under the app, for the operator.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>Why keep the app's words in their own wordlist, searched first? What could go wrong if they went straight into <code>forth-wordlist</code>?</li>
+    <li>A MUD needs a world that builders edit while it runs. Which parts belong on the app disk, and which in blocks? Why?</li>
+    <li><code>main</code> loops for ever instead of returning. What happens at boot, and who notices?</li>
+  </ol>
+  <div class="talk">
+    <p>That's applications. An app is files on a read-only FAT disk, in its own repository, tested against a tagged image of the base. The base finds the disk by its label, reads FAT in a few hundred lines of Forth, includes app dot fs into the app's own wordlist, and runs main.</p>
+    <p>Three questions to think about: why the app gets its own wordlist, where a MUD's world should live, and what a main that never returns would do. Next, the last lecture: testing.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

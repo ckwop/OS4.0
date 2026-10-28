@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="11-testing">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">11 · Testing</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/11-testing.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 11 of 12 · about 12 minutes</div>
+  <h1>Testing</h1>
+  <p class="lede">How every feature is proved, on both builds, on every change: transcripts, isolated runs, scripted network peers that misbehave on purpose, and soak.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">Transcripts, and the tools that run them side by side</li>
+    <li data-step="2">Network peers: polite, clumsy, hostile</li>
+    <li data-step="3">Soak, reference definitions, and a course that is tested too</li>
+  </ul>
+  <div class="talk">
+    <p>The last lecture is about how all of this is tested. The rule is simple: every feature adds tests, and the whole suite runs on every change, on both builds. The interesting part is how a small set of tools makes that cheap enough to keep doing.</p>
+    <p>We'll look at the transcript format again, and the two tools that run transcripts: one that runs many tests side by side, each in isolation, and one that drives a single system through its console, rebooting where asked.</p>
+    <p>Then the network peer, a scripted machine on each test's private network, which can be polite, clumsy, or downright hostile. And finally soak tests, reference definitions, and the check that keeps this course honest.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>A test is a transcript</h2>
+  <div class="cols even">
+    <div data-step="1">
+      <pre class="code" data-src="tests/exceptions.out">OS 4.0
+: risky ( n -- ) dup 0= if -42 throw then . ;  ok
+5 ' risky catch . 5 0  ok
+0 ' risky catch . . -42 0  ok</pre>
+      <div class="src"><a href="../../tests/exceptions.out">tests/exceptions.out</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The <code>.in</code> is typed; the <code>.out</code> must come back byte for byte</li>
+      <li data-step="2">Write the <code>.in</code>, run it, then check every value by hand</li>
+      <li data-step="3">Standard words: against gforth too</li>
+      <li data-step="4">A failure shows a diff, and keeps the output as <code>.actual</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>You met transcripts in lecture zero. Each test is a pair of files. The dot-in file is typed at the console. The dot-out file is the whole session as it should appear: the banner, each line echoed, its output, and <span data-say="okay">ok</span>.</p>
+    <p>The workflow matters as much as the format. Write the input. Run it to produce the output. Then, before committing, check every value in it by hand, and for standard Forth words, against gforth, an independent Forth. A transcript only proves something if a person has decided it's right.</p>
+    <p>When a test fails, the runner prints a diff between the expected and the actual output, and keeps the actual output in a dot-actual file beside the test, so you can look at the whole session.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>Two builds, one suite</h2>
+  <pre class="code" data-src="Makefile" data-step="1">TEST_HOSTED = --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk}$(comma){appdisk},{port} {peerport})"
+TEST_VIRT   = --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST),{appdisk})"</pre>
+  <pre class="code below" data-src="Makefile" data-step="2">test: check-course test-hosted test-virt</pre>
+  <div class="src"><a href="../../Makefile">Makefile › test</a></div>
+  <ul class="points below">
+    <li data-step="2"><code>tests/</code> on both; <code>tests/hosted/</code> and <code>tests/baremetal/</code> on one each</li>
+    <li data-step="3">Hosted: seconds. Bare metal: one VM per test, in parallel, under a minute</li>
+    <li data-step="4">The same transcripts on both: the platforms must agree</li>
+  </ul>
+  <div class="talk">
+    <p>The same tests run on both builds. The Makefile defines one command for each: the hosted binary under qemu-aarch64, or a full virtual machine booting through firmware and Limine. Each is given the test's disks and network ports.</p>
+    <p>Make test runs the course check, then the hosted suite, then the bare-metal suite. Tests in the tests folder run on both. A few that are about one platform, such as the register dump from a CPU fault, live in hosted or bare-metal folders of their own.</p>
+    <p>The hosted suite takes seconds. The bare-metal suite boots one virtual machine per test, many at once, and takes under a minute. Because the transcripts are shared, the two platforms are held to exactly the same behaviour.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Every test in its own world</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 250" role="img" aria-label="Each test gets a fresh data disk, an app disk, and its own pair of UDP ports, so tests run side by side">
+        <rect class="box blue" x="10" y="20" width="140" height="60" rx="6"/><text x="80" y="46" text-anchor="middle">test A</text><text x="80" y="66" text-anchor="middle" class="small">ports 21000/1</text>
+        <rect class="box blue" x="165" y="20" width="140" height="60" rx="6"/><text x="235" y="46" text-anchor="middle">test B</text><text x="235" y="66" text-anchor="middle" class="small">ports 21002/3</text>
+        <rect class="box blue" x="320" y="20" width="140" height="60" rx="6"/><text x="390" y="46" text-anchor="middle">test C</text><text x="390" y="66" text-anchor="middle" class="small">…</text>
+        <g class="small">
+          <rect class="box green" x="10" y="100" width="140" height="34" rx="4"/><text x="80" y="122" text-anchor="middle">fresh data disk</text>
+          <rect class="box accent" x="10" y="140" width="140" height="34" rx="4"/><text x="80" y="162" text-anchor="middle">its app disk</text>
+          <rect class="box green" x="165" y="100" width="140" height="34" rx="4"/><text x="235" y="122" text-anchor="middle">fresh data disk</text>
+          <rect class="box accent" x="165" y="140" width="140" height="34" rx="4"/><text x="235" y="162" text-anchor="middle">its app disk</text>
+        </g>
+        <text x="10" y="210" class="small">1024 blocks, volume ID 42; the app disk from</text>
+        <text x="10" y="230" class="small">tests/&lt;name&gt;.app/ if there is one, else empty</text>
+      </svg>
+    </div>
+    <div>
+      <pre class="code" data-src="tools/run-tests.py" data-step="2">    if output == expected:
+        return name, True, ""</pre>
+      <div class="src"><a href="../../tools/run-tests.py">tools/run-tests.py › run_test</a></div>
+      <ul class="points below">
+        <li data-step="2">Setup commands make the disks; the test's command boots</li>
+        <li data-step="3"><code>{disk} {appdisk} {port} {peerport} {tools}</code> in commands</li>
+        <li data-step="4">A <code>.filter</code> sed script masks what changes per build</li>
+      </ul>
+    </div>
+  </div>
+  <div class="talk">
+    <p>The runner, run-tests dot py, starts tests in parallel, and the trick that makes that safe is isolation. Every test gets a freshly formatted data disk of its own, a thousand and twenty-four blocks with volume ID forty-two. It gets an app disk, made from a folder named after the test if there is one, otherwise empty. And it gets its own pair of UDP ports, which carry its network.</p>
+    <p>Commands name those with placeholders in braces, filled in per test. So the same command line boots every test, each in its own little world, and no test can see another's disk or network.</p>
+    <p>Then the comparison is as blunt as can be: is the output exactly the expected bytes? If something in the output legitimately changes from build to build, like an address in a register dump, a filter file next to the test masks it first, with a few sed substitutions.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>Driving the console</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="tools/console-run.py" data-step="1">BANNER = b"OS 4.0\n"
+CTRL_D = b"\x04"
+REBOOT_MARKER = b"\\ --- reboot ---"</pre>
+      <div class="src"><a href="../../tools/console-run.py">tools/console-run.py</a></div>
+      <pre class="code below" data-src="tests/persist.in" data-step="3">0 &gt;line \ written but never synced
+\ --- reboot ---
+10 11 index</pre>
+      <div class="src"><a href="../../tests/persist.in">tests/persist.in</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Wait for the banner, then type; firmware can't eat the input</li>
+      <li data-step="2">Ctrl-D at the end: the Forth powers off or exits</li>
+      <li data-step="3">A reboot marker: shut down, boot again on the same disks</li>
+      <li data-step="4">Carriage returns removed: one transcript for every platform</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Each test's command is wrapped in console-run dot py, which makes a whole operating system behave like a program reading its input.</p>
+    <p>It holds the input back until the banner appears, so nothing typed is lost while the firmware and boot loader start up. Then it types the test, and finishes with Control-D, which ends the console's input and makes the system power off, or exit on the hosted build.</p>
+    <p>A line that says reboot, between dashes, splits the input. Everything before it runs, the system shuts down, and boots again on the same disks. The persist test uses this: it writes one block and syncs it, writes another without syncing, reboots, and checks that only the synced one survived.</p>
+    <p>It also strips carriage returns, so the serial console and the hosted terminal produce identical transcripts.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="7">
+  <h2>A machine on the other end</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 200" role="img" aria-label="The OS at 10.0.2.15 and netpeer.py at 10.0.2.2 exchange raw Ethernet frames as UDP datagrams on 127.0.0.1">
+      <defs><marker id="q1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="box blue" x="20" y="40" width="250" height="90" rx="10"/><text x="145" y="74" text-anchor="middle">OS 4.0</text><text x="145" y="98" text-anchor="middle" class="mono">10.0.2.15</text>
+      <rect class="box accent" x="630" y="40" width="250" height="90" rx="10"/><text x="755" y="74" text-anchor="middle" class="mono">netpeer.py</text><text x="755" y="98" text-anchor="middle" class="mono">10.0.2.2</text>
+      <path class="line" d="M 274 70 L 626 70" marker-end="url(#q1)"/><path class="line" d="M 626 100 L 274 100" marker-end="url(#q1)"/>
+      <text x="450" y="60" text-anchor="middle" class="small">raw Ethernet frames, one per UDP datagram, on 127.0.0.1</text>
+      <text x="450" y="124" text-anchor="middle" class="small">QEMU's dgram backend, or the hosted build's network HAL</text>
+      <text x="450" y="180" text-anchor="middle" class="small">what the peer finds is printed after "--- peer ---" in the transcript</text>
+    </svg>
+  </div>
+  <ul class="points below">
+    <li data-step="2">A <code>.peer</code> file names the script; it starts when the banner appears</li>
+    <li data-step="3">It answers ARP and ping, and runs its script against the OS</li>
+    <li data-step="4">Scripts: <code>ping udp tcp repl hostile tcp-attack soak connect</code></li>
+  </ul>
+  <div class="talk">
+    <p>Network tests need another machine on the network, so the tests provide one. Netpeer dot py is a complete, if small, network host written in Python, sitting at ten dot nought dot two dot two on each test's private network.</p>
+    <p>It doesn't use the host's network at all. The OS's frames are carried as UDP datagrams on the loopback address, one Ethernet frame per datagram. That's the format of QEMU's datagram network back end on bare metal, and of the hosted build's own network HAL, so the same peer works with both builds.</p>
+    <p>A test with a dot-peer file names a script. The peer starts as soon as the banner appears, answers ARP and ping like any host, and runs its script against the OS. What it finds is printed at the end of the transcript, after a line of dashes, so the peer's view is checked byte for byte too.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="8">
+  <h2>Peers that misbehave on purpose</h2>
+  <div class="cols even">
+    <ul class="points">
+      <li data-step="1"><b>tcp</b>: 32 clients at once; one drops a segment, one reorders, one's sequence numbers wrap, one sends everything at once</li>
+      <li data-step="2"><b>tcp-attack</b>: a SYN flood past the caps, forged resets and ACKs in and out of the window, an MSS of 0</li>
+    </ul>
+    <ul class="points">
+      <li data-step="3"><b>hostile</b>: malformed frames at every layer, then hundreds of random ones; a ping after each batch must still be answered</li>
+      <li data-step="4"><b>repl</b>: sessions that hang up mid-line, go idle, guess passwords, find the door full</li>
+    </ul>
+  </div>
+  <div class="callout below" data-step="5">A new parser or protocol gets cases in <b>hostile</b>. A test that only sends good input proves half the job.</div>
+  <div class="talk">
+    <p>The peer's scripts are where the testing gets serious, because most of them misbehave on purpose.</p>
+    <p>The TCP script runs thirty-two clients at once. One drops a segment the OS sent, so the OS must retransmit. One sends out of order. One starts its sequence numbers just before they wrap. One sends all its lines in a single segment.</p>
+    <p>The attack script plays an attacker who can't see the traffic: it floods SYNs past the caps, forges resets and acknowledgements, and offers a maximum segment size of zero. Every connection must survive, or close exactly when it should.</p>
+    <p>The hostile script sends malformed frames at every layer, then hundreds of random ones, and checks after each batch that the OS still answers a ping. And the REPL script plays every awkward telnet user there is. The rule that comes out of this: a new parser or protocol gets cases in the hostile test. Proving that good input works is only half the job.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="9">
+  <h2>Soak: nothing may grow</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="tests/soak.out" data-step="1">round 2 grew 0 0 0
+round 3 grew 0 0 0
+round 4 grew 0 0 0
+round 5 grew 0 0 0  ok</pre>
+      <div class="src"><a href="../../tests/soak.out">tests/soak.out</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Five rounds: telnet sessions, TCP echo clients, pings, UDP</li>
+      <li data-step="2">After each, once connections are gone: memory, pooled connections, workers</li>
+      <li data-step="3">After round 1, all three must stay at 0</li>
+      <li data-step="4">A leak shows up as a number, not a crash weeks later</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Some bugs only show over time: a connection record that's never recycled, a task that never returns to the pool. A server that runs for weeks will find them. The soak test finds them in under a minute.</p>
+    <p>It runs five rounds of real work at once: telnet sessions, TCP echo clients, pings and UDP echoes. After each round, once every connection has closed, the OS itself reports three numbers against a baseline taken after the first round: dictionary memory used, connection records in the pool, and worker tasks.</p>
+    <p>The first round is allowed to grow, because pools fill up to their working size. After that, every number must be zero, round after round. A leak shows up as a number in a transcript, instead of a crash weeks into production.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="10">
+  <h2>Other ways to be sure</h2>
+  <ul class="points">
+    <li data-step="1"><b>Reference definitions</b>: <code>tests/reference</code> checks each assembly hot spot against its Forth definition</li>
+    <li data-step="2"><b>Real tools</b>: <code>make ping-check</code> pings the OS with the real <code>ping</code></li>
+    <li data-step="3"><b>Real stacks</b>: <code>make tcp-check</code> runs real sockets, the host's own TCP, through QEMU's port forward</li>
+    <li data-step="4"><b>Apps</b>: <code>make test-app APP=…</code> runs an app's tests with the app as its app disk</li>
+  </ul>
+  <pre class="code below" data-src="tools/tcp-check.py" data-step="3">stack talks to the OS through QEMU's user networking, which forwards ports 4000
+and 4001. Eight sandbox sessions at once on 4000 each send fifty lines of
+arithmetic and check every answer; one full-Forth session on 4001 defines and</pre>
+  <div class="talk">
+    <p>A few more kinds of check complete the picture.</p>
+    <p>Reference definitions, from lecture two: every hot spot that moved to assembly keeps its Forth definition, and the reference test checks that the two agree.</p>
+    <p>Real tools. Our own peer could share a misunderstanding with our own stack, so two make targets check against software we didn't write. Ping-check pings the OS with the real ping command over a virtual network device. Tcp-check runs real sockets, so the host's own TCP implementation talks to ours, through QEMU's port forwarding, with eight sandbox sessions and an admin session.</p>
+    <p>And apps get the same treatment: test-app runs an app's own transcripts on both builds, with the app as each test's app disk. That's what os4-app test calls.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="11">
+  <h2>The course is tested too</h2>
+  <pre class="code" data-src="tools/check-course.py" data-step="1">  data-ref=&quot;FILE:WORD&quot;   ... and defines WORD (a Forth definition, or an
+                         assembly defcode, defconst or label)
+  &lt;pre data-src=&quot;FILE&quot;&gt;  every line of the excerpt is a line of FILE (spacing
+                         aside); a line starting with "…" stands for lines</pre>
+  <div class="src"><a href="../../tools/check-course.py">tools/check-course.py</a></div>
+  <ul class="points below">
+    <li data-step="2">Every excerpt in these lectures is real code, checked line by line</li>
+    <li data-step="3">Every named word must still be defined; every tour step must still match</li>
+    <li data-step="4">Part of <code>make test</code>: change the code, and the lecture must follow</li>
+  </ul>
+  <div class="talk">
+    <p>Documentation drifts. Code moves on and the explanation stays behind, until it describes a system that no longer exists. This course is protected against that by its own check.</p>
+    <p>Every code excerpt you've seen in these lectures is marked with the file it came from, and the check confirms that every line of it is still a line of that file. Every word a slide names must still be defined there. Every step of every code tour must still find its place in its file, and every slide's Code button must point at a step that exists.</p>
+    <p>It runs as the first part of make test. So when the code changes, the lecture and the tour that describe it have to change in the same commit, or the suite fails.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-code="2">
+  <h2>Writing a test</h2>
+  <ol class="points" style="list-style:none">
+    <li data-step="1"><b>1.</b> Write <code>tests/name.in</code>: the commands, and a comment line saying what it covers</li>
+    <li data-step="2"><b>2.</b> Add <code>name.peer</code>, <code>name.app/</code> or <code>name.filter</code> if it needs them</li>
+    <li data-step="3"><b>3.</b> Run it; the output lands in <code>name.actual</code></li>
+    <li data-step="4"><b>4.</b> Check every value by hand, and against gforth for standard words</li>
+    <li data-step="5"><b>5.</b> Save it as <code>name.out</code>; run the whole suite; commit</li>
+  </ol>
+  <pre class="code below" data-step="3">docker run --rm -v "${PWD}:/src" os4 make test-hosted     <span class="c"># seconds</span>
+docker run --rm -v "${PWD}:/src" os4 make test            <span class="c"># everything</span></pre>
+  <div class="talk">
+    <p>Here's the recipe for a new test. Write the input, starting with a comment line that says what the test covers, because that comment appears in the transcript too.</p>
+    <p>If it needs a network peer, an app disk, or a filter, add those files next to it. Run it: with no dot-out file yet, the test fails, but its output is saved as dot-actual.</p>
+    <p>Then the step that matters: read every value, and check it by hand, and against gforth for standard words. Only then save it as the expected output, run the whole suite, and commit.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>The peer and the OS were written by the same people. Which bugs could both share, and which checks catch those?</li>
+    <li>Soak allows the first round to grow. Why, and what leak could hide in that first round?</li>
+    <li>Choose a feature from any lecture and design its hostile cases: what input would you send, and what must still be true afterwards?</li>
+  </ol>
+  <div class="talk">
+    <p>That's testing, and the end of the course. Transcripts checked by hand, run on both builds, each test in its own world; peers that misbehave on purpose; soak for leaks; real tools for a second opinion; and a check that keeps the course true to the code.</p>
+    <p>Three questions to think about: what a home-made peer can't catch, what soak's first round might hide, and how to attack a feature of your choice. Thank you for listening. The code tours are there whenever you want to read the real thing.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

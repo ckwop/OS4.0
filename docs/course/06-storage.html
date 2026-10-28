@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Storage · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="06-storage">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">6 · Storage</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/06-storage.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 6 of 12 · about 13 minutes</div>
+  <h1>Storage</h1>
+  <p class="lede">From a virtio disk to data that survives a crash: the block HAL, Forth's block buffers, <code>sync</code>, and crash-safe records.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">The block HAL and the virtio-blk driver</li>
+    <li data-step="2">Finding the data disk; block buffers; what <code>sync</code> promises</li>
+    <li data-step="3">Records: small data that survives a crash mid-write</li>
+  </ul>
+  <div class="talk">
+    <p>This lecture is about storage: how OS 4.0 keeps data on disk, and how it makes sure that data survives a crash.</p>
+    <p>We'll start at the bottom, with the block HAL, the handful of words every disk driver provides, and the virtio driver that implements them on QEMU. Then the layer every Forth system has: blocks of one kilobyte, cached in buffers, and the word sync, which is the line between a change you hope is saved and one that is.</p>
+    <p>Last, records: small pieces of binary data, like the admin password's hash, written so that a power cut in the middle of a write can never leave them half-written.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>Three layers</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 250" role="img" aria-label="records.fs on blocks.fs on the block HAL, which is virtio-blk.fs or linux-blk.fs; files.fs reads the app disk through the same HAL">
+      <rect class="box accent" x="20" y="20" width="420" height="52" rx="8"/><text x="40" y="52" class="mono">records.fs</text><text x="190" y="52" class="small">record! record@: survive a crash</text>
+      <rect class="box green" x="20" y="84" width="420" height="52" rx="8"/><text x="40" y="116" class="mono">blocks.fs</text><text x="190" y="116" class="small">block update sync: 8 buffers, the data disk</text>
+      <rect class="box faint" x="470" y="84" width="410" height="52" rx="8"/><text x="490" y="116" class="mono">files.fs</text><text x="600" y="116" class="small">read only: the app disk (lecture 10)</text>
+      <rect class="box blue" x="20" y="148" width="860" height="52" rx="8"/><text x="40" y="180" class="small">the block HAL:</text><text x="150" y="180" class="mono">#disks blk-count blk-read blk-write blk-flush</text>
+      <text x="40" y="232" class="mono">hal/virtio-blk.fs</text><text x="250" y="232" class="small">bare metal</text>
+      <text x="470" y="232" class="mono">hal/linux-blk.fs</text><text x="680" y="232" class="small">hosted: image files</text>
+    </svg>
+  </div>
+  <ul class="points below">
+    <li data-step="2">Everything above the HAL is the same on every platform</li>
+    <li data-step="3">Only <code>blocks.fs</code> writes, and only to the data disk</li>
+  </ul>
+  <div class="talk">
+    <p>Storage comes in three layers. At the bottom is the block HAL: five words that every disk driver provides. On bare metal they're implemented by the virtio block driver; on the hosted build, by reading and writing image files through Linux.</p>
+    <p>On top of the HAL sits blocks dot fs, Forth's traditional block system, with eight buffers and the words block, update and sync. And on top of that, records dot fs, which builds crash-safe records out of pairs of blocks.</p>
+    <p>Off to the side, the file system for the app disk uses the same HAL, but only to read. That's lecture ten.</p>
+    <p>Two things follow from this shape. Everything above the HAL runs unchanged on every platform. And only one file, blocks dot fs, ever writes to a disk, and only to the data disk, which makes the hard rule about never writing the other disks easy to check.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>The block HAL</h2>
+  <pre class="code" data-src="hal/virtio-blk.fs" data-step="1"><span class="c">\   #disks     ( -- n )             disks found</span>
+<span class="c">\   blk-count  ( disk -- u )        size in 1 KiB blocks; 0 if there is no such disk</span>
+<span class="c">\   blk-read   ( addr u disk -- )   block u into the 1 KiB at addr</span>
+<span class="c">\   blk-write  ( addr u disk -- )   the 1 KiB at addr to block u</span>
+<span class="c">\   blk-flush  ( disk -- )          make completed writes durable</span></pre>
+  <div class="src"><a href="../../hal/virtio-blk.fs" data-ref="hal/virtio-blk.fs:blk-read">hal/virtio-blk.fs</a></div>
+  <ul class="points below">
+    <li data-step="2">Disks are numbered in the order found, but never chosen by number</li>
+    <li data-step="3">Errors throw: -33 read, -34 write, -263 a device that stops answering</li>
+    <li data-step="4">A write is not durable until <code>blk-flush</code> returns</li>
+  </ul>
+  <div class="talk">
+    <p>Here's the whole contract, from the top of the virtio driver. Number of disks. The size of a disk in one-kilobyte blocks. Read a block into memory. Write a block from memory. And flush.</p>
+    <p>Disks are numbered from zero in the order the driver finds them, but nothing above the HAL picks a disk by its number. That's coming up shortly.</p>
+    <p>Errors are thrown, never printed: <span data-say="minus thirty-three">-33</span> for a read that failed, <span data-say="minus thirty-four">-34</span> for a write, and <span data-say="minus two six three">-263</span> for a device that doesn't answer in time.</p>
+    <p>And the most important line is the last. A write that has completed may still be sitting in a cache, in the device, or in the host's memory under QEMU. Only after flush returns is it durable.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Talking to a virtio device</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 500 270" role="img" aria-label="A request is a chain of three descriptors: header, data, status. The driver offers it in the available ring; the device returns it in the used ring">
+        <defs><marker id="s1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <text x="20" y="22" class="small">a request: three descriptors, chained</text>
+        <rect class="box blue" x="20" y="32" width="140" height="44" rx="4"/><text x="90" y="52" text-anchor="middle">header</text><text x="90" y="68" text-anchor="middle" class="small">read or write, block</text>
+        <rect class="box green" x="180" y="32" width="140" height="44" rx="4"/><text x="250" y="52" text-anchor="middle">data</text><text x="250" y="68" text-anchor="middle" class="small">1 KiB</text>
+        <rect class="box accent" x="340" y="32" width="140" height="44" rx="4"/><text x="410" y="52" text-anchor="middle">status</text><text x="410" y="68" text-anchor="middle" class="small">the device writes it</text>
+        <path class="line" d="M 160 54 L 176 54" marker-end="url(#s1)"/><path class="line" d="M 320 54 L 336 54" marker-end="url(#s1)"/>
+        <rect class="box" x="20" y="130" width="200" height="50" rx="6"/><text x="120" y="152" text-anchor="middle">available ring</text><text x="120" y="170" text-anchor="middle" class="small">driver → device</text>
+        <rect class="box" x="280" y="130" width="200" height="50" rx="6"/><text x="380" y="152" text-anchor="middle">used ring</text><text x="380" y="170" text-anchor="middle" class="small">device → driver</text>
+        <path class="line" d="M 220 155 L 276 155" marker-end="url(#s1)"/>
+        <text x="20" y="220" class="small">1. write the chain's head in the available ring</text>
+        <text x="20" y="240" class="small">2. advance its index   3. ring the doorbell</text>
+        <text x="20" y="260" class="small">4. wait for the used ring's index to move</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="1">Shared memory: descriptors, and two rings</li>
+      <li data-step="2"><code>dmb</code>: the ring entry before the index</li>
+      <li data-step="2"><code>dsb</code>: all of it before the doorbell</li>
+      <li data-step="3">Barriers are named Forth words, never inline</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="hal/virtio.fs">: <span class="w">vq-submit</span>  ( head vq base n -- )
+  2swap  dup vq-avail 2 + w@ &gt;r                    ( base n head vq )
+  r@ over vq-size 1- and 2* 4 + over vq-avail + rot swap w!
+  dmb                                              <span class="c">\ the ring entry, then the index</span>
+  r&gt; 1+ swap vq-avail 2 + w!
+  dsb                                              <span class="c">\ all of it, then the doorbell</span>
+  swap vm-queue-notify vm! ;</pre>
+    <div class="src"><a href="../../hal/virtio.fs" data-ref="hal/virtio.fs:vq-submit">hal/virtio.fs › vq-submit</a></div>
+  </div>
+  <div class="talk">
+    <p>Virtio is the standard way virtual machines talk to virtual devices, and its heart is the virtqueue: memory shared between the driver and the device.</p>
+    <p>A disk request is a chain of three descriptors. A header saying read or write, and which block. The data buffer. And a status byte that the device fills in. To submit it, the driver writes the chain's first descriptor into the available ring, advances the ring's index, and writes to a doorbell register. When the device has finished, it puts the chain in the used ring and advances that index.</p>
+    <p>Here's submit in Forth. Look at the two barrier words, <span data-say="D M B">dmb</span> and <span data-say="D S B">dsb</span>. The device must never see the new index before the ring entry it covers, and it mustn't hear the doorbell before both are in memory. The processor is allowed to reorder memory writes, so the barriers forbid it at exactly those two points. They're named Forth words, never inline assembly, so every ordering decision is visible in the source.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>Waiting without stopping the world</h2>
+  <pre class="code" data-src="hal/virtio.fs" data-step="1">: <span class="w">vq-wait-len</span>  ( vq -- len )  <span class="c">\ and the length the device wrote</span>
+  device-timeout deadline &gt;r
+  begin dup vq-used? 0= while  r@ expired? if  r&gt; 2drop -263 throw  then  pause  repeat
+  r&gt; drop  vq-take nip ;</pre>
+  <div class="src"><a href="../../hal/virtio.fs" data-ref="hal/virtio.fs:vq-wait-len">hal/virtio.fs › vq-wait-len</a></div>
+  <ul class="points below">
+    <li data-step="2">Polled, not interrupt-driven: check, then <code>pause</code></li>
+    <li data-step="3">Other tasks run while the disk works</li>
+    <li data-step="4">Five seconds without an answer: -263, not a hang</li>
+  </ul>
+  <div class="talk">
+    <p>Once a request is submitted, the driver waits for the used ring to move. There are no interrupts for devices in OS 4.0, so it polls: check, and if nothing has happened, pause, letting every other task run, then check again on its next turn.</p>
+    <p>That's why a slow disk doesn't freeze the system. The task that's waiting for the disk simply keeps giving way, and the console, the network and every session carry on.</p>
+    <p>There's also a deadline. If a device doesn't answer within five seconds, the wait throws <span data-say="minus two six three">-263</span> rather than hanging for ever. A broken device costs one operation, not the machine.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>Which disk is the data disk?</h2>
+  <pre class="code" data-src="forth/blocks.fs" data-step="1">: <span class="w">header?</span>  ( -- flag )  disk-header 8 s" OS40DISK" compare 0=  disk-header 8 + @ disk-version = and ;
+: <span class="w">boot-signature?</span>  ( -- flag )  disk-header 510 + c@ $55 =  disk-header 511 + c@ $aa = and ;
+: <span class="w">find-data-disk</span>  ( -- )  <span class="c">\ into DATA-DISK, its block 0 into DISK-HEADER</span>
+  #disks 0 ?do  disk-header 0 i blk-read  header? if i data-disk ! unloop exit then  loop
+  #disks 0 ?do  disk-header 0 i blk-read  boot-signature? 0= if i data-disk ! unloop exit then  loop
+  -257 throw ;</pre>
+  <div class="src"><a href="../../forth/blocks.fs" data-ref="forth/blocks.fs:find-data-disk">forth/blocks.fs › find-data-disk</a></div>
+  <ul class="points below">
+    <li data-step="2">First choice: a disk whose block 0 holds the <code>OS40DISK</code> header</li>
+    <li data-step="3">Else: a disk that is not a FAT volume. Without a header it is read only</li>
+    <li data-step="4"><code>tools/blocks.py format</code> writes the header: magic, version, volume ID, size</li>
+  </ul>
+  <div class="talk">
+    <p>Several disks are attached, so which is the data disk? The answer is never its number. Cloud machines don't promise which order disks appear in, and a mistake here would mean writing over the wrong disk.</p>
+    <p>So the system looks at what's on each disk. First choice: the first disk whose block zero starts with the magic text <span data-say="O S forty disk">OS40DISK</span> and the right format version. That header is written by the formatting tool, along with a volume ID and the disk's size.</p>
+    <p>If no disk has a header, the fallback is the first disk whose block zero doesn't end in a boot signature, the two bytes that every FAT volume, including the boot disk and the app disk, has there. A disk found that way has no valid header, so it's treated as read-only. Nothing is ever written to a disk the system can't positively identify as its own.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="7">
+  <h2>Block buffers</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 260" role="img" aria-label="Eight buffers; each knows its block, whether it is dirty and how many loads pin it; the victim is chosen round robin">
+        <g>
+          <rect class="box green" x="20" y="20" width="96" height="60" rx="4"/><text x="68" y="46" text-anchor="middle" class="mono">17</text><text x="68" y="66" text-anchor="middle" class="small">clean</text>
+          <rect class="box accent" x="126" y="20" width="96" height="60" rx="4"/><text x="174" y="46" text-anchor="middle" class="mono">998</text><text x="174" y="66" text-anchor="middle" class="small">dirty</text>
+          <rect class="box blue" x="232" y="20" width="96" height="60" rx="4"/><text x="280" y="46" text-anchor="middle" class="mono">20</text><text x="280" y="66" text-anchor="middle" class="small">pinned</text>
+          <rect class="box faint" x="338" y="20" width="96" height="60" rx="4"/><text x="386" y="54" text-anchor="middle" class="small">empty</text>
+          <rect class="box faint" x="20" y="90" width="96" height="60" rx="4"/><text x="68" y="124" text-anchor="middle" class="small">…</text>
+          <rect class="box faint" x="126" y="90" width="96" height="60" rx="4"/><text x="174" y="124" text-anchor="middle" class="small">…</text>
+          <rect class="box faint" x="232" y="90" width="96" height="60" rx="4"/><text x="280" y="124" text-anchor="middle" class="small">…</text>
+          <rect class="box faint" x="338" y="90" width="96" height="60" rx="4"/><text x="386" y="124" text-anchor="middle" class="small">…</text>
+        </g>
+        <text x="20" y="184" class="small">block: return the buffer holding it, or pick a victim,</text>
+        <text x="20" y="204" class="small">write the victim back if it is dirty, and read the block in</text>
+        <text x="20" y="234" class="small">update: mark this task's last buffer dirty</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="1">Eight buffers: a block number, dirty, pins</li>
+      <li data-step="2">The victim: round robin, skipping pinned ones, written back if dirty</li>
+      <li data-step="3"><code>block</code> reads; <code>buffer</code> skips the read for a block you'll overwrite</li>
+      <li data-step="3">Block 0, the header, can never be written: -259</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="forth/blocks.fs">: <span class="w">victim</span>  ( -- i )  <span class="c">\ the next unpinned buffer, round robin, written back first</span>
+  #buffers 0 do
+    next-buf @ 1+ #buffers mod  dup next-buf !
+    dup 'pins @ 0= if  dup write-buf unloop exit  then drop
+  loop -260 throw ;</pre>
+    <div class="src"><a href="../../forth/blocks.fs" data-ref="forth/blocks.fs:victim">forth/blocks.fs › victim</a></div>
+  </div>
+  <div class="talk">
+    <p>Forth's classic storage model is blocks of one kilobyte, cached in a few buffers. Here there are eight. Each buffer remembers which block it holds, whether it has been changed, which Forth calls dirty, and how many loads are reading source from it, which pins it in place.</p>
+    <p>Block asks for a block by number and returns the address of a buffer holding it. If it's already in a buffer, that's instant. If not, a victim is chosen, round robin, skipping any that are pinned. If the victim is dirty it's written back first, and then the new block is read in.</p>
+    <p>After changing a buffer, you call update, which marks it dirty, so that it'll be written back. And if you're about to overwrite a whole block, buffer gives you one without the pointless read.</p>
+    <p>One block is special. Block zero holds the disk header, and any attempt to write it throws <span data-say="minus two five nine">-259</span>.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="8">
+  <h2>What <code>sync</code> promises</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/blocks.fs" data-step="1">: <span class="w">(sync)</span>   ( -- )  (save-buffers) data-disk @ blk-flush ;
+: <span class="w">sync</span>           ( -- )  ['] (sync) blocks-lock locked ;  <span class="c">\ durable once this returns</span></pre>
+      <div class="src"><a href="../../forth/blocks.fs" data-ref="forth/blocks.fs:sync">forth/blocks.fs › sync</a></div>
+      <pre class="code below" data-src="Makefile" data-step="3">              -drive file=$(1),format=raw,if=none,id=data,cache=writeback \</pre>
+      <div class="src"><a href="../../Makefile">Makefile › VIRT_CMD</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Write every dirty buffer, then flush the device, then wait</li>
+      <li data-step="2"><code>update</code> alone is a hope; <code>sync</code> is a promise</li>
+      <li data-step="3">QEMU caches writes, but honours the flush; never <code>cache=unsafe</code></li>
+      <li data-step="4">New player: the record, <code>sync</code>; then the index entry, <code>sync</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Sync is the most important word in this lecture. It writes every dirty buffer back to the disk, then asks the device to flush, and waits until it has. When sync returns, your changes are durable: a crash or a power cut can no longer lose them.</p>
+    <p>Update on its own is only a hope. The buffer will be written back eventually, when it's chosen as a victim, but if the machine stops first, the change is gone.</p>
+    <p>The flush matters because writes are cached below us. QEMU is told to cache the data disk with write-back caching, which is fast, and it honours flush requests. The setting called <span data-say="cache equals unsafe">cache=unsafe</span> would ignore them, and it's banned by the hard rules.</p>
+    <p>The brief also fixes the order of writes where it matters. When a new player is created, their record is written and synced first, and only then the index entry pointing at it, synced again. A crash in between leaves an unused record, never an index pointing at nothing.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="9">
+  <h2>Sharing the buffers</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/blocks.fs" data-step="1">: <span class="w">block</span>   ( u -- addr )  <span class="c">\ block u, read from disk unless already buffered</span>
+  ['] (block) blocks-lock locked ;
+: <span class="w">update</span>         ( -- )  ['] (update) blocks-lock locked ;   <span class="c">\ the last buffer this task got</span></pre>
+      <div class="src"><a href="../../forth/blocks.fs" data-ref="forth/blocks.fs:block">forth/blocks.fs › block, update</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Every public word holds <code>blocks-lock</code></li>
+      <li data-step="2">A task may pause inside: waiting for the disk</li>
+      <li data-step="3">An address from <code>block</code> is good only until this task next pauses</li>
+      <li data-step="4"><code>load</code> pins its buffer while it reads source</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>All tasks share the eight buffers, and a disk request involves waiting, which means pausing. So every public word in the block layer runs holding a semaphore called blocks-lock. While one task is waiting for its block to arrive, no other task can choose the same buffer as a victim.</p>
+    <p>That gives a rule worth remembering. The address that block returns is only good until your task next pauses. After that, another task may have reused the buffer for a different block. So read it, change it, and call update, without anything that pauses in between. Update also works on the last buffer your own task asked for, so another task's request can't confuse it.</p>
+    <p>Load is the exception that needs more: it interprets source straight out of a buffer, and that can take many pauses. So load pins its buffer, and the victim search skips it.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="10">
+  <h2>Records: surviving a crash mid-write</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 250" role="img" aria-label="A record is two blocks; each copy holds a checksum, a sequence number, a length and the data; writes alternate; reads take the newest valid copy">
+        <rect class="box green" x="20" y="20" width="200" height="150" rx="6"/><text x="120" y="44" text-anchor="middle">block n</text>
+        <text x="36" y="72" class="small">checksum</text><text x="36" y="94" class="small">sequence 6</text><text x="36" y="116" class="small">length</text><text x="36" y="138" class="small">data</text>
+        <rect class="box accent" x="250" y="20" width="200" height="150" rx="6"/><text x="350" y="44" text-anchor="middle">block n+1</text>
+        <text x="266" y="72" class="small">checksum: wrong!</text><text x="266" y="94" class="small">sequence 7</text><text x="266" y="116" class="small">torn by a crash</text><text x="266" y="138" class="small">…</text>
+        <text x="20" y="204" class="small">read: take the newest copy whose checksum holds: 6</text>
+        <text x="20" y="226" class="small">write: overwrite the older copy, then sync</text>
+      </svg>
+    </div>
+    <pre class="code" data-src="forth/records.fs" data-step="2">0
+1 cells field <span class="w">r.check</span>           <span class="c">\ SipHash of everything after it, up to the data's end</span>
+1 cells field <span class="w">r.seq</span>             <span class="c">\ 1 for the first write; 0 means never written</span>
+1 cells field <span class="w">r.len</span>
+0 field <span class="w">r.data</span>
+constant /record-header</pre>
+  </div>
+  <div class="talk">
+    <p>Some data is small but precious, like the admin password's hash. If the machine loses power while a block is being written, the block can end up half old and half new, which is called a torn write. A record is built so that can never matter.</p>
+    <p>A record uses two blocks, and keeps two copies. Each copy holds a checksum, a sequence number, the length, and the data. Writes alternate: each new write goes over the older of the two copies, with the next sequence number.</p>
+    <p>Reading checks both copies and takes the newest one whose checksum is right. So if a crash tears the write in progress, as in the picture, that copy fails its checksum, and the reader quietly takes the previous one. You get either the new value or the old one, never a mixture.</p>
+    <p>The checksum is SipHash, keyed with a fixed key: here it's not protecting a secret, just detecting damage.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-code="11">
+  <h2>Writing a record</h2>
+  <pre class="code" data-src="forth/records.fs" data-step="1">: <span class="w">(record!)</span>  ( addr len n -- )
+  over /record u&gt; if -274 throw then
+  dup copy-seq  over 1+ copy-seq                   ( addr len n s0 s1 )
+  2dup max 1+ &gt;r  u&lt; 0= if 1+ then  r&gt; swap         <span class="c">\ the next number, over the older copy</span>
+  ['] fill-copy blocks-lock locked
+  sync ;</pre>
+  <div class="src"><a href="../../forth/records.fs" data-ref="forth/records.fs:(record!)">forth/records.fs › (record!)</a></div>
+  <ul class="points below">
+    <li data-step="2">Up to 1000 bytes of binary data: never Forth source, never execution tokens</li>
+    <li data-step="3">Synced before <code>record!</code> returns</li>
+    <li data-step="4">Used for the admin password's hash, in blocks 998 and 999</li>
+  </ul>
+  <div class="talk">
+    <p>Here's the write. Refuse anything too large for one block. Read both copies' sequence numbers; an invalid copy counts as zero. The next number is one more than the larger, and it goes over the older copy. Fill that buffer while holding the block lock, so no other task can take the buffer in between. And sync, so that when record-store returns, the new value is durable.</p>
+    <p>Records hold up to a thousand bytes of binary data. Two hard rules apply to all stored data, and records are where they bite. Never store data as Forth source, which something might later interpret. And never store execution tokens: they're memory addresses, and they change every time the system is rebuilt.</p>
+    <p>The network REPL keeps the admin password's hash in a record, in blocks nine nine eight and nine nine nine.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide" data-code="12">
+  <h2>Try it on the console</h2>
+  <pre class="code" data-step="1">.disk                                  <span class="c">\ volume ID and size</span>
+5 wipe                                 <span class="c">\ blank block 5 and edit it</span>
+0 &gt;line \ my first screen
+1 &gt;line : hello ." Hello from block 5" ;
+5 list                                 <span class="c">\ show it</span>
+sync                                   <span class="c">\ durable now</span>
+5 load hello                           <span class="c">\ compile it, run the word it defined</span></pre>
+  <p class="lede" style="margin-top:16px">With <code>-v "${PWD}:/src"</code> and <code>make run</code>, the data disk is <code>build/data.img</code>, kept between runs. <code>python3 tools/blocks.py list build/data.img 5</code> shows the screen from the host.</p>
+  <div class="talk">
+    <p>To try it, boot with your working copy mounted, so the data disk is kept between runs. Dot-disk shows the volume ID and size.</p>
+    <p>Wipe blanks block five and makes it the current screen. To-line replaces one of its sixteen lines; line zero is, by convention, a comment saying what the block holds. List shows it. Sync makes it durable. And load compiles it, after which hello is a word you can run.</p>
+    <p>Shut down, boot again, and block five is still there. The blocks tool can list it from the host too.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>A word calls <code>block</code>, then <code>ms</code>, then changes a byte and calls <code>update</code>. What can go wrong?</li>
+    <li>Why do records alternate between two blocks rather than writing one block twice, first a copy and then the original?</li>
+    <li>What could go wrong if the data disk were chosen as "disk 1"? Describe a real way the order could change.</li>
+  </ol>
+  <div class="talk">
+    <p>That's storage. A five-word HAL, a virtio driver that pauses while it waits, eight shared buffers, sync as the promise of durability, and records that survive a crash in the middle of a write.</p>
+    <p>Three questions to think about: what a pause does to a block address, why records alternate, and why disks are never chosen by number. Next, lecture seven: the network, from Ethernet up to UDP.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

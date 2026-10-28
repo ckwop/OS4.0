@@ -1,0 +1,77 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "8 · Network II: TCP",
+  "description": "The code behind lecture 8 (docs/course/08-tcp.html): connections, the handshake, byte counts, receiving and sending segments, retransmission, closing, the defences and the application's words. About fifteen minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 8, TCP**, all in `forth/net/tcp.fs`. It reads top to bottom: segments and connection records, the hash table, sending, listening, receiving, timers, and the application's words."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": "^\\\\ net/tcp\\.fs",
+      "title": "The design",
+      "description": "Servers only; the network task does the protocol and wakes application tasks; go-back-N; out-of-order segments dropped; byte counts inside; the defences against off-path attackers."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": ": accept-connection  \\(",
+      "title": "Listening and accepting",
+      "description": "Eight listener slots (port, queue, waiting task). `enqueue` above adds an established connection and wakes the listener; `accept-connection` takes one, or stops until woken. `open-conn` (further down) answers a SYN."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": "^1 cells field c\\.tx-acked",
+      "title": "Byte counts",
+      "description": "A connection record: state, ports, initial sequence numbers, the five counts, window, MSS, timers, links, owner, then the 4 KiB receive and 8 KiB transmit rings. Records come from `reserve` and are recycled through `free-conns`."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": ": snd-una  \\(",
+      "title": "Sequence numbers from counts",
+      "description": "`snd-una`, `snd-nxt` and `rcv-nxt` turn counts into 32-bit sequence numbers; `s32` compares wrapped differences. `in-flight`, `unsent`, `rx-room` and `tx-room` are differences of counts."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": ": segment-in  \\(",
+      "title": "Receiving a segment",
+      "description": "Reset; the handshake's ACK; ACK checks (`ack-ok?`); `acked` moves the acknowledged count on; data; FIN; then `tcp-output`. `tcp-in` below parses the header, checks the checksum and length, and finds the connection."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": ": data-in  \\(",
+      "title": "In order only",
+      "description": "Not at `rcv-nxt`: drop, owe an ACK. Otherwise copy what fits into the receive ring, owe an ACK, wake the owner."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": ": \\(tcp-output\\)",
+      "title": "Sending",
+      "description": "Segments while `sendable` (above) is positive, then the FIN once everything is out, then a bare ACK if owed. `(segment-out)` further up builds a segment in `tx-frame` from the ring, under `tx-lock`."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": ": retransmit  \\(",
+      "title": "Retransmission",
+      "description": "Give up after `max-retries` (8; `max-syn-retries`, 4, while half open), else double the RTO (1 s to 60 s), probe a closed window, and go back: `tx-sent` = `tx-acked`. `tcp-timers` below runs it for every connection, each under `catch`."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": ": close-connection  \\(",
+      "title": "Closing",
+      "description": "Mark it closed by the application, give it `linger-ms` (60 s) to send what is queued, queue a FIN. `fin-in` and `fin-acked-in` move it through the closing states; `timed-out` ends TIME-WAIT and FIN-WAIT-2, or resets a connection that would not finish."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": ": new-iss  \\(",
+      "title": "The defences",
+      "description": "Keyed initial sequence numbers (RFC 6528); `rst-in` and `ack-ok?` further down apply RFC 5961; `room?` caps connections and half-open ones; `bucket` hashes with `bucket-key`. `tests/tcp-attack` floods and forges against all of them."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": ": io-wait   \\(",
+      "title": "The application's view",
+      "description": "Waiting words record the owner and sleep, until woken or until `io-timeout` runs out (-273). `send`, `send-line`, `get-line` and `close-connection` follow.\n\n`tests/tcp` runs 32 clients at once, one dropping, one reordering, one wrapping its sequence numbers. Next: lecture 9, the REPL and security."
+    }
+  ]
+}

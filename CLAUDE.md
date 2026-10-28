@@ -68,6 +68,6 @@ See the milestone table in [Readme.md](Readme.md). Work strictly in milestone or
 ## Workflow
 
 - Record any choice the brief leaves open in `DECISIONS.md` with a one-line reason.
-- The course (`docs/course/*.html`, one narrated lecture per area) and its code tours (`.tours/*.tour`) explain the base. When you change an area, update its lecture and tour in the same change. Code they quote or name is checked by `tools/check-course.py` (part of `make test`): excerpts must be real lines, and named words must still be defined. Narration is written to be heard: short sentences, no symbols read aloud (use `<span data-say="...">`).
+- The course (`docs/course/*.html`, one narrated lecture per area) and its code tours (`.tours/*.tour`) explain the base. When you change an area, update its lecture and tour in the same change. Code they quote or name is checked by `tools/check-course.py` (part of `make test`): excerpts must be real lines, named words must still be defined, tour patterns must still match, and each slide's `data-code` must name a step of its tour (DECISIONS.md #102). Narration is written to be heard: short sentences, no symbols read aloud (use `<span data-say="...">`).
 - Record shortcuts, gaps and risks in `docs/tech-debt.md`; close entries there when they are fixed. Check its open entries when starting a milestone: some are due before particular milestones.
 - At the end of each milestone, update the Readme milestone table and report what passed and anything that changed the plan.

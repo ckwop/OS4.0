@@ -132,10 +132,26 @@
 
   // ---- Showing a slide
 
+  // Two columns where the code fits. Where it would be cut off: beside a
+  // figure, the code moves below at full width; otherwise one column.
+  const fit = (slide) => slide.querySelectorAll(".cols").forEach((c) => {
+    c.classList.remove("stacked");
+    if (![...c.querySelectorAll("pre.code")].some((p) => p.scrollWidth > p.clientWidth + 4)) return;
+    const coded = [...c.children].filter((k) => k.matches("pre.code") || k.querySelector("pre.code"));
+    if (c.querySelector(":scope > .figure") && coded.length < c.children.length) {
+      let at = c;
+      coded.forEach((k) => { k.classList.add("below"); at.after(k); at = k; });
+      if (c.children.length < 2) c.classList.add("stacked");
+    } else {
+      c.classList.add("stacked");
+    }
+  });
+
   const show = (n) => {
     index = Math.max(0, Math.min(slides.length - 1, n));
     chunk = 0;
     slides.forEach((s, i) => s.classList.toggle("on", i === index));
+    fit(slides[index]);
     $(".count").textContent = `${index + 1} / ${slides.length}`;
     progress.firstChild.style.width = `${((index + 1) / slides.length) * 100}%`;
     const talk = slides[index].querySelector(".talk");
@@ -212,6 +228,7 @@
     else if (e.key === "v" && !codeLink.hidden) codeLink.click();
   });
   window.addEventListener("beforeunload", () => synth && synth.cancel());
+  window.addEventListener("resize", () => fit(slides[index]));
 
   if (store.get("captions", "1") === "1") toggle($(".cc"), captions, "captions");
   if (store.get("transcript", synth ? "0" : "1") === "1") toggle($(".tt"), transcript, "transcript");

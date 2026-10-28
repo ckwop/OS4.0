@@ -71,6 +71,8 @@ a { color: var(--blue); }
 .cols.even { grid-template-columns: 1fr 1fr; }
 .cols > * { min-width: 0; }             /* a wide excerpt scrolls rather than squeezing its neighbour */
 .below { margin-top: 22px; }
+.cols.stacked { grid-template-columns: 1fr; gap: 18px; }   /* course.js: the code would not fit beside */
+.cols.stacked > .figure { max-width: 620px; }
 @media (max-width: 760px) {
   .cols, .cols.even { grid-template-columns: 1fr; }
   .top .tour { display: none; }
@@ -100,6 +102,7 @@ pre.code {
   border-radius: 10px; padding: 14px 16px; margin: 0; overflow-x: auto; box-shadow: var(--shadow);
   tab-size: 4;
 }
+pre.code.below { margin-top: 14px; }
 pre.code .c { color: var(--code-dim); }
 pre.code .w { color: var(--code-word); }
 /* Bands: groups of lines in an excerpt, labelled, matched by .tintN in the text */

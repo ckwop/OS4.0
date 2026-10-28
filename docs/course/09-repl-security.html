@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The REPL and security · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="09-repl-security">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">9 · The REPL and security</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/09-repl-security.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 9 of 12 · about 14 minutes</div>
+  <h1>The REPL and security</h1>
+  <p class="lede">Forth over telnet, for strangers and for the operator: terminals per task, doors with limits, a sandbox, passwords and randomness.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">A terminal for every task, and telnet</li>
+    <li data-step="2">Doors, sessions, wordlists and the sandbox</li>
+    <li data-step="3">Passwords, randomness, and the rules for going public</li>
+  </ul>
+  <div class="talk">
+    <p>OS 4.0 serves its Forth prompt over the network. Port four thousand is a sandbox that anyone may use. Port four thousand and one is the full Forth, for the operator, behind a password. A MUD is exactly this shape: strangers get a limited language, and the owner gets everything.</p>
+    <p>This lecture shows how that's built. First, how each task gets its own terminal, so a REPL can talk to a network connection as easily as to the console. Then the doors that admit sessions, with limits, and the wordlists that decide what a session can see.</p>
+    <p>Last, the security underneath: how the admin password is stored and checked, where the system's random numbers come from, and the rules that must hold before the system faces the internet.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>Every task has a terminal</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/output.fs" data-step="1">user 'type   ' console-type 'type !
+user 'key    ' (console-key) 'key !
+user 'key?   ' console-key? 'key? !
+user emitted                          <span class="c">\ EMIT's character</span>
+: <span class="w">type</span>    ( addr u -- )  'type @ execute ;</pre>
+      <div class="src"><a href="../../forth/output.fs" data-ref="forth/output.fs:type">forth/output.fs › type</a></div>
+    </div>
+    <div class="figure" data-step="2">
+      <svg viewBox="0 0 400 210" role="img" aria-label="The console task's vectors point at the serial port; a session task's point at its TCP connection">
+        <defs><marker id="r1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <rect class="box blue" x="10" y="20" width="150" height="60" rx="6"/><text x="85" y="46" text-anchor="middle">console</text><text x="85" y="66" text-anchor="middle" class="mono">'type 'key</text>
+        <rect class="box faint" x="240" y="20" width="150" height="60" rx="6"/><text x="315" y="55" text-anchor="middle">serial port</text>
+        <path class="line" d="M 160 50 L 236 50" marker-end="url(#r1)"/>
+        <rect class="box accent" x="10" y="120" width="150" height="60" rx="6"/><text x="85" y="146" text-anchor="middle">session task</text><text x="85" y="166" text-anchor="middle" class="mono">'type 'key</text>
+        <rect class="box green" x="240" y="120" width="150" height="60" rx="6"/><text x="315" y="146" text-anchor="middle">TCP connection</text><text x="315" y="166" text-anchor="middle" class="small">via telnet.fs</text>
+        <path class="line" d="M 160 150 L 236 150" marker-end="url(#r1)"/>
+      </svg>
+    </div>
+  </div>
+  <ul class="points below">
+    <li data-step="3"><code>type</code>, <code>key</code>, <code>key?</code> and <code>bye</code> call through vectors in the user area</li>
+    <li data-step="4">So the same REPL, <code>accept</code>, <code>.</code> and <code>words</code> serve any terminal</li>
+  </ul>
+  <div class="talk">
+    <p>The trick that makes a network REPL easy is this. Type, which every output word ends in, doesn't talk to hardware. It fetches an execution token from a user variable called tick-type, and runs it. Key and key-query work the same way, and so does bye.</p>
+    <p>Because those vectors live in the user area, every task has its own. The console's point at the serial port. A telnet session's task points them at its own TCP connection, through the telnet code.</p>
+    <p>So the REPL needs no network code at all. The same interpret loop, the same accept for reading a line, the same dot and words, all work on whichever terminal the running task has. And because they're per task, two sessions can be typing at once, each seeing only its own output.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>Just enough telnet</h2>
+  <pre class="code" data-src="forth/net/telnet.fs" data-step="1">create character-mode  iac c, will c, opt-echo c,  iac c, will c, opt-sga c,
+: <span class="w">telnet-terminal</span>  ( conn -- )  <span class="c">\ this task's terminal is conn from now on</span>
+  dup term-conn !  0 after-cr !
+  ['] telnet-type 'type !  ['] telnet-key 'key !  ['] telnet-key? 'key? !
+  character-mode 6 rot send ;</pre>
+  <div class="src"><a href="../../forth/net/telnet.fs" data-ref="forth/net/telnet.fs:telnet-terminal">forth/net/telnet.fs › telnet-terminal</a></div>
+  <ul class="points below">
+    <li data-step="2">"I will echo, I will suppress go-ahead": the client sends each key as typed</li>
+    <li data-step="3">So <code>accept</code> echoes and edits, exactly as on the serial console</li>
+    <li data-step="4">In: commands skipped, CR LF made one line end. Out: LF becomes CR LF</li>
+  </ul>
+  <div class="talk">
+    <p>Telnet is the oldest remote terminal protocol, and the system speaks just enough of it. When a session starts, telnet-terminal points the task's vectors at the connection, and sends six bytes of negotiation: I will echo, and I will suppress go-ahead.</p>
+    <p>Those two options put the client into character mode. It stops echoing locally and sends each key as it's pressed. That's exactly what the serial console does, so accept, the word that reads a line, can do its own echoing and backspacing in the same way for both.</p>
+    <p>The rest is translation. Incoming, telnet commands are recognised and skipped, and the line ends that different clients send are reduced to one. Outgoing, a line feed becomes carriage return and line feed, and the special command byte is doubled so it can't be mistaken for a command.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Doors, with limits</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/net/repl.fs" data-step="1">create sandbox-door  sandbox-port , ' sandbox-session , 16 , 0 ,
+create admin-door    admin-port , ' admin-session , 4 , 0 ,</pre>
+      <pre class="code below" data-src="forth/net/repl.fs" data-step="2">: <span class="w">admit</span>  ( conn door -- )
+  dup door.count @  over door.limit @ &lt; 0= if  drop away exit  then
+  1 over door.count +!
+  over ['] run-session ['] spawn catch
+  if  2drop  -1 swap door.count +!  drop-connection  else  drop 2drop  then ;</pre>
+      <div class="src"><a href="../../forth/net/repl.fs" data-ref="forth/net/repl.fs:admit">forth/net/repl.fs › admit</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">A door: its port, its session setup, its limit, its count</li>
+      <li data-step="2">Full: a task says "try again later" and closes</li>
+      <li data-step="3">No task to be had (-275): the connection is reset</li>
+      <li data-step="4">A listener task per door, under <code>restarting</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Each port is a door. A door is four cells: its port number, the word that sets a session up, how many sessions it allows at once, and how many it has. The sandbox door allows sixteen; the admin door, four.</p>
+    <p>A listener task waits at each door. For every connection it accepts, it calls admit. If the door is full, the connection is handed to a short-lived task that tells the client to try again later, and closes. Otherwise the count goes up and a pooled task is spawned to run the session.</p>
+    <p>Spawn can fail, with <span data-say="minus two seven five">-275</span>, when every worker in the pool is busy. Admit catches that, puts the count back, and resets the connection. The listener itself carries on: a flood of connections costs connections, never the door.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>A session's life</h2>
+  <pre class="code" data-src="forth/net/repl.fs" data-step="1">: <span class="w">session</span>  ( conn setup-xt -- )
+  'bye @ &gt;r
+  swap telnet-terminal  0 eof !  ['] end-session 'bye !  0 state !  decimal
+  session-idle @ io-timeout !
+  ['] (session) catch ?dup if  ['] farewell catch if drop then  then
+  reset  only  false hidden !  0 io-timeout !
+  term-conn @  console-terminal  close-connection
+  1 sessions-served +!  r&gt; 'bye ! ;</pre>
+  <div class="src"><a href="../../forth/net/repl.fs" data-ref="forth/net/repl.fs:session">forth/net/repl.fs › session</a></div>
+  <ul class="points below">
+    <li data-step="1">Set up: this connection as the terminal; <code>bye</code> ends the session, not the system</li>
+    <li data-step="2">Ten minutes without input: -273, and the session ends</li>
+    <li data-step="3">However it ends, everything is put back before the task returns to the pool</li>
+  </ul>
+  <div class="talk">
+    <p>This is a session from start to finish, and it runs in a pooled task. First, set up: make the connection this task's terminal, point bye at a word that just ends the session, because bye on the console would shut the machine down, and start in decimal, not compiling.</p>
+    <p>Then set the idle timeout, ten minutes. If the client goes quiet for that long, the next key it's waiting for throws <span data-say="minus two seven three">-273</span>, and the session ends.</p>
+    <p>The session itself runs under catch: the door's setup word, then the ordinary REPL. However it ends, by bye, by the client hanging up, by a timeout or by an error, everything is put back. The stack and state are reset, the search order goes back to the full one, the terminal goes back to the console, and the connection is closed. The task returns to the pool clean, ready for the next client.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>What a task can see: the search order</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/interpreter.fs" data-step="1">user #order
+max-order user-cells context                     <span class="c">\ the search order, first one first</span></pre>
+      <pre class="code below" data-src="forth/interpreter.fs" data-step="2">: <span class="w">find-name</span>  ( addr u -- nt | 0 )  <span class="c">\ in the search order</span>
+  #order @ 0 ?do
+    2dup i order@ wid-latest search-list ?dup if  nip nip unloop exit  then
+  loop 2drop 0 ;</pre>
+      <div class="src"><a href="../../forth/interpreter.fs" data-ref="forth/interpreter.fs:find-name">forth/interpreter.fs › find-name</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">A wordlist: a chain of words of its own</li>
+      <li data-step="1">Each task has its own search order, in its user area</li>
+      <li data-step="2">Lookups try those wordlists, and see nothing else</li>
+      <li data-step="3">A task whose order is the sandbox alone can reach nothing more</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Lecture one described the dictionary as a single linked list. With wordlists, there can be several lists, each with its own chain of words. The full system's words are in one called forth-wordlist.</p>
+    <p>Each task has a search order: the list of wordlists to look in, first to last, kept in its user area. Find-name, which every lookup goes through, tries each wordlist in the order, and stops at the first match.</p>
+    <p>The security comes from what it doesn't do. A lookup sees only the wordlists in the order. There's no fallback to the full dictionary. So if a task's search order holds only the sandbox wordlist, then every word it can type, and every word it can compile, comes from the sandbox. Nothing else exists, as far as that task is concerned.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="7">
+  <h2>The sandbox</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/sandbox.fs" data-step="1">expose +      expose -      expose *      expose /      expose mod    expose /mod
+<span class="c">…</span>
+expose dup    expose drop   expose swap   expose over   expose rot    expose nip
+<span class="c">…</span>
+expose .      expose u.     expose .s     expose cr     expose emit   expose space</pre>
+      <div class="src"><a href="../../forth/sandbox.fs" data-ref="forth/sandbox.fs:expose">forth/sandbox.fs › expose</a></div>
+      <pre class="code below" data-src="tests/repl.out" data-step="2">peer: sandbox A| 2 3 + . 5  ok
+peer: sandbox A| here . here ?
+peer: sandbox A| : sq dup * ; : ?</pre>
+    </div>
+    <ul class="points">
+      <li data-step="1"><code>expose</code> puts a word into the sandbox as a new word that calls it</li>
+      <li data-step="2">Arithmetic, the stack, printing; no <code>:</code>, no <code>@</code> or <code>!</code>, no <code>here</code></li>
+      <li data-step="3">A player-facing wordlist never reaches the full dictionary</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>The sandbox wordlist is built in a short file. Expose takes a word from the full system and makes a new word in the sandbox that just calls it. The list is what a stranger gets: arithmetic, logic, the stack words, and printing.</p>
+    <p>What's missing matters more. There's no colon, so no new definitions. No fetch or store, so no reading or writing memory. No here, no execute, no tick. A sandbox session can compute and print, and that's all.</p>
+    <p>The transcript from the REPL test shows it. Two plus three works. Here is unknown. And colon is unknown, so a stranger can't even define a word.</p>
+    <p>This is one of the hard rules: a player-facing wordlist must never reach the full dictionary. The MUD's player language will be built the same way, with expose, or with words written for players.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="8">
+  <h2>One dictionary, many tasks</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/core.fs" data-step="1">: <span class="w">claim</span>    ( -- )
+  begin dict-owner @ dup up@ &lt;&gt; and while pause repeat  up@ dict-owner ! ;
+: <span class="w">unclaim</span>  ( -- )  dict-owner @ up@ = if 0 dict-owner ! then ;
+: <span class="w">header</span>   ( addr len -- )  claim header ;
+: <span class="w">,</span>        ( x -- )  claim , ;
+: <span class="w">:</span>        ( "name" -- )  claim : ;</pre>
+      <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:claim">forth/core.fs › claim</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Words that extend the dictionary claim it first</li>
+      <li data-step="2">The REPL gives it up at the end of a line, unless a definition is open</li>
+      <li data-step="3">So two admin sessions can't build definitions into each other</li>
+      <li data-step="4">Running memory comes from <code>reserve</code>, never <code>here</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Every task shares one dictionary. That's fine for reading, but two tasks compiling at once would interleave their definitions, a word from one session landing in the middle of another's definition.</p>
+    <p>So the words that extend the dictionary, header, comma and colon among them, claim it first. Claim waits, pausing politely, until no other task owns it, then takes it. The REPL gives it up at the end of each line, unless a definition is still open, because a definition can span several lines with pauses in between.</p>
+    <p>That's also why memory needed while the system runs, for tasks, connections and files, comes from reserve, at the far end of the dictionary's space. A new connection's record must never be carved out of here while somebody's definition is half-built there.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="9">
+  <h2>Storing the admin password</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 230" role="img" aria-label="A password hash: the iteration count, a random 16-byte salt, and PBKDF2-HMAC-SHA-256 of the password and salt">
+        <defs><marker id="r2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <rect class="box faint" x="10" y="20" width="130" height="40" rx="6"/><text x="75" y="45" text-anchor="middle">password</text>
+        <rect class="box faint" x="10" y="80" width="130" height="40" rx="6"/><text x="75" y="105" text-anchor="middle">random salt</text>
+        <rect class="box blue" x="180" y="40" width="130" height="60" rx="6"/><text x="245" y="66" text-anchor="middle">PBKDF2</text><text x="245" y="86" text-anchor="middle" class="small">HMAC-SHA-256</text>
+        <path class="line" d="M 140 40 L 176 60" marker-end="url(#r2)"/><path class="line" d="M 140 100 L 176 80" marker-end="url(#r2)"/>
+        <text x="245" y="122" text-anchor="middle" class="small">n times: about 250 ms</text>
+        <rect class="box accent" x="340" y="40" width="120" height="60" rx="6"/><text x="400" y="75" text-anchor="middle">32-byte hash</text>
+        <path class="line" d="M 310 70 L 336 70" marker-end="url(#r2)"/>
+        <text x="10" y="170" class="small">stored as a record, blocks 998 and 999:</text>
+        <text x="10" y="192" class="mono">iterations · salt · hash</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2">Never the password: a slow, salted hash of it</li>
+      <li data-step="3">Iterations measured on this machine, stored with the hash</li>
+      <li data-step="4">SHA-256, HMAC and PBKDF2 in Forth, checked against the standards' test vectors</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="forth/crypto.fs">: <span class="w">hash-password</span>  ( addr len pw -- )  <span class="c">\ a new salt, and the hash of the password</span>
+  &gt;r  iterations r@ pw.iterations !
+  random r@ pw.salt !  random r@ pw.salt cell+ !
+  r@ pw.salt 16 r@ pw.iterations @ r&gt; pw.hash pbkdf2 ;</pre>
+    <div class="src"><a href="../../forth/crypto.fs" data-ref="forth/crypto.fs:hash-password">forth/crypto.fs › hash-password</a></div>
+  </div>
+  <div class="talk">
+    <p>The admin password itself is never stored. What's stored is a hash: a fixed-size value computed from the password, from which the password can't be worked back.</p>
+    <p>It's made with PBKDF2, a standard way of making that computation deliberately slow: it runs HMAC with SHA-256 thousands of times. A fresh random salt goes in too, so that two identical passwords don't give the same hash, and precomputed tables are useless.</p>
+    <p>How many times? The first time a hash is made, the system measures how many rounds take about a quarter of a second on this machine, and uses that. The count is stored alongside the salt and the hash, so a hash made on one machine still checks on another. The whole thing is kept as a crash-safe record on the data disk.</p>
+    <p>SHA-256, HMAC and PBKDF2 are all written in Forth, with the inner block of SHA-256 in assembly as a measured hot spot. The tests check them against the published test vectors.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="10">
+  <h2>Logging in</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/net/repl.fs" data-step="1">: <span class="w">login?</span>  ( -- flag )  <span class="c">\ three tries at the admin password</span>
+  3 0 do
+    ." Password: " read-secret admin-pw password?  forget-secret
+    if true unloop exit then
+    eof @ if false unloop exit then
+    2000 ms  ." Wrong password." cr
+  loop false ;</pre>
+      <div class="src"><a href="../../forth/net/repl.fs" data-ref="forth/net/repl.fs:login?">forth/net/repl.fs › login?</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Typed without echo, and wiped from memory straight after</li>
+      <li data-step="2">Three tries, two seconds apart, then goodbye</li>
+      <li data-step="3">No password set: port 4001 turns everyone away</li>
+      <li data-step="4">Set it on the console: <code>set-admin-password</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>On the admin door, the session's setup word asks for the password. Read-secret reads a line with echo turned off, so it never appears on the screen. Password-query hashes the guess with the stored salt and count, and compares. Then forget-secret wipes the typed password from the buffer straight away.</p>
+    <p>There are three tries, with a two-second wait after each wrong one, so guessing over the network is painfully slow, on top of the quarter second the hash itself costs. After three, the session says goodbye and closes.</p>
+    <p>Until a password has been set, the admin door turns everyone away. The first password can only be set on the console, with set-admin-password, which asks twice and stores the hash. So the first person who can reach the network never gets the full Forth by default.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-code="11">
+  <h2>Random numbers</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/random.fs" data-step="1">: <span class="w">random</span>  ( -- u )  <span class="c">\ 64 random bits</span>
+  1 drawn +!  drawn 8 random-key @ random-key cell+ @ siphash ;</pre>
+      <div class="src"><a href="../../forth/random.fs" data-ref="forth/random.fs:random">forth/random.fs › random</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">At boot: a 128-bit key from the entropy HAL (virtio-rng; hosted, Linux)</li>
+      <li data-step="2">Then <code>random</code> is SipHash of a counter, under that key</li>
+      <li data-step="3">Salts, TCP sequence numbers, hash-table keys</li>
+      <li data-step="4">Only <code>random.fs</code> calls <code>entropy</code>; everything else uses <code>random</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Security keeps needing numbers an attacker can't predict: password salts, TCP's initial sequence numbers, and the keys for hash tables that outsiders choose entries for.</p>
+    <p>They all come from one word, random. At boot, the system asks the entropy HAL for a hundred and twenty-eight bits of real randomness. On bare metal that's a virtio random number device, which QEMU feeds from the host; on the hosted build, Linux. That becomes a secret key.</p>
+    <p>After that, random is just SipHash of a counter under that key. SipHash is a keyed hash: without the key, its outputs can't be predicted, even from earlier ones. It's fast, and it's the same function used for checksums and hash tables elsewhere.</p>
+    <p>The rule is that only the random file calls the entropy HAL. Everything else asks random.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide" data-code="13">
+  <h2>Before it faces the internet</h2>
+  <ul class="points">
+    <li data-step="1">Port 4001 stays on <code>127.0.0.1</code>, even with its password</li>
+    <li data-step="2">Every <code>docs/tech-debt.md</code> entry marked <b>must fix before public</b> is closed first</li>
+    <li data-step="3">Every server sets <code>io-timeout</code>, and catches <code>-275</code></li>
+    <li data-step="4">New parsers get cases in the hostile test; new protocols, in the attack tests</li>
+  </ul>
+  <pre class="code below" data-step="1">docker run --rm -it -p 127.0.0.1:4000:4000 -p 127.0.0.1:4001:4001 -v "${PWD}:/src" os4 make run</pre>
+  <div class="talk">
+    <p>A few rules hold the line until the system is ready for the open internet.</p>
+    <p>The admin port is published only to your own machine, with the one-two-seven address, even though it has a password. The full Forth can do anything the machine can.</p>
+    <p>The tech debt register marks some entries as must fix before public. No deployment reachable from the internet happens while any of those is open. The network REPL's own entry, which had no login and no session limits, was closed by the work in this lecture.</p>
+    <p>And two habits for new code. Any task serving a remote client sets an IO timeout and catches the pool's limit. And any new parser or protocol gets cases in the hostile test, which throws malformed input at it, and the attack test, which forges and floods.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>A sandbox user types <code>' dup</code>. What happens, and why does it matter that <code>'</code> is not exposed?</li>
+    <li>Why measure the hash's iteration count at run time, and why store it with the hash rather than as a constant?</li>
+    <li>A session ends while holding the dictionary claim halfway through a definition. Trace what puts things right.</li>
+  </ol>
+  <div class="talk">
+    <p>That's the REPL and its security. Terminals are per-task vectors, telnet is a thin translation, doors limit sessions, sessions always clean up, the search order decides what a session can see, and the password and the random numbers rest on standard cryptography in Forth.</p>
+    <p>Three questions to think about: what tick would give a stranger, why the hash's cost is measured rather than fixed, and how a half-finished definition is cleaned up. Next, lecture ten: applications.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

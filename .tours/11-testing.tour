@@ -1,0 +1,71 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "11 · Testing",
+  "description": "The tools behind lecture 11 (docs/course/11-testing.html): transcripts, the test runner, the console driver, filters, the network peer and its scripts, soak, real-tool checks and the course check. About twelve minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 11, Testing**. The tools are in `tools/`: `run-tests.py`, `console-run.py`, `netpeer.py`, `check-course.py`, plus `tcp-check.py` and `ping-check.sh` for checks against real software."
+    },
+    {
+      "file": "tests/exceptions.in",
+      "pattern": "^: risky",
+      "title": "A transcript",
+      "description": "The input, typed line by line; `tests/exceptions.out` is what must come back. Values are checked by hand, and against gforth for standard words, before a `.out` is committed."
+    },
+    {
+      "file": "Makefile",
+      "pattern": "^TEST_HOSTED",
+      "title": "Two builds, one suite",
+      "description": "One command per build, filled in per test with `{disk}`, `{appdisk}`, `{port}` and `{peerport}`. `test` runs `check-course`, `test-hosted` (`tests` and `tests/hosted`) and `test-virt` (`tests` and `tests/baremetal`)."
+    },
+    {
+      "file": "tools/run-tests.py",
+      "pattern": "^def run_test",
+      "title": "The runner",
+      "description": "Per test: the setup commands (format a data disk, make the app disk), the peer from `<name>.peer` in `OS4_PEER`, the command with the `.in` on stdin, a timeout, the `.filter` if any, then an exact comparison and a diff. `main` runs them in a thread pool."
+    },
+    {
+      "file": "tools/console-run.py",
+      "pattern": "^BANNER",
+      "title": "Driving the console",
+      "description": "Input waits for the banner; Ctrl-D ends it; the reboot marker splits it into boots on the same disks; CRs are stripped; the peer starts at the first banner and its output is appended after `--- peer ---`."
+    },
+    {
+      "file": "tests/baremetal/fault.filter",
+      "pattern": "ELR",
+      "title": "Filters",
+      "description": "A sed script per test that masks what changes between builds: here the code address and the registers of a CPU fault's dump. ESR and FAR stay, because they say what kind of fault it was and where."
+    },
+    {
+      "file": "tools/netpeer.py",
+      "pattern": "^class Peer:",
+      "title": "The network peer",
+      "description": "10.0.2.2 on the test's private LAN: raw frames as UDP datagrams, ARP and ping answered throughout, a UDP echo service, and one script per test. The docstring at the top lists the scripts; `main` at the bottom picks one."
+    },
+    {
+      "file": "tools/netpeer.py",
+      "pattern": "^class TcpClient:",
+      "title": "Misbehaving on purpose",
+      "description": "A raw-frame TCP client written for testing, which can drop, reorder and wrap on purpose. Each script is a `script_...` method of `Peer` above (`script_tcp`, `script_tcp_attack`, `script_hostile`, `script_repl`); each prints its findings for the transcript."
+    },
+    {
+      "file": "tests/soak.in",
+      "pattern": "^: growth",
+      "title": "Soak",
+      "description": "The OS measures dictionary space, pooled connections and workers against a baseline after round 1; `tools/netpeer.py soak` runs five rounds of mixed traffic. Every later round must report 0 0 0."
+    },
+    {
+      "file": "tools/tcp-check.py",
+      "pattern": "^CLIENTS",
+      "title": "Real software",
+      "description": "`make tcp-check`: real sockets through QEMU's port forward, the host's TCP against ours. `make ping-check` (`tools/ping-check.sh`) pings the OS with the real `ping` over a TAP device. `tests/reference` checks assembly hot spots against their Forth definitions."
+    },
+    {
+      "file": "tools/check-course.py",
+      "pattern": "^def check_lecture",
+      "title": "The course check",
+      "description": "Excerpts must be real lines, named words must be defined, `data-code` steps must exist, and tour patterns must match (multiline, as CodeTour matches). Run first by `make test`.\n\nThat's the course. Thank you for following it."
+    }
+  ]
+}

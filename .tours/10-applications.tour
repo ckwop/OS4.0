@@ -1,0 +1,77 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "10 · Applications",
+  "description": "The code behind lecture 10 (docs/course/10-applications.html): the app disk, the FAT reader, the file words, include, app start-up, the hello example and os4-app. About twelve minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 10, Applications**: `tools/app-disk.sh` makes the disk, `forth/files.fs` reads it, `forth/app.fs` starts the app, and `examples/hello` is an app."
+    },
+    {
+      "file": "tools/os4-app",
+      "pattern": "^#   os4-app test",
+      "title": "The base and the app",
+      "description": "The image installs the base in `/opt/os4` and this script as `os4-app`. An app repository runs it from the image it pins (`os4:0.9b`): `test`, `run`, `run-hosted`, `disk`."
+    },
+    {
+      "file": "tools/app-disk.sh",
+      "pattern": "mkfs\\.fat -C -F 32",
+      "title": "Making the app disk",
+      "description": "FAT32 (64 MiB, sparse), or FAT16 with one-sector clusters if the app has a `.fat16` file, labelled `OS4APP`. The loop below copies the app's files, skipping hidden ones and the top-level `build` and `tests`."
+    },
+    {
+      "file": "forth/files.fs",
+      "pattern": ": find-app-disk  \\(",
+      "title": "Finding the app disk",
+      "description": "Each disk in turn through `fat-volume?` (above): signature, sector size, cluster size, the layout, the FAT type by cluster count, and the label. All reads go through `fat-byte`, a one-block cache over `blk-read`."
+    },
+    {
+      "file": "forth/files.fs",
+      "pattern": ": next-cluster  \\(",
+      "title": "Chains of clusters",
+      "description": "A FAT entry, 2 or 4 bytes, gives the next cluster; end markers become 0; `?cluster` refuses nonsense. `advance` below counts the clusters walked and throws -37 if a chain loops."
+    },
+    {
+      "file": "forth/files.fs",
+      "pattern": ": walk-path  \\(",
+      "title": "Paths and names",
+      "description": "From the root, one `lookup` per path part. `next-entry` above assembles long names (`lfn-part`, `long-name`) or falls back to `NAME.EXT` (`short-name`); `name-match?` ignores case."
+    },
+    {
+      "file": "forth/files.fs",
+      "pattern": ": open-file  \\(",
+      "title": "The file words",
+      "description": "Each standard word runs its `(word)` under `lock-files` and `catch`, returning the code as an ior. Open files come from a pool of 16 (`new-file`), in `reserve`d memory."
+    },
+    {
+      "file": "forth/files.fs",
+      "pattern": ": include-lines  \\(",
+      "title": "include",
+      "description": "A line at a time into the file's own buffer, interpreted, with a `pause` per line. The file is on the return stack so open definitions can keep their values on the data stack. `note-error` and `include-file` below record `file:line` and restore the input source."
+    },
+    {
+      "file": "forth/app.fs",
+      "pattern": ": boot-app  \\(",
+      "title": "Starting an app",
+      "description": "`app-wordlist` first in the search order and current; `app.fs` included and `main` run under `catch`; an error reported as `app: file:line: ...`. `start-app` (called from `forth/start.fs`) falls back to the network REPL."
+    },
+    {
+      "file": "examples/hello/app.fs",
+      "pattern": ": main  \\(",
+      "title": "hello",
+      "description": "`main` starts `greeter` under `restarting` in its own task and returns. `greeter` sets `io-timeout` and greets each client under `catch`. `greeting.fs` is included at the top."
+    },
+    {
+      "file": "examples/hello/tests/hello.peer",
+      "pattern": "connect 5000",
+      "title": "Testing an app",
+      "description": "`{tools}/netpeer.py ... connect 5000` connects and reports what came back, after `--- peer ---` in the transcript. `make test-app APP=...` (what `os4-app test` runs) runs an app's tests on both builds with the app as each test's app disk."
+    },
+    {
+      "file": "tests/files.in",
+      "pattern": "include",
+      "title": "The base's own tests",
+      "description": "`tests/files` (with `tests/files.app/`, FAT16, including a CRLF file and a long name) covers the file words and `include`; `tests/app` and `tests/app-broken` cover start-up, good and bad.\n\nNext: lecture 11, testing."
+    }
+  ]
+}

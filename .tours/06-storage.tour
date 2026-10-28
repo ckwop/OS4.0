@@ -1,0 +1,77 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "6 · Storage",
+  "description": "The code behind lecture 6 (docs/course/06-storage.html): the block HAL, virtqueues, finding the data disk, block buffers, sync, and crash-safe records. About twelve minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 6, Storage**: `hal/virtio-blk.fs` and `hal/virtio.fs` at the bottom, `forth/blocks.fs` in the middle, `forth/records.fs` on top."
+    },
+    {
+      "file": "forth/blocks.fs",
+      "pattern": "^\\\\ blocks\\.fs",
+      "title": "Three layers",
+      "description": "The file comment states the model: buffers, `update`, `save-buffers`, and `sync`, which also flushes the device. Only this file writes to a disk, and only to the data disk."
+    },
+    {
+      "file": "hal/virtio-blk.fs",
+      "pattern": ": blk-request  \\(",
+      "title": "The block HAL on virtio",
+      "description": "One request: fill the 16-byte header (type, sector), chain header, data and status descriptors (a flush has no data), submit, wait, return the status byte. `blk-read`, `blk-write` and `blk-flush` below turn a bad status into -33 or -34.\n\nThe hosted equivalent is `hal/linux-blk.fs`: `pread64`, `pwrite64` and `fsync` on image files."
+    },
+    {
+      "file": "hal/virtio.fs",
+      "pattern": ": vq-submit  \\(",
+      "title": "Submitting a chain",
+      "description": "Ring entry, `dmb`, index, `dsb`, doorbell. The barriers are Forth words (`dmb` and `dsb` are kernel primitives): the device must see the entry before the index, and both before the doorbell."
+    },
+    {
+      "file": "hal/virtio.fs",
+      "pattern": ": vq-wait-len  \\(",
+      "title": "Waiting",
+      "description": "Poll the used ring, `pause` between looks, and throw -263 after `device-timeout` (5 s). Callers hold the queue's lock (`blocks-lock` for disks) so nobody else submits meanwhile."
+    },
+    {
+      "file": "forth/blocks.fs",
+      "pattern": ": find-data-disk  \\(",
+      "title": "Finding the data disk",
+      "description": "By content: an `OS40DISK` header first, else the first disk without a boot signature (which every FAT disk has). `mount` below reads the header once; `?writable` refuses disks without one (-258) and block 0 (-259)."
+    },
+    {
+      "file": "forth/blocks.fs",
+      "pattern": ": victim  \\(",
+      "title": "Buffers",
+      "description": "Eight buffers with their block, dirty flag and pin count. `victim` picks round robin, skipping pinned buffers, writing a dirty one back first. `(buffer)` and `(block)` below use it."
+    },
+    {
+      "file": "forth/blocks.fs",
+      "pattern": ": \\(sync\\)",
+      "title": "sync",
+      "description": "Write back every dirty buffer, then `blk-flush` the data disk. Everything public holds `blocks-lock`. This is the line between a change that may be lost and one that will not."
+    },
+    {
+      "file": "forth/blocks.fs",
+      "pattern": ": load  \\(",
+      "title": "Sharing, and load",
+      "description": "`load` saves the input source, points it at a block's buffer, and pins that buffer while `interpret` runs (which may pause many times). An error records the block and offset for `.where`."
+    },
+    {
+      "file": "forth/records.fs",
+      "pattern": ": copy-seq  \\(",
+      "title": "Reading a record",
+      "description": "A copy is valid if its length fits and its SipHash checksum holds; its sequence number then says how new it is. `(record@)` below takes the newer valid copy."
+    },
+    {
+      "file": "forth/records.fs",
+      "pattern": ": \\(record!\\)",
+      "title": "Writing a record",
+      "description": "Next sequence number, over the older copy, filled while holding `blocks-lock` (`fill-copy`), then `sync`. A crash mid-write leaves the other copy intact."
+    },
+    {
+      "file": "tools/blocks.py",
+      "pattern": "^def cmd_format",
+      "title": "From the host",
+      "description": "Formats a data disk (the header: magic, version, volume ID, size), and lists or imports screens. Tests use `format --blocks 1024 --volume-id 42`. `tests/blocks`, `tests/persist` (across a reboot) and `tests/records` cover this lecture.\n\nNext: lecture 7, the network."
+    }
+  ]
+}

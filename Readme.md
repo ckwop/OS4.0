@@ -5,7 +5,7 @@ A tiny bare-metal Forth operating system for 64-bit ARM, built to run a MUD: a t
 - Full specification: [docs/brief.md](docs/brief.md)
 - Choices made along the way: [DECISIONS.md](DECISIONS.md)
 - Known shortcuts and gaps: [docs/tech-debt.md](docs/tech-debt.md)
-- How it is put together, as short narrated lectures: [docs/course](docs/course/index.html)
+- How it is put together, as twelve short narrated lectures with code tours for VS Code's CodeTour extension: [docs/course](docs/course/index.html) (open `index.html` in a browser; Edge's "Natural" voices sound best)
 - Notes for AI coding agents: [CLAUDE.md](CLAUDE.md)
 
 ### Prerequisites
@@ -146,7 +146,7 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 9 | Network REPL | Done |
 | 9a | Hardened base | Done |
 | 9b | Applications: an app is files on a read-only FAT app disk, `app.fs` its entry point; apps live in their own repositories and build against a versioned `os4` image | Done |
-| 9c | The course: narrated lectures on how the base is put together (`docs/course`), code tours (`.tours`), checked against the code by `make test` | In progress |
+| 9c | The course: narrated lectures on how the base is put together (`docs/course`), code tours (`.tours`), checked against the code by `make test` | Done |
 | 10 | MUD engine (in its own repository, `os4-mud`, as the first application) | Not started |
 | 11 | Fargate deployment | Not started |
 | 12 | EC2 AMI | Not started |

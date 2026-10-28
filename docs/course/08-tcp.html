@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network II: TCP · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="08-tcp">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">8 · Network II: TCP</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/08-tcp.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 8 of 12 · about 14 minutes</div>
+  <h1>Network II: TCP</h1>
+  <p class="lede">A reliable byte stream from unreliable packets, for servers, in about 500 lines of Forth, and hardened against attackers it never meets.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">Connections, the handshake, and counting bytes</li>
+    <li data-step="2">Receiving, sending, loss and closing</li>
+    <li data-step="3">Defences against off-path attackers, and the application's view</li>
+  </ul>
+  <div class="talk">
+    <p>TCP is the protocol behind telnet, the web, and nearly everything else. It turns IP's packets, which can be lost, duplicated or reordered, into a reliable stream of bytes in each direction. OS 4.0's TCP is about five hundred lines of Forth, and it's built for servers: it accepts connections, it doesn't make them.</p>
+    <p>We'll look at how a connection is set up, and at one design choice that keeps the code simple: counting bytes instead of juggling sequence numbers. Then how segments are received and sent, how lost ones are resent, and how a connection closes.</p>
+    <p>Finally, how it defends itself against attackers who can send packets but can't see the conversation, and what all of it looks like to the application.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>The design, in its own words</h2>
+  <pre class="code" data-src="forth/net/tcp.fs" data-step="1"><span class="c">\ net/tcp.fs: TCP, for servers. LISTEN on a port; connections that complete the</span>
+<span class="c">\ handshake queue for ACCEPT-CONNECTION. The application uses SEND, SEND-LINE,</span>
+<span class="c">\ GET-LINE and CLOSE-CONNECTION, sleeping while it waits; the network task wakes</span>
+<span class="c">\ it when something changes. Lost segments are resent, go-back-N, with an</span>
+<span class="c">\ exponentially growing timeout. Out-of-order segments are dropped: the sender</span>
+<span class="c">\ resends them.</span></pre>
+  <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:listen">forth/net/tcp.fs</a></div>
+  <ul class="points below">
+    <li data-step="2">The network task handles segments; application tasks sleep until woken</li>
+    <li data-step="3">Simple where it can be: go-back-N, in-order only</li>
+    <li data-step="4">Careful where it must be: every number from outside is checked</li>
+  </ul>
+  <div class="talk">
+    <p>The top of the TCP file describes the whole design in six lines, so let's start there.</p>
+    <p>An application listens on a port. Connections that complete the handshake wait in a queue until the application accepts them. It then sends and receives lines, and closes. Whenever it has to wait, it sleeps, and the network task wakes it when something changes. That's the split: the network task does all the protocol work, and application tasks just sleep and wake.</p>
+    <p>Two simplifications keep the code small. Lost segments are resent go-back-N: everything from the oldest unacknowledged byte goes again. And segments that arrive out of order are dropped rather than buffered; the sender will resend them. Both cost a little speed on a lossy network, and save a great deal of code.</p>
+    <p>Where it can't be simple is in what it believes. Every number in a segment comes from outside, and is checked before it's used.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>Opening: the handshake, and the accept queue</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 280" role="img" aria-label="Client sends SYN; OS answers SYN-ACK and the connection is half open; client sends ACK; the connection is established and queued for accept">
+        <defs><marker id="t1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <text x="60" y="24" text-anchor="middle">client</text><text x="380" y="24" text-anchor="middle">OS 4.0</text>
+        <line class="line" x1="60" y1="34" x2="60" y2="270"/><line class="line" x1="380" y1="34" x2="380" y2="270"/>
+        <path class="line" d="M 60 60 L 376 90" marker-end="url(#t1)"/><text x="200" y="64" class="mono">SYN</text>
+        <path class="line" d="M 380 110 L 64 140" marker-end="url(#t1)"/><text x="190" y="116" class="mono">SYN-ACK</text>
+        <text x="392" y="104" class="small">syn-received:</text><text x="392" y="120" class="small">half open</text>
+        <path class="line" d="M 60 160 L 376 190" marker-end="url(#t1)"/><text x="200" y="164" class="mono">ACK</text>
+        <text x="392" y="190" class="small">established,</text><text x="392" y="206" class="small">queued</text>
+        <rect class="box accent" x="270" y="226" width="190" height="34" rx="6"/><text x="365" y="248" text-anchor="middle" class="mono">accept-connection</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="1">SYN, SYN-ACK, ACK: all in the network task</li>
+      <li data-step="2">The application only ever sees established connections</li>
+      <li data-step="3">Empty queue: the listener <code>stop</code>s; <code>enqueue</code> wakes it</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="forth/net/tcp.fs">: <span class="w">accept-connection</span>  ( port -- conn )  <span class="c">\ wait for the next connection on port</span>
+  listener-of dup 0= if -24 throw then
+  begin dup cell+ @ 0= while  up@ over 2 cells + !  stop  repeat
+  0 over 2 cells + !
+  cell+ dup @ tuck c.next @ swap !
+  up@ over c.owner ! ;</pre>
+    <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:accept-connection">forth/net/tcp.fs › accept-connection</a></div>
+  </div>
+  <div class="talk">
+    <p>A TCP connection opens with a three-way handshake. The client sends a SYN, a segment asking to synchronise. The server answers with a SYN-ACK: its own SYN, and an acknowledgement of the client's. At that point the connection is half open, in a state called syn-received. When the client's final ACK arrives, the connection is established.</p>
+    <p>All of that happens in the network task. The application doesn't see a connection until it's fully established: only then is it added to the listening port's queue.</p>
+    <p>Accept-connection takes the next one from that queue. If the queue is empty, the task records itself as the one waiting, and stops. When the network task queues a new connection, it wakes the waiting task, which takes the connection and records itself as its owner, the task to wake whenever anything changes on it.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Counting bytes, not sequence numbers</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/net/tcp.fs" data-step="1">1 cells field <span class="w">c.tx-acked</span>          <span class="c">\ bytes they have acknowledged</span>
+1 cells field <span class="w">c.tx-sent</span>           <span class="c">\ bytes sent, acknowledged or not</span>
+1 cells field <span class="w">c.tx-queued</span>         <span class="c">\ bytes the application has given us</span>
+1 cells field <span class="w">c.rx-in</span>             <span class="c">\ bytes received in order</span>
+1 cells field <span class="w">c.rx-out</span>            <span class="c">\ bytes the application has taken</span></pre>
+      <pre class="code below" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">snd-nxt</span>  ( conn -- seq )
+  dup c.iss @ 1+ over c.tx-sent @ +  swap fin-sent flag? if 1+ then  $ffffffff and ;</pre>
+      <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:snd-nxt">forth/net/tcp.fs › snd-nxt</a></div>
+    </div>
+    <div class="figure" data-step="3">
+      <svg viewBox="0 0 400 200" role="img" aria-label="The transmit ring: acknowledged, then in flight up to sent, then unsent up to queued">
+        <rect class="box green" x="10" y="40" width="110" height="50"/><text x="65" y="70" text-anchor="middle" class="small">acknowledged</text>
+        <rect class="box accent" x="120" y="40" width="130" height="50"/><text x="185" y="70" text-anchor="middle" class="small">in flight</text>
+        <rect class="box blue" x="250" y="40" width="130" height="50"/><text x="315" y="70" text-anchor="middle" class="small">unsent</text>
+        <text x="120" y="112" text-anchor="middle" class="mono">acked</text><text x="250" y="112" text-anchor="middle" class="mono">sent</text><text x="380" y="112" text-anchor="end" class="mono">queued</text>
+        <text x="10" y="150" class="small">8 KiB transmit ring, 4 KiB receive ring;</text>
+        <text x="10" y="170" class="small">a count, masked, is a position in its ring</text>
+      </svg>
+    </div>
+  </div>
+  <div class="talk">
+    <p>On the wire, TCP numbers every byte with a thirty-two-bit sequence number that starts at a random point and wraps round. Comparing those numbers is a notorious source of bugs.</p>
+    <p>So inside, a connection counts bytes instead, from zero, in sixty-four-bit cells that never wrap. On the sending side: bytes the other end has acknowledged, bytes sent, and bytes the application has queued. On the receiving side: bytes received in order, and bytes the application has taken.</p>
+    <p>Everything else follows from the differences. Sent minus acknowledged is what's in flight. Queued minus sent is what's still to send. And a count, masked to the ring's size, is a position in the connection's transmit or receive ring.</p>
+    <p>Sequence numbers are only made at the edge, when a segment goes out or comes in. Send-next is the initial sequence number, plus one for the SYN, plus the bytes sent, plus one more if our FIN has gone, wrapped to thirty-two bits.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="6">
+  <h2>Receiving a segment</h2>
+  <pre class="code" data-src="forth/net/tcp.fs" data-step="1">: <span class="w">segment-in</span>  ( conn -- )
+  &gt;r
+  f-rst i-flag? if  r&gt; rst-in exit  then
+<span class="band tint1" data-label="handshake" data-step="1">  r@ c.state @ syn-received = if
+    f-syn i-flag? if  r@ dup c.iss @ f-syn f-ack or control-out  r&gt; drop exit  then
+    f-ack i-flag? 0=  i-ack @ r@ c.iss @ 1+ $ffffffff and &lt;&gt;  or if  r&gt; drop exit  then
+    established r@ c.state !  0 r@ c.rexmit !  base-rto r@ c.rto !  0 r@ c.retries !
+    r@ dup c.lport @ listener-of ?dup if enqueue else drop then
+  then
+</span><span class="band tint2" data-label="acknowledgement" data-step="2">  f-syn i-flag? if  r@ ack-now flag+  r&gt; tcp-output exit  then
+  f-ack i-flag? 0= if  r&gt; drop exit  then
+  r@ ack-ok? 0= if  r&gt; challenge exit  then
+  i-wnd @ r@ c.snd-wnd !
+  r@ acked
+  r@ fin-acked-in
+  r@ c.state @ closed = if  r&gt; drop exit  then      <span class="c">\ released, maybe recycled</span>
+</span><span class="band tint3" data-label="data, FIN, reply" data-step="3">  r@ receiving? if r@ data-in then
+  r@ fin-in
+  r@ c.state @ closed = if  r&gt; drop exit  then
+  r&gt; tcp-output ;
+</span></pre>
+  <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:segment-in">forth/net/tcp.fs › segment-in</a></div>
+  <div class="talk">
+    <p>Every segment for an existing connection goes through segment-in. It's the heart of TCP, and it reads from top to bottom. A reset is handled first, with care, as we'll see later.</p>
+    <p>In blue, the handshake. If the connection is still half open, a repeated SYN means our SYN-ACK was lost, so it's sent again. Otherwise this must be the ACK that completes the handshake, acknowledging exactly our SYN. If it is, the connection is established and queued for the application.</p>
+    <p>In green, the acknowledgement. A SYN on an established connection is suspicious, and just gets an ACK. A segment without an ACK is dropped. An acknowledgement outside the range we could have sent gets a challenge, coming later. Otherwise, note how much the other end will now take, move the acknowledged count on, and see whether that finished our FIN.</p>
+    <p>In orange, the rest: take any data, take a FIN if there is one, and finally send whatever is now owed: data, a FIN, or an ACK.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="7">
+  <h2>In order, or not at all</h2>
+  <pre class="code" data-src="forth/net/tcp.fs" data-step="1">: <span class="w">data-in</span>  ( conn -- )  <span class="c">\ in-order data, as much as fits; anything else is dropped</span>
+  i-len @ 0= if drop exit then
+  dup fin-received flag? if drop exit then
+  i-seq @ over rcv-nxt &lt;&gt; if  ack-now flag+ exit  then   <span class="c">\ say where we are</span>
+  dup rx-room i-len @ min                           ( conn n )
+  dup 0 ?do
+    i-data @ i + c@  2 pick c.rx-in @ i + /rx 1- and  3 pick c.rx + c!
+  loop
+  over c.rx-in +!
+  dup ack-now flag+  wake-owner ;</pre>
+  <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:data-in">forth/net/tcp.fs › data-in</a></div>
+  <ul class="points below">
+    <li data-step="2">Not the next byte we expect? Drop it, and ACK where we are</li>
+    <li data-step="3">Take only what fits in the ring: the window we advertised</li>
+    <li data-step="4">Then owe an ACK, and wake the application</li>
+  </ul>
+  <div class="talk">
+    <p>Here's the in-order rule in practice. Data-in accepts a segment only if it starts exactly at the next byte we expect. Anything else, a duplicate or a segment that skipped ahead, is dropped, and we owe the sender an ACK saying where we really are. That ACK is what prompts it to resend.</p>
+    <p>A segment that does start in the right place is copied into the receive ring, as much as fits. The window we advertise to the other end is the room in that ring, so a well-behaved sender never sends more. A badly behaved one just loses the excess.</p>
+    <p>Finally, an ACK is owed for the new data, and the owning task is woken: there may now be a whole line for it to read.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="8">
+  <h2>Sending: what the window allows</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/net/tcp.fs" data-step="1">: <span class="w">sendable</span>  ( conn -- n )
+  dup unsent  over c.snd-wnd @ 2 pick in-flight - 0 max  min  swap c.mss @ min ;</pre>
+      <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:sendable">forth/net/tcp.fs › sendable</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The least of: what's unsent, the room left in their window, one segment</li>
+      <li data-step="2"><code>tcp-output</code> sends segments while there is any, then the FIN, then a bare ACK if owed</li>
+      <li data-step="3">A closed window: the retransmit timer probes it</li>
+      <li data-step="4">Telnet output follows Nagle's rule: one small segment in flight at a time</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Sending is governed by a single question: how much may go now? Sendable answers it. The least of three things: what the application has queued but not yet sent, the room left in the other end's window, which is the window it advertised minus what's already in flight, and one segment's worth, the largest the other end said it accepts.</p>
+    <p>TCP output sends segments of that size until sendable is zero. Once everything queued has gone, and if the application has closed, it sends our FIN. And if an ACK is owed and nothing else carried it, it sends a bare ACK.</p>
+    <p>If the other end's window is shut, with data waiting, the retransmission timer is armed anyway, and when it fires it sends a single byte to probe whether the window has opened.</p>
+    <p>One refinement lives in the telnet layer: output waits while a small segment is still unacknowledged, which is Nagle's rule. Typing and echoing a character at a time would otherwise make a segment per keystroke.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="9">
+  <h2>When segments are lost</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/net/tcp.fs" data-step="1">: <span class="w">retransmit</span>  ( conn -- )  <span class="c">\ from the oldest unacknowledged byte, with a longer timeout</span>
+  dup c.retries @
+  over c.state @ syn-received = if max-syn-retries @ else max-retries then
+  &lt; 0= if                                           <span class="c">\ give up</span>
+    dup dup snd-nxt f-rst control-out  release-conn exit
+  then
+  1 over c.retries +!
+  dup c.rto @ 2* max-rto min over c.rto !
+  <span class="c">…</span>
+  dup c.tx-acked @ over c.tx-sent !</pre>
+      <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:retransmit">forth/net/tcp.fs › retransmit</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="2">The timeout starts at 1 s and doubles, up to 60 s</li>
+      <li data-step="3">Go-back-N: "sent" goes back to "acknowledged", and sending starts again</li>
+      <li data-step="4">After 8 tries (4 for a half-open connection), reset and give up</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Each connection has a retransmission timer, armed whenever data is in flight. The network task checks the timers on every pass of its loop. If one expires, retransmit runs.</p>
+    <p>First, has this connection tried too often? After eight attempts, or four for one that's still half open, it sends a reset and gives up. Otherwise it counts the attempt, and doubles the timeout, starting at one second and capped at a minute. Doubling is what keeps a struggling network from being flooded with retries.</p>
+    <p>Then the go-back-N step, which is the last line here, and it's the whole of it. Set the sent count back to the acknowledged count. As far as the connection is concerned, everything in flight was never sent, so the next call to TCP output sends it again from the oldest unacknowledged byte. Counting bytes makes this a single store.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="10">
+  <h2>Closing</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 260" role="img" aria-label="Close states: we close first through fin-wait-1, fin-wait-2 and time-wait; they close first through close-wait and last-ack">
+        <defs><marker id="t2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <rect class="box green" x="160" y="10" width="150" height="36" rx="6"/><text x="235" y="33" text-anchor="middle" class="mono">established</text>
+        <text x="20" y="80" class="small">we close first</text>
+        <rect class="box" x="20" y="90" width="150" height="34" rx="6"/><text x="95" y="112" text-anchor="middle" class="mono">fin-wait-1</text>
+        <rect class="box" x="20" y="150" width="150" height="34" rx="6"/><text x="95" y="172" text-anchor="middle" class="mono">fin-wait-2</text>
+        <rect class="box accent" x="20" y="210" width="150" height="34" rx="6"/><text x="95" y="232" text-anchor="middle" class="mono">time-wait 2 s</text>
+        <text x="300" y="80" class="small">they close first</text>
+        <rect class="box" x="300" y="90" width="150" height="34" rx="6"/><text x="375" y="112" text-anchor="middle" class="mono">close-wait</text>
+        <rect class="box" x="300" y="150" width="150" height="34" rx="6"/><text x="375" y="172" text-anchor="middle" class="mono">last-ack</text>
+        <rect class="box faint" x="300" y="210" width="150" height="34" rx="6"/><text x="375" y="232" text-anchor="middle" class="mono">closed</text>
+        <path class="line" d="M 190 46 L 110 88" marker-end="url(#t2)"/><path class="line" d="M 280 46 L 360 88" marker-end="url(#t2)"/>
+        <path class="line" d="M 95 124 L 95 146" marker-end="url(#t2)"/><path class="line" d="M 95 184 L 95 206" marker-end="url(#t2)"/>
+        <path class="line" d="M 375 124 L 375 146" marker-end="url(#t2)"/><path class="line" d="M 375 184 L 375 206" marker-end="url(#t2)"/>
+      </svg>
+    </div>
+    <div>
+      <pre class="code" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">close-connection</span>  ( conn -- )
+  dup app-closed flag+
+  dup c.state @ closed = if  free-conn exit  then
+  linger-ms deadline over c.timeout !
+  dup fin-queued flag+  tcp-output ;</pre>
+      <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:close-connection">forth/net/tcp.fs › close-connection</a></div>
+    </div>
+  </div>
+  <ul class="points below">
+    <li data-step="3">The FIN goes after everything queued; a minute to get it out, then a reset</li>
+    <li data-step="4">Every state that waits on the other end has a timeout</li>
+  </ul>
+  <div class="talk">
+    <p>Each direction of a connection closes separately, with a FIN. If we close first, the connection passes through fin-wait-one, until our FIN is acknowledged, then fin-wait-two, until theirs arrives, then time-wait for two seconds, to catch any stragglers. If they close first, we go through close-wait, while the application finishes, and last-ack, until our FIN is acknowledged.</p>
+    <p>For the application, it's one word. Close-connection marks the connection as given up by the application, sets a linger deadline of one minute, and queues a FIN. The FIN only goes once everything queued before it has been sent.</p>
+    <p>The important detail is that every state that waits for the other end has a time limit. A client that never acknowledges, or never sends its own FIN, can't hold a connection record for ever: after the linger time, or the fin-wait time, it's reset and recycled.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="11">
+  <h2>Defences against off-path attackers</h2>
+  <pre class="code" data-src="forth/net/tcp.fs" data-step="1">: <span class="w">new-iss</span>  ( -- seq )  <span class="c">\ RFC 6528: a clock, plus a keyed hash of the addresses and ports</span>
+  ip-source i-sport @ i-dport @ isn-key tuple-hash  counter 4 rshift +  $ffffffff and ;</pre>
+  <pre class="code below" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">rst-in</span>  ( conn -- )
+  i-seq @ over rcv-nxt = if  release-conn exit  then
+  i-seq @ over rcv-nxt - $ffffffff and  over rx-room u&lt; if challenge else drop then ;</pre>
+  <pre class="code below" data-src="forth/net/tcp.fs" data-step="3">: <span class="w">room?</span>  ( -- flag )  <span class="c">\ a new connection is within the caps</span>
+  conns @ count-list max-conns @ &lt;  half-open max-half-open @ &lt; and ;</pre>
+  <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:rst-in">forth/net/tcp.fs › new-iss, rst-in, room?</a></div>
+  <div class="cols even below">
+    <ul class="points">
+      <li data-step="1">Unguessable initial sequence numbers</li>
+      <li data-step="2">A reset counts only at exactly the next byte; near it, a challenge ACK</li>
+    </ul>
+    <ul class="points">
+      <li data-step="3">Caps: 256 connections, 64 half open; a SYN beyond them is dropped</li>
+      <li data-step="4">A keyed hash table: nobody can aim every connection at one bucket</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>An off-path attacker can send packets with forged addresses, but can't see the conversation. TCP's defence is that a forged segment must carry sequence numbers the attacker can't know. So they must be unguessable. New-iss makes the initial sequence number from a clock plus a keyed hash of the connection's addresses and ports, as RFC sixty-five twenty-eight recommends. The key is random, drawn at boot.</p>
+    <p>Resets are the next target, because a forged reset kills a connection. Following RFC fifty-nine sixty-one, a reset only counts if its sequence number is exactly the next byte we expect. One that's merely close gets a challenge ACK instead, which a genuine peer answers with an exact reset, and an attacker never sees.</p>
+    <p>Then there are floods. The caps allow two hundred and fifty-six live connections and sixty-four half-open ones; a SYN beyond that is simply dropped, and a real client will retry. And connections are found through a hash table keyed with another random key, so an attacker can't choose ports that all land in one bucket and slow every lookup to a crawl.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-code="12">
+  <h2>The application's view</h2>
+  <pre class="code" data-src="tests/tcp.in" data-step="1">: serve ( conn -- ) begin pad 256 2 pick get-line dup 0&lt; 0= while pad swap 2 pick send-line repeat drop close-connection  1 served +! ;
+: line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;</pre>
+  <div class="src"><a href="../../tests/tcp.in">tests/tcp.in</a></div>
+  <pre class="code below" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">io-wait</span>   ( -- )  <span class="c">\ sleep until woken; throw -273 if the time is up</span>
+  up@ cur-conn @ c.owner !
+  io-until @ ?dup if  dup expired? if drop -273 throw then  stop-until  else  stop  then ;</pre>
+  <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:io-wait">forth/net/tcp.fs › io-wait</a></div>
+  <ul class="points below">
+    <li data-step="1">A line echo server in two lines: a task per client from the pool</li>
+    <li data-step="2">Waiting words sleep until woken, or until <code>io-timeout</code>: then -273</li>
+    <li data-step="3">A server must set <code>io-timeout</code>: a client that stops reading can't hold a task</li>
+  </ul>
+  <div class="talk">
+    <p>All that machinery disappears behind a few words. Here's the line echo server from the TCP test, in two lines. Line-server listens on port five thousand, and for ever accepts a connection and spawns a pooled task to serve it. Serve reads lines with get-line and sends each one back with send-line, until the client finishes, then closes.</p>
+    <p>Get-line, send and the rest all wait the same way, through io-wait. The task records itself as the connection's owner and stops; the network task wakes it when data arrives, or when room opens up to send.</p>
+    <p>There's a time limit on every wait too. If the task's io-timeout is set, a wait that runs past it throws <span data-say="minus two seven three">-273</span>. Any task serving a remote client must set one, because otherwise a client that connects and then goes silent, or stops reading, would hold that task for ever. The network REPL sets ten minutes for idle sessions.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide" data-code="12">
+  <h2>Try it</h2>
+  <pre class="code" data-step="1">: serve  ( conn -- )
+  begin pad 256 2 pick get-line dup 0&lt; 0= while pad swap 2 pick send-line repeat
+  drop close-connection ;
+: line-server  ( -- )  5000 listen begin 5000 accept-connection ['] serve spawn drop again ;
+task server  ' line-server server start
+.tcp                                   <span class="c">\ connections live and pooled</span></pre>
+  <p class="lede" style="margin-top:16px">Boot with the port forwarded and published to your machine only:<br><code>docker run --rm -it -p 127.0.0.1:5000:5000 -v "${PWD}:/src" os4 make run PORTS="4000 4001 5000"</code><br>then <code>telnet localhost 5000</code> from Windows.</p>
+  <div class="talk">
+    <p>To try it, boot with port five thousand forwarded by QEMU and published by Docker, to your own machine only. Type in the echo server, start it in a task of its own, and connect from Windows with telnet. Every line you send comes back.</p>
+    <p>Dot-TCP shows how many connections are live and how many records are pooled for reuse. Connect a few clients at once and watch the numbers.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>Out-of-order segments are dropped. On what kind of network does that cost the most, and how would you measure it?</li>
+    <li>Why does a reset near, but not exactly at, the next sequence number get a challenge ACK rather than being ignored?</li>
+    <li><code>serve</code> forgets to set <code>io-timeout</code>. Write the client that exploits it.</li>
+  </ol>
+  <div class="talk">
+    <p>That's TCP. Connections are queued only when established, bytes are counted rather than sequence-numbered, segments are taken in order, lost ones are resent go-back-N with a doubling timeout, every waiting state has a limit, and forged segments must guess numbers they can't see.</p>
+    <p>Three questions to think about: when dropping out-of-order segments hurts, why challenge ACKs exist, and how to attack a server that never times out. Next, lecture nine: the REPL and security.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

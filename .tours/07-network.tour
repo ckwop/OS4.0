@@ -1,0 +1,71 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "7 · Network I: up to UDP",
+  "description": "The code behind lecture 7 (docs/course/07-network.html): the network HAL, the network task, Ethernet, the checksum, ARP, IP, ICMP and UDP, and how packets are sent. About twelve minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 7, Network I**. The stack is `forth/net/*.fs`, loaded in the order of the `bootfile` lines in `kernel.s`: `eth`, `arp`, `ip`, `icmp`, `udp`, then `tcp` and `telnet` (lecture 8), then `net.fs` with the network task."
+    },
+    {
+      "file": "forth/net/net.fs",
+      "pattern": ": net-loop",
+      "title": "The network task",
+      "description": "Timers, then a frame if one is waiting (each under its own `catch`), else sleep a tick. `start-net` runs it under `restarting` in `net-task`."
+    },
+    {
+      "file": "hal/virtio-net.fs",
+      "pattern": ": net-poll  \\(",
+      "title": "The network HAL",
+      "description": "64 receive buffers on queue 0, posted at start-up by `net-open`; `net-poll` copies a used one out and posts it again. `net-send` above sends one frame on queue 1 and waits. Hosted: `hal/linux-net.fs` carries frames as UDP datagrams."
+    },
+    {
+      "file": "forth/net/net.fs",
+      "pattern": ": frame-in  \\(",
+      "title": "Every frame starts here",
+      "description": "Long enough for an Ethernet header? Then ARP or IPv4 by type; anything else is ignored."
+    },
+    {
+      "file": "forth/net/eth.fs",
+      "pattern": ": n16@  \\(",
+      "title": "Byte order and framing",
+      "description": "Network byte order is big-endian; these words read and write it a byte at a time. Below: IPv4 address notation (`ip`, `.ip`), this machine's addresses, the Ethernet offsets, `tx-frame` and `rx-frame`, and `eth-send`."
+    },
+    {
+      "file": "forth/net/eth.fs",
+      "pattern": ": sum16  \\(",
+      "title": "The Internet checksum",
+      "description": "Sum 16-bit words, fold the carries, invert. A packet with a correct checksum field sums to 0. `pseudo-sum` in `ip.fs` adds UDP's and TCP's pseudo-header."
+    },
+    {
+      "file": "forth/net/arp.fs",
+      "pattern": ": resolve   \\(",
+      "title": "ARP",
+      "description": "The next hop (the gateway if the address is off our network), the 8-entry cache, or a broadcast request and 0. `arp-learn` above refuses group MACs and impossible sources; `arp-in` answers requests for our address."
+    },
+    {
+      "file": "forth/net/ip.fs",
+      "pattern": ": ip-check  \\(",
+      "title": "IP's checks",
+      "description": "Version, header length, checksum, total length, fragments, destination, source: every length checked against the ones around it before use. `ip-in` below learns the sender's MAC (if on-link) and dispatches by protocol."
+    },
+    {
+      "file": "forth/net/icmp.fs",
+      "pattern": ": icmp-in  \\(",
+      "title": "ICMP",
+      "description": "Echo requests get replies; replies to our own `ping` are noted in `pong`. `unreachable` above tells a sender a protocol or port has no handler (never for a broadcast). The last line registers the handler with IP."
+    },
+    {
+      "file": "forth/net/udp.fs",
+      "pattern": ": udp-bind    \\(",
+      "title": "UDP",
+      "description": "A table of 16 ports and handlers. `udp-in` below checks the length and (if present) the checksum, then calls the handler with the data, or answers port unreachable. The echo service is at the end of the file."
+    },
+    {
+      "file": "forth/net/udp.fs",
+      "pattern": ": udp-send  \\(",
+      "title": "Sending",
+      "description": "`(udp-send)` above builds the datagram in place in `tx-frame`, computes the checksum, and calls `ip-send`, which fills in IP and Ethernet. All under `tx-lock` (declared in `eth.fs`). False: the MAC was not known yet; try again.\n\n`tests/ip`, `tests/net` (a `ping` peer), `tests/udp` and `tests/hostile` cover this lecture. Next: lecture 8, TCP."
+    }
+  ]
+}

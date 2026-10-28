@@ -1,0 +1,343 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Network I · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="07-network">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">7 · Network I: up to UDP</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/07-network.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 7 of 12 · about 13 minutes</div>
+  <h1>Network I: up to UDP</h1>
+  <p class="lede">A network stack in about 400 lines of Forth: Ethernet frames, ARP, IP, ping, and UDP datagrams.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">The network HAL, and the task that receives every frame</li>
+    <li data-step="2">Ethernet, byte order, the Internet checksum, ARP and IP</li>
+    <li data-step="3">ICMP and UDP, and how packets are sent</li>
+  </ul>
+  <div class="talk">
+    <p>OS 4.0 has its own network stack, written from scratch in Forth. This lecture covers everything below TCP: about four hundred lines that turn raw Ethernet frames into ping replies and UDP datagrams.</p>
+    <p>We'll start with the network HAL and the network task, which receives every frame. Then the layers in turn: Ethernet, with network byte order and the Internet checksum; ARP, which finds the hardware address for an IP address; and IP itself.</p>
+    <p>Then two protocols on top of IP, ICMP for ping and UDP for datagrams, and finally how a packet is built and sent without two tasks treading on each other. Lecture eight does TCP.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>The shape of the stack</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 270" role="img" aria-label="The network task polls the HAL; frame-in hands ARP frames to arp-in and IP frames to ip-in, which dispatches to ICMP, UDP or TCP by protocol number">
+      <defs><marker id="n1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="box blue" x="20" y="200" width="860" height="50" rx="8"/><text x="40" y="230" class="small">the network HAL:</text><text x="180" y="230" class="mono">net-up? net-mac net-send net-poll</text><text x="860" y="230" text-anchor="end" class="small">virtio-net.fs · linux-net.fs</text>
+      <rect class="box green" x="20" y="130" width="220" height="50" rx="8"/><text x="130" y="152" text-anchor="middle" class="mono">net-task</text><text x="130" y="170" text-anchor="middle" class="small">frame-in</text>
+      <rect class="box" x="300" y="130" width="180" height="50" rx="8"/><text x="390" y="160" text-anchor="middle" class="mono">arp-in</text>
+      <rect class="box" x="540" y="130" width="180" height="50" rx="8"/><text x="630" y="160" text-anchor="middle" class="mono">ip-in</text>
+      <rect class="box accent" x="420" y="30" width="140" height="50" rx="8"/><text x="490" y="60" text-anchor="middle" class="mono">icmp-in</text>
+      <rect class="box accent" x="580" y="30" width="140" height="50" rx="8"/><text x="650" y="60" text-anchor="middle" class="mono">udp-in</text>
+      <rect class="box accent" x="740" y="30" width="140" height="50" rx="8"/><text x="810" y="60" text-anchor="middle" class="mono">tcp-in</text>
+      <path class="line" d="M 130 196 L 130 184" marker-end="url(#n1)"/>
+      <path class="line" d="M 240 155 L 296 155" marker-end="url(#n1)"/>
+      <path class="line" d="M 240 165 Q 390 200 536 165" marker-end="url(#n1)"/>
+      <path class="line" d="M 600 130 L 500 84" marker-end="url(#n1)"/>
+      <path class="line" d="M 630 130 L 650 84" marker-end="url(#n1)"/>
+      <path class="line" d="M 660 130 L 800 84" marker-end="url(#n1)"/>
+      <text x="20" y="40" class="small">one task receives everything;</text>
+      <text x="20" y="58" class="small">handlers run in it, one frame at a time</text>
+    </svg>
+  </div>
+  <ul class="points below">
+    <li data-step="2">Incoming: one task, one frame at a time, each under its own <code>catch</code></li>
+    <li data-step="3">Outgoing: any task, building in a shared frame under a lock</li>
+  </ul>
+  <div class="talk">
+    <p>Here's the shape of the whole stack. At the bottom is the network HAL: four words to ask whether there is a network, get its hardware address, send a frame, and poll for a received one.</p>
+    <p>One task, the network task, receives everything. For each frame it calls frame-in, which looks at the Ethernet type and hands the frame to ARP or to IP. IP checks the packet and hands it to a handler chosen by its protocol number: ICMP, UDP or TCP. All of that happens inside the network task, one frame at a time, and each frame is handled under its own catch, as you saw in lecture five.</p>
+    <p>Sending is different. Any task can send: a ping from the console, a UDP reply, a telnet session's output. They all build packets in one shared frame, so they take turns, under a lock.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>The network HAL on virtio</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="hal/virtio-net.fs" data-step="1">: <span class="w">net-poll</span>  ( addr -- len )
+  net-up? 0= if drop 0 exit then
+  rx-vq vq-used? 0= if drop 0 exit then
+  rx-vq vq-take  /net-header - &gt;r              ( addr id )
+  tuck rx-buf /net-header + swap r@ cmove
+  rx-post  r&gt; ;</pre>
+      <div class="src"><a href="../../hal/virtio-net.fs" data-ref="hal/virtio-net.fs:net-poll">hal/virtio-net.fs › net-poll</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">64 receive buffers wait on queue 0</li>
+      <li data-step="2">Poll: copy a used buffer out, give it straight back</li>
+      <li data-step="3">Send: one frame at a time on queue 1, and wait</li>
+      <li data-step="4">Hosted: frames travel as UDP datagrams to a peer</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>On bare metal, the network card is a virtio device, using the same virtqueues as the disk. At start-up the driver gives the device sixty-four receive buffers, so frames can arrive while the system is busy.</p>
+    <p>Polling, shown here, checks whether the device has filled a buffer. If it has, the frame is copied out, past a small virtio header, and the buffer goes straight back to the device for the next frame. If not, it returns zero, and the network task sleeps until the next tick.</p>
+    <p>Sending uses the second queue: copy the frame into the transmit buffer, submit it, and wait for the device to take it.</p>
+    <p>The hosted build has no network card, so its HAL carries each frame as a UDP datagram to a partner program on the host. The tests use exactly that to put a scripted network peer on the other end, as lecture eleven shows.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Every frame starts here</h2>
+  <pre class="code" data-src="forth/net/net.fs" data-step="1">: <span class="w">frame-in</span>  ( len -- )
+  1 frames-in +!
+  dup /eth &lt; if drop exit then
+  rx-frame eth-type + n16@
+  dup type-arp = if  drop rx-frame /eth + swap /eth - arp-in exit  then
+  type-ipv4 = if  /eth - ip-in  else drop then ;</pre>
+  <div class="src"><a href="../../forth/net/net.fs" data-ref="forth/net/net.fs:frame-in">forth/net/net.fs › frame-in</a></div>
+  <ul class="points below">
+    <li data-step="2">Too short for an Ethernet header: dropped</li>
+    <li data-step="3">ARP or IPv4 by the type field; anything else ignored</li>
+    <li data-step="4">Every layer checks lengths before it trusts them</li>
+  </ul>
+  <div class="talk">
+    <p>The network task's loop calls frame-in for every frame it receives. It counts the frame, then checks the first thing anyone attacking the system would try: is the frame even long enough to hold an Ethernet header? If not, it's dropped.</p>
+    <p>Then it reads the type field. ARP frames go to arp-in, IPv4 to ip-in, each given the payload after the header and its length. Anything else, IPv6 for instance, is ignored.</p>
+    <p>That first length check is a pattern you'll see at every layer. Each layer is handed a length, and checks every length it finds inside the packet against it, before using any of them. A frame that claims to be longer than it is can never make the stack read past the end of its buffer.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>Ethernet, and network byte order</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 120" role="img" aria-label="An Ethernet frame: destination MAC 6 bytes, source MAC 6 bytes, type 2 bytes, then the payload">
+      <rect class="box blue" x="20" y="30" width="180" height="50"/><text x="110" y="52" text-anchor="middle">destination</text><text x="110" y="70" text-anchor="middle" class="small">6 bytes</text>
+      <rect class="box blue" x="200" y="30" width="180" height="50"/><text x="290" y="52" text-anchor="middle">source</text><text x="290" y="70" text-anchor="middle" class="small">6 bytes</text>
+      <rect class="box accent" x="380" y="30" width="110" height="50"/><text x="435" y="52" text-anchor="middle">type</text><text x="435" y="70" text-anchor="middle" class="small">2 bytes</text>
+      <rect class="box green" x="490" y="30" width="390" height="50"/><text x="685" y="60" text-anchor="middle">payload: ARP or IP</text>
+      <text x="20" y="104" class="small">offsets 0, 6, 12, then 14: the constants eth-dst, eth-src, eth-type, /eth</text>
+    </svg>
+  </div>
+  <div class="cols even below">
+    <div data-step="2">
+      <pre class="code" data-src="forth/net/eth.fs">: <span class="w">n16@</span>  ( addr -- u )  dup c@ 8 lshift  swap 1+ c@ or ;
+: <span class="w">n16!</span>  ( u addr -- )  over 8 rshift over c!  1+ c! ;</pre>
+      <div class="src"><a href="../../forth/net/eth.fs" data-ref="forth/net/eth.fs:n16@">forth/net/eth.fs › n16@</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="2">Network order: most significant byte first</li>
+      <li data-step="3">ARM is little-endian, so every field goes through <code>n16@ n32@</code></li>
+      <li data-step="4">Fields are named offsets: <code>rx-frame eth-type + n16@</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>An Ethernet frame starts with two six-byte hardware addresses, called MAC addresses, the destination first, then a two-byte type, then the payload.</p>
+    <p>Numbers on the network are sent most significant byte first, which is called network byte order. The ARM processor stores numbers the other way round, least significant byte first. So the stack never reads a network field with an ordinary fetch. It uses these words, which assemble the bytes in the right order: N-sixteen-fetch and store for two-byte fields, and the thirty-two-bit versions built on them.</p>
+    <p>And the fields themselves are just named offsets, constants for the position of each field within its header. Reading the type is: the received frame, plus the type offset, N-sixteen-fetch. Each header file starts with a table of these, which doubles as a picture of the header.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>The Internet checksum</h2>
+  <pre class="code" data-src="forth/net/eth.fs" data-step="1">: <span class="w">sum16</span>  ( sum addr u -- sum' )  <span class="c">\ add the bytes as 16-bit words, padding an odd one</span>
+  begin dup 1 &gt; while  over n16@ &gt;r rot r&gt; + -rot  2 /string  repeat
+  if c@ 8 lshift + else drop then ;
+: <span class="w">fold</span>   ( sum -- u16 )  <span class="c">\ the checksum of a sum</span>
+  begin dup 16 rshift while  dup $ffff and swap 16 rshift +  repeat
+  invert $ffff and ;
+: <span class="w">checksum</span>  ( addr u -- u16 )  0 -rot sum16 fold ;</pre>
+  <div class="src"><a href="../../forth/net/eth.fs" data-ref="forth/net/eth.fs:checksum">forth/net/eth.fs › checksum</a></div>
+  <ul class="points below">
+    <li data-step="2">Add the data as 16-bit words; fold the carries back in; invert</li>
+    <li data-step="3">Checking is the same sum: a packet with the right checksum sums to 0</li>
+    <li data-step="4">Split in two so UDP and TCP can add a pseudo-header</li>
+  </ul>
+  <div class="talk">
+    <p>IP, ICMP, UDP and TCP all protect their headers with the same simple checksum. Here's all of it.</p>
+    <p>Sum sixteen adds the data up as sixteen-bit numbers, padding an odd last byte. Fold takes the sum, adds any carries above sixteen bits back into the bottom, which is called one's complement addition, and inverts the result.</p>
+    <p>The neat property is that checking uses the very same computation. Run the checksum over a packet that includes a correct checksum field, and the answer is zero. So every receiver just checks for zero.</p>
+    <p>It's split into two words for UDP and TCP. Their checksums also cover a pseudo-header, made of the addresses from the IP header, which isn't part of the segment itself. Keeping the sum and the fold separate lets them add the pieces one after another.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="7">
+  <h2>ARP: who has 10.0.2.2?</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/net/arp.fs" data-step="1">: <span class="w">on-link?</span>  ( ip -- flag )  my-ip @ xor netmask @ and 0= ;
+: <span class="w">next-hop</span>  ( ip -- ip' )  dup on-link? 0= if drop gateway @ then ;
+: <span class="w">resolve</span>   ( ip -- mac | 0 )  <span class="c">\ 0 if not yet known; an ARP request has then gone out</span>
+  dup broadcast-ip = if drop broadcast-mac exit then
+  next-hop  dup arp-find ?dup if nip exit then
+  arp-request 0 ;</pre>
+      <div class="src"><a href="../../forth/net/arp.fs" data-ref="forth/net/arp.fs:resolve">forth/net/arp.fs › resolve</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Off our network? Then the gateway's MAC</li>
+      <li data-step="2">An 8-entry cache, replaced round robin</li>
+      <li data-step="3">Not known: broadcast a request, return 0; the caller tries again</li>
+      <li data-step="4">Learns only from packets addressed to us, never a group address</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>To send an IP packet over Ethernet, you need the MAC address of the next machine along the way. ARP, the address resolution protocol, finds it by broadcasting a question to the whole local network: who has this IP address? The owner replies with its MAC.</p>
+    <p>Resolve is where the stack asks. A broadcast address needs no lookup. Otherwise, work out the next hop: if the destination is on our own network, it's the destination itself; if not, it's the gateway. Then look in a small cache of eight recent answers.</p>
+    <p>If it's not in the cache, resolve sends an ARP request and returns zero, meaning not yet. It doesn't wait. The caller tries again a little later, by which time the reply has usually arrived and been learned.</p>
+    <p>Learning is careful too. The cache only learns from packets addressed to us, and never accepts a multicast or broadcast address as anyone's MAC. That makes it harder for a stranger on the network to fill the cache with lies.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="8">
+  <h2>IP: trust nothing, check every length</h2>
+  <pre class="code" data-src="forth/net/ip.fs" data-step="1">: <span class="w">ip-check</span>  ( len -- ihl total true | false )  <span class="c">\ a whole, unfragmented packet for us</span>
+  rx-ip ip-ver-ihl + c@  dup 4 rshift 4 &lt;&gt; if  2drop false exit  then
+  15 and 4 *  2dup &lt;  over /ip &lt; or if  2drop false exit  then      ( len ihl )
+  rx-ip over checksum if  2drop false exit  then
+  rx-ip ip-length + n16@  rot over &lt; if  2drop false exit  then    ( ihl total )
+  2dup &gt; if  2drop false exit  then
+  rx-ip ip-fragment + n16@ $3fff and if  2drop false exit  then
+  rx-ip ip-dst + n32@  dup my-ip @ =  swap broadcast-ip = or 0= if  2drop false exit  then
+  ip-source bad-source? if  2drop false exit  then
+  true ;</pre>
+  <div class="src"><a href="../../forth/net/ip.fs" data-ref="forth/net/ip.fs:ip-check">forth/net/ip.fs › ip-check</a></div>
+  <ul class="points below">
+    <li data-step="2">Version 4; a header length that fits the frame and the minimum</li>
+    <li data-step="3">The header checksum; a total length within the frame and past the header</li>
+    <li data-step="4">No fragments; for us or a broadcast; not from an impossible source</li>
+  </ul>
+  <div class="talk">
+    <p>IP is where the stack is most careful, because every packet from the outside world passes through here. Ip-check reads like a list of rules, and any rule broken drops the packet silently.</p>
+    <p>The version must be four. The header length must fit within the frame, and be at least the minimum of twenty bytes. The header checksum must be right. The total length the packet claims must fit within what actually arrived, and be at least the header's own length.</p>
+    <p>Then: no fragments, because OS 4.0 doesn't reassemble them, and simply refuses them. The destination must be our address or the broadcast address. And the source mustn't be one that no real machine can have, such as our own address, or a multicast address.</p>
+    <p>Only after all that does the packet reach a protocol handler. The hostile-input test sends hundreds of malformed and random frames at exactly these checks.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="9">
+  <h2>Protocols plug in</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/net/ip.fs" data-step="1">: <span class="w">ip-handler!</span>  ( xt protocol -- )  cells ip-handlers + ! ;</pre>
+      <div class="src"><a href="../../forth/net/ip.fs" data-ref="forth/net/ip.fs:ip-handler!">forth/net/ip.fs › ip-handler!</a></div>
+      <pre class="code below" data-src="forth/net/icmp.fs" data-step="2">: <span class="w">icmp-in</span>  ( message len -- )
+  dup /icmp-echo &lt;  if 2drop exit then             <span class="c">\ every ICMP message has 8 bytes of header</span>
+  2dup checksum if 2drop exit then
+  over icmp-type + c@  dup 8 = if drop echo-reply exit then
+  0= if echo-in else 2drop then ;
+' icmp-in proto-icmp ip-handler!</pre>
+      <div class="src"><a href="../../forth/net/icmp.fs" data-ref="forth/net/icmp.fs:icmp-in">forth/net/icmp.fs › icmp-in</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">A table of 256 handlers, by protocol number</li>
+      <li data-step="2">ICMP: answer echo requests (ping), note replies to ours</li>
+      <li data-step="3">A protocol nobody handles: ICMP "protocol unreachable"</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>IP doesn't know about the protocols above it. Instead it has a table of two hundred and fifty-six handlers, one per protocol number, and each protocol file registers itself with ip-handler-store, as the last line of the ICMP code here does.</p>
+    <p>ICMP is the control protocol, best known for ping. Its handler checks the length and the checksum, then looks at the type. Type eight is an echo request, a ping, and gets an echo reply with the same data. Type zero is a reply to one of our own pings, which the ping word is waiting for.</p>
+    <p>If a packet arrives for a protocol that has no handler, the stack replies with an ICMP message saying protocol unreachable, as a well-behaved host should. Likewise, UDP will answer port unreachable for a port that nobody is listening on.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="10">
+  <h2>UDP: datagrams to ports</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/net/udp.fs" data-step="1">7 constant echo-port
+: <span class="w">echo</span>  ( data len -- )  udp-reply drop ;
+: <span class="w">echo-service</span>  ( -- )  ['] echo echo-port udp-bind ;</pre>
+      <div class="src"><a href="../../forth/net/udp.fs" data-ref="forth/net/udp.fs:echo-service">forth/net/udp.fs › echo-service</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1"><code>xt port udp-bind</code>: datagrams to that port go to xt</li>
+      <li data-step="2">Handlers run in the network task: be quick, don't wait</li>
+      <li data-step="3"><code>udp-peer-ip</code>, <code>udp-peer-port</code>, <code>udp-reply</code>: about this datagram</li>
+      <li data-step="4">The checksum is checked if present, and always sent</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>UDP adds port numbers to IP, and a length and a checksum, and that's all: each datagram stands alone, with no connection and no guarantee it arrives.</p>
+    <p>An application binds a port to an execution token. Here's the echo service from the standard, in three lines: bind port seven to a word that sends every datagram straight back with udp-reply.</p>
+    <p>One thing to know about UDP handlers: they run inside the network task, in the middle of receiving. So they must be quick and must never wait. Anything slow should be handed to a task of its own. While a handler runs, words like udp-peer-ip and udp-reply refer to the datagram being handled.</p>
+    <p>On the way in, the checksum is checked if the sender included one; on the way out, one is always sent.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-code="11">
+  <h2>Sending: one frame, one lock</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/net/eth.fs" data-step="1"><span class="c">\ A task that builds and sends a packet holds TX-LOCK from start to finish, as</span>
+<span class="c">\ every sending word below does: building in the shared frames (tx-frame and</span>
+<span class="c">\ ARP's) and sending, which may pause while the device works.</span>
+semaphore tx-lock</pre>
+      <pre class="code below" data-src="forth/net/udp.fs" data-step="2">: <span class="w">udp-send</span>  ( data len port dst-ip dst-port -- flag )  ['] (udp-send) tx-lock locked ;</pre>
+      <div class="src"><a href="../../forth/net/udp.fs" data-ref="forth/net/udp.fs:udp-send">forth/net/udp.fs › udp-send</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Packets are built in place in <code>tx-frame</code>: no copying between layers</li>
+      <li data-step="2">The lock covers building and sending</li>
+      <li data-step="3">A false flag: the MAC wasn't known; an ARP request went out; try again</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Outgoing packets are built in place, in one shared frame buffer called tx-frame. UDP writes its header and data where they'll sit in the final frame; IP writes its header in front; Ethernet fills in the addresses; and the frame goes to the HAL. Nothing is copied from layer to layer.</p>
+    <p>Because that frame is shared, a task holds tx-lock from the first byte it builds to the moment the frame is sent. Sending can pause while the device works, and without the lock another task could start building its own packet over the top. That was once a real risk, written up in the tech debt register; the lock closed it.</p>
+    <p>Notice that udp-send returns a flag. False means the destination's MAC address wasn't known yet, so an ARP request went out instead. The caller waits a moment and tries again, as the ping word does.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h2>Try it on the console</h2>
+  <pre class="code" data-step="1">.net                                   <span class="c">\ address, MAC and gateway</span>
+ip 10.0.2.2 ping                       <span class="c">\ three echo requests</span>
+echo-service                           <span class="c">\ answer UDP echo on port 7</span>
+: heard  ( data len -- )  ." heard: " type cr ;
+' heard 5000 udp-bind                  <span class="c">\ datagrams to port 5000 go to HEARD</span>
+s" hello" 5000 ip 10.0.2.2 7 udp-send drop
+.net-stats                             <span class="c">\ frames in and out</span></pre>
+  <p class="lede" style="margin-top:16px">The OS is 10.0.2.15 on QEMU's user network; the gateway is 10.0.2.2. <code>make ping-check</code> pings it with the real <code>ping</code>.</p>
+  <div class="talk">
+    <p>Boot the bare-metal build and try these. Dot-net shows the address, the MAC and the gateway. Ping the gateway. Start the echo service on port seven.</p>
+    <p>Then bind a port of your own to a word that prints whatever arrives, and send a UDP datagram to the gateway's echo port. Dot-net-stats shows the frames going in and out, and how many ARP requests and pings have been answered.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li><code>resolve</code> returns 0 instead of waiting for the ARP reply. Why not wait? Which task would be waiting, and for whom?</li>
+    <li>A UDP handler calls <code>ms</code> to slow down a noisy client. What happens to everything else on the network?</li>
+    <li>Pick one check in <code>ip-check</code> and describe the attack it stops.</li>
+  </ol>
+  <div class="talk">
+    <p>That's the stack up to UDP. One task receives and dispatches, every layer checks its lengths, ARP resolves without waiting, protocols plug into IP by number, and sending builds in one shared frame under a lock.</p>
+    <p>Three questions to think about: why resolve doesn't wait, what a slow UDP handler costs, and what each of IP's checks protects against. Next, lecture eight: TCP.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>
