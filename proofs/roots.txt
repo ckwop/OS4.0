@@ -1,0 +1,7 @@
+\ Words whose Lean definitions tools/forth2lean.py generates (with all they
+\ call) for the proofs in OS4/. A word named here must exist in the dictionary.
+rot -rot nip tuck 2dup 2drop 2swap 2over
+1+ 1- negate / mod 2* cells cell+ char+
+0<> <> > u> 0>
+?dup abs min max within
+true false

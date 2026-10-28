@@ -1,0 +1,5 @@
+name = "os4proofs"
+defaultTargets = ["OS4"]
+
+[[lean_lib]]
+name = "OS4"
