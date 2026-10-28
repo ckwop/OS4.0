@@ -473,7 +473,8 @@ class Peer:
         NAME close, NAME gone (wait for the OS to close), sleep SECONDS, and
         # comments. A client that connects again gets a fresh port, so it can
         come back after the OS reboots. What each client receives is printed
-        when a step waits on it, up to the end of what it waited for."""
+        when a step waits on it, up to the end of what it waited for. ESC is
+        written \\e, both in what is printed and in what a step waits for."""
         if not self.find_os():
             print("peer: no ARP reply from 10.0.2.15", flush=True)
             return
@@ -518,11 +519,12 @@ class Peer:
             elif c is None:
                 print(f"peer: {name}: no such client for {step!r}", flush=True)
             elif action == ">":
-                print(f"peer: {name}> {rest}", flush=True)
+                print(f"peer: {name}> {rest}".replace("\x1b", "\\e"), flush=True)
                 c.send_reliably(rest.encode() + b"\r\n")
             elif action == "?":
-                if c.wait_for(lambda: rest.encode() in c.received[c.shown:], 20):
-                    show(name, c, c.received.index(rest.encode(), c.shown) + len(rest))
+                marker = rest.replace("\\e", "\x1b").encode()
+                if c.wait_for(lambda: marker in c.received[c.shown:], 20):
+                    show(name, c, c.received.index(marker, c.shown) + len(marker))
                 else:
                     show(name, c)
                     print(f"peer: {name}: no {rest!r}", flush=True)
