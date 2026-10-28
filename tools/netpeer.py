@@ -470,7 +470,8 @@ class Peer:
     def script_players(self):
         """Several telnet clients driven by a script file, one step a line:
         NAME connect [PORT], NAME> TEXT (send a line), NAME? TEXT (wait for it),
-        NAME close, NAME gone (wait for the OS to close), sleep SECONDS, and
+        NAME close, NAME gone (wait for the OS to close), NAME deaf (stop
+        reading and acknowledging, as a stuck client), sleep SECONDS, and
         # comments. A client that connects again gets a fresh port, so it can
         come back after the OS reboots. What each client receives is printed
         when a step waits on it, up to the end of what it waited for. ESC is
@@ -537,6 +538,10 @@ class Peer:
                 c.close()
                 show(name, c)
                 print(f"peer: {name} {'closed by the OS' if c.closed else 'not closed'}", flush=True)
+            elif action == "deaf":             # stop reading: nothing more it gets is shown
+                del clients[name]
+                print(f"peer: {name} stops reading", flush=True)
+                c = None
             else:
                 print(f"peer: unknown step {step!r}", flush=True)
             if c is not None:
