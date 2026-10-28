@@ -6,7 +6,7 @@
 <title>Tasks · OS 4.0 course</title>
 <link rel="stylesheet" href="course.css">
 </head>
-<body>
+<body data-tour="05-tasks">
 
 <header class="top">
   <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">5 · Tasks</span>
@@ -17,7 +17,7 @@
 <main class="stage">
 
 <!-- 1 -->
-<section class="slide">
+<section class="slide" data-code="1">
   <div class="kicker">Lecture 5 of 12 · about 12 minutes</div>
   <h1>Tasks</h1>
   <p class="lede">How one CPU serves the console, the network and every telnet session at once, by taking turns.</p>
@@ -77,7 +77,7 @@
 </section>
 
 <!-- 3 -->
-<section class="slide">
+<section class="slide" data-code="2">
   <h2>A task is a block of memory</h2>
   <div class="cols">
     <div class="figure" data-step="1">
@@ -123,7 +123,7 @@
 </section>
 
 <!-- 4 -->
-<section class="slide">
+<section class="slide" data-code="3">
   <h2>The tasks form a ring</h2>
   <div class="cols">
     <div class="figure" data-step="1">
@@ -156,33 +156,39 @@
 </section>
 
 <!-- 5 -->
-<section class="slide">
+<section class="slide" data-code="4">
   <h2><code>pause</code>: the whole task switch</h2>
   <div class="cols">
     <div>
-      <pre class="code" data-src="arch/aarch64/prims.s">  RPUSH  IP
+      <pre class="code" data-src="arch/aarch64/prims.s"><span class="band tint1" data-label="save" data-step="1">  RPUSH  IP
   str    TOS, [DSP, #-8]!
   str    DSP, [UP, #U_SP]
   str    RSP, [UP, #U_RP]
-  mov    x28, UP          <span class="c">// the search ends back at this task</span>
+</span><span class="band tint2" data-label="find" data-step="2">  mov    x28, UP          <span class="c">// the search ends back at this task</span>
 1: ldr   UP, [UP, #U_LINK]
   ldr    x0, [UP, #U_STATUS]
   cbz    x0, 3f           <span class="c">// ready</span>
   <span class="c">…</span>
-3: ldr   x1, =var_task_ticks
+2: cmp   UP, x28
+  b.ne   1b
+  <span class="c">…</span>
+  bl     hal_idle
+  b      1b
+</span><span class="band tint3" data-label="restore" data-step="3">3: ldr   x1, =var_task_ticks
   str    xzr, [x1]
   ldr    DSP, [UP, #U_SP]
   ldr    RSP, [UP, #U_RP]
   ldr    TOS, [DSP], #8
   RPOP   IP
-  NEXT</pre>
+  NEXT
+</span></pre>
       <div class="src"><a href="../../arch/aarch64/prims.s" data-ref="arch/aarch64/prims.s:pause">arch/aarch64/prims.s › pause</a></div>
     </div>
     <ul class="points">
-      <li data-step="1"><b>Save</b>: the place in the code, the top of stack, both stack pointers</li>
-      <li data-step="2"><b>Find</b>: follow the link to a task that is ready, or whose time has come</li>
-      <li data-step="3"><b>Restore</b>: its stack pointers, its place in the code, and carry on</li>
-      <li data-step="4">Nothing ready? <code>wfi</code>: sleep until the next 10 ms tick</li>
+      <li data-step="1"><b class="tint1">Save</b>: the place in the code, the top of stack, both stack pointers</li>
+      <li data-step="2"><b class="tint2">Find</b>: follow the link to a task that is ready, or whose time has come</li>
+      <li data-step="3"><b class="tint3">Restore</b>: its stack pointers, its place in the code, and carry on</li>
+      <li data-step="4">Nothing ready? <code>hal_idle</code> waits for the next 10 ms tick</li>
     </ul>
   </div>
   <div class="talk">
@@ -194,7 +200,7 @@
 </section>
 
 <!-- 6 -->
-<section class="slide">
+<section class="slide" data-code="5">
   <h2>Sleeping and waking</h2>
   <div class="cols">
     <div class="figure" data-step="1">
@@ -234,7 +240,7 @@
 </section>
 
 <!-- 7 -->
-<section class="slide">
+<section class="slide" data-code="6">
   <h2>Giving a task work</h2>
   <div data-step="1">
     <pre class="code" data-src="forth/tasks.fs">: <span class="w">run-task</span>  ( i*x xt -- )  <span class="c">\ a task's whole life: run xt, report how it ended, sleep</span>
@@ -272,7 +278,7 @@
 </section>
 
 <!-- 8 -->
-<section class="slide">
+<section class="slide" data-code="8">
   <h2>The pool: a task per client, within limits</h2>
   <div class="cols">
     <div class="figure" data-step="1">
@@ -307,7 +313,7 @@
 </section>
 
 <!-- 9 -->
-<section class="slide">
+<section class="slide" data-code="9">
   <h2>Sharing across a pause: semaphores</h2>
   <div class="cols">
     <div>
@@ -332,7 +338,7 @@
 </section>
 
 <!-- 10 -->
-<section class="slide">
+<section class="slide" data-code="10">
   <h2>When a task fails, it costs one item</h2>
   <div class="cols even">
     <div>
@@ -363,7 +369,7 @@
 </section>
 
 <!-- 11 -->
-<section class="slide">
+<section class="slide" data-code="12">
   <h2>The watchdog</h2>
   <div class="figure" data-step="1">
     <svg viewBox="0 0 900 170" role="img" aria-label="Timer ticks every 10 ms add to a count that pause resets; at 500 ticks the task is stopped with -262">
@@ -407,7 +413,7 @@
 </section>
 
 <!-- 12 -->
-<section class="slide">
+<section class="slide" data-code="13">
   <h2>Try it on the console</h2>
   <pre class="code" data-step="1"><span class="c">\ a task of your own, asleep until started</span>
 task clock
@@ -426,13 +432,13 @@ spin                               <span class="c">\ five seconds later: stopped
 
 <!-- 13 -->
 <section class="slide">
-  <h2>To think about before the coaching session</h2>
+  <h2>Questions to think about…</h2>
   <ol class="questions">
-    <li data-step="1">A word reads a block, changes a byte, then calls <code>ms</code> before <code>update</code>. What can go wrong, and what would you change?</li>
-    <li data-step="2">Why does <code>start</code> set up a task's stacks rather than call <code>run-task</code>? What would a separate "first run" path cost?</li>
-    <li data-step="3">The watchdog counts ticks. Can you think of a way a task could still hold up the others without ever being stopped?</li>
+    <li>A word reads a block, changes a byte, then calls <code>ms</code> before <code>update</code>. What can go wrong, and what would you change?</li>
+    <li>Why does <code>start</code> set up a task's stacks rather than call <code>run-task</code>? What would a separate "first run" path cost?</li>
+    <li>The watchdog counts ticks. Can you think of a way a task could still hold up the others without ever being stopped?</li>
   </ol>
-  <p class="lede" style="margin-top:18px">Next: read the code with the tour <code>.tours/05-tasks.tour</code> in VS Code.</p>
+  <p class="lede" style="margin-top:18px">Next: read the code with the tour <code>.tours/05-tasks.tour</code> in VS Code. On any slide, the <b>Code</b> button (or <b>v</b>) opens the matching step of the tour.</p>
   <div class="talk">
     <p>That's tasks. To recap: a task is a block of memory in a ring; pause saves one task and restores the next; tasks sleep, stop and wake through two fields in their user area; and catch, restarting and the watchdog keep one bad task from harming the rest.</p>
     <p>Here are three questions to think about before the coaching session. There's no need to answer them now. The first is about locks and pauses, the second about how start works, and the third asks you to find a gap in the watchdog. Then, if you'd like to see the real code in your editor, open the code tour for this lecture.</p>

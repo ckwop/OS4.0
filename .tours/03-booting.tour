@@ -1,0 +1,71 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "3 · Booting",
+  "description": "The code behind lecture 3 (docs/course/03-booting.html): the boot disk, the higher half, _start, the device map, the timer, forth_cold, the bootstrap interpreter and the hand-over to Forth. About ten minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 3, Booting**, from the boot disk to the `ok` prompt. The bare-metal platform is `arch/aarch64/virt.s` and `vectors.s`; the hosted one is `linux.s`; both hand over to `forth_cold` in `outer.s`."
+    },
+    {
+      "file": "arch/aarch64/kernel.s",
+      "pattern": "^boot_files:",
+      "title": "What gets booted",
+      "description": "The kernel image carries the Forth boot files, embedded with `.incbin`. Everything before `forth_cold` only has to get the machine ready to compile them."
+    },
+    {
+      "file": "Makefile",
+      "pattern": "^\\$\\(BOOT_IMG\\):",
+      "title": "The boot disk",
+      "description": "A 64 MiB FAT32 image: Limine as `EFI/BOOT/BOOTAA64.EFI` (where UEFI looks on a removable disk), `boot/limine.conf`, and `boot/kernel.elf`. `VIRT_CMD` above attaches it read-only."
+    },
+    {
+      "file": "arch/aarch64/virt.ld",
+      "pattern": "0xffffffff80000000",
+      "title": "The higher half",
+      "description": "Limine's protocol wants the kernel in the top 2 GiB. One loadable segment, readable, writable and executable. The `.limine_requests` section holds the request blocks Limine fills in."
+    },
+    {
+      "file": "arch/aarch64/virt.s",
+      "pattern": "^_start:",
+      "title": "_start",
+      "description": "Keep Limine's stack on SP_EL1, install the vectors, map the devices, enable the UART, start the timer, check the base revision, find the dictionary's memory (`find_memory`, just below), and branch to `forth_cold`."
+    },
+    {
+      "file": "arch/aarch64/virt.s",
+      "pattern": "^map_devices:",
+      "title": "Mapping the devices",
+      "description": "Two tables in `.bss` (`mmio_l0`, `mmio_l1`), their physical addresses found with the `VIRT_TO_PHYS` macro (the MMU's own lookup), one 1 GiB Device block, a MAIR slot Limine does not use, then TTBR0 and a TLB flush."
+    },
+    {
+      "file": "arch/aarch64/virt.s",
+      "pattern": "^hal_irq:",
+      "title": "The timer tick",
+      "description": "Acknowledge the interrupt, re-arm the virtual timer, and call `watchdog_sub` (in `outer.s`) with the interrupted PC. Any other interrupt is switched off: only the timer interrupts; devices are polled."
+    },
+    {
+      "file": "arch/aarch64/outer.s",
+      "pattern": "^forth_cold:",
+      "title": "forth_cold",
+      "description": "The trampolines, then the console task (a ring of one), its stacks and limits, and the first line of the first boot file as input. Then `do_quit`, which runs the bootstrap interpreter until `'quit` is set."
+    },
+    {
+      "file": "arch/aarch64/outer.s",
+      "pattern": "^interpret:",
+      "title": "The bootstrap interpreter",
+      "description": "Parse, find, execute or compile; numbers after `2:`; at the end of a line, `refill_sub` (in `text.s`) moves on, file by file. While the boot files load, errors go to `err_location`, which prints `file:line:`, and the system stops."
+    },
+    {
+      "file": "forth/interpreter.fs",
+      "pattern": "^' \\(quit\\) 'quit !",
+      "title": "Handing over",
+      "description": "The Forth REPL goes in `'quit`. When `forth/start.fs` (the last boot file) calls `quit`, `do_quit` sees it set, switches input to the terminal, and runs it."
+    },
+    {
+      "file": "arch/aarch64/linux.s",
+      "pattern": "^_start:",
+      "title": "The hosted build",
+      "description": "`mmap` 128 MiB RWX for the dictionary, raw terminal, signal handlers for faults, `SIGALRM` every 10 ms for the tick, then the same `forth_cold`.\n\nNext: lecture 4, when things go wrong."
+    }
+  ]
+}

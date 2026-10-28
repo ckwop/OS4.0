@@ -1,0 +1,65 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "1 · Forth in twelve minutes",
+  "description": "The Forth behind lecture 1 (docs/course/01-forth.html): the stack words, the dictionary, the outer interpreter, control flow and defining words, all from the system's own source. About ten minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 1, Forth in twelve minutes**. Everything it shows is the real source of OS 4.0: most of the language is defined in `forth/core.fs`, the first boot file, on top of primitives in `arch/aarch64/prims.s`."
+    },
+    {
+      "file": "tests/stack.in",
+      "pattern": "^1 2 3 \\.s",
+      "title": "The stack",
+      "description": "Each line pushes numbers or rearranges them, then `.s` shows the stack. Compare with `tests/stack.out`: `<3> 1 2 3` is the depth, then the items, top last."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": ": rot    \\( a b c -- b c a \\)",
+      "title": "New words from old",
+      "description": "The first definitions in the system. `rot` borrows the return stack to hold `a` out of the way. The kernel provides `dup drop swap over >r r>` in assembly; these build on them.\n\nEvery word has a stack-effect comment: inputs, `--`, outputs."
+    },
+    {
+      "file": "arch/aarch64/kernel.s",
+      "pattern": "^// Dictionary header",
+      "title": "The dictionary header",
+      "description": "Link, flags and length, the name padded to 8 bytes, then the execution token. The `defcode` macro further down lays down exactly this for each assembly word, and the kernel's `header_sub` (in `compiler.s`) for words defined at run time."
+    },
+    {
+      "file": "forth/interpreter.fs",
+      "pattern": ": interpret  \\( -- \\)",
+      "title": "The outer interpreter",
+      "description": "Find the word: execute it, or compile it with `,` when `state` is set (unless it is immediate). Not found: a number (`number?`, just above), pushed or compiled with `literal`. Otherwise `undefined` throws -13."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": ": if    \\( C: -- orig \\)",
+      "title": "Control flow",
+      "description": "`if` compiles `0branch` and an empty cell and leaves the cell's address; `then` stores `here` into it. `begin`, `until`, `while` and `repeat` follow, built from the same pieces; the counted loops come further down."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": ": create    \\( \"name\" -- \\)",
+      "title": "Defining words",
+      "description": "`create` = a header and a code field that pushes the body's address (`dovar`). `constant` uses `docon`. `does>` changes what the newest word's code field runs: see `field` at the end of this file, and `user-cells` and `semaphore` in between."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": ": here     \\( -- addr \\)",
+      "title": "Memory",
+      "description": "`here`, `allot`, `c,` and friends. A few lines down they are redefined to `claim` the dictionary first (tasks share it) and to check for room; `reserve` takes memory from the far end for things running tasks need."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": ": do     \\( C: -- leaves dest \\)",
+      "title": "Counted loops",
+      "description": "`do` compiles the primitive `(do)`, which moves the limit and index to the return stack; `loop` compiles `(loop)` and the address to go back to. `leave` adds to a chain of branches that `loop` fills in. The Forth versions of `(do)` and `(loop)` are in the comment further down."
+    },
+    {
+      "file": "tests/control.in",
+      "pattern": "^: sign\\?",
+      "title": "Try it",
+      "description": "The tests are good examples to type in: `tests/control.in`, `tests/loops.in` and `tests/defining.in` cover this lecture.\n\nNext: lecture 2, the kernel underneath."
+    }
+  ]
+}

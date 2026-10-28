@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The kernel · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="02-kernel">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">2 · The kernel</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/02-kernel.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 2 of 12 · about 12 minutes</div>
+  <h1>The kernel</h1>
+  <p class="lede">How Forth actually runs on an ARM processor: five registers, two instructions between every word, and code fields written at run time.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">The Forth machine in registers, and <code>NEXT</code></li>
+    <li data-step="2">Primitives, colon words and code fields</li>
+    <li data-step="3">Trampolines, the instruction cache, and keeping Forth as the reference</li>
+  </ul>
+  <div class="talk">
+    <p>Lecture one showed Forth from the outside. This one opens the lid. The kernel is about two thousand lines of ARM assembly, and its main job is to make Forth words run, quickly.</p>
+    <p>We'll see how the Forth machine lives in five processor registers, and how two instructions, called NEXT, move from one word to the next. Then the three kinds of word: primitives, colon definitions, and the defining words' children, all told apart by a code field at the start of each word.</p>
+    <p>Last, a few details that make this work on a modern processor: trampolines to reach far code, keeping the instruction cache in step with code written at run time, and why every assembly hot spot keeps a Forth version as its reference.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>The Forth machine, in five registers</h2>
+  <pre class="code" data-src="arch/aarch64/macros.s" data-step="1">IP	.req	x19		<span class="c">// instruction pointer: the next cell of the current thread</span>
+DSP	.req	x20		<span class="c">// data stack pointer, grows down (TOS is cached, not in memory)</span>
+RSP	.req	x21		<span class="c">// return stack pointer, grows down</span>
+TOS	.req	x22		<span class="c">// top of the data stack</span>
+UP	.req	x23		<span class="c">// user area of the current task</span></pre>
+  <div class="src"><a href="../../arch/aarch64/macros.s" data-ref="arch/aarch64/macros.s">arch/aarch64/macros.s</a></div>
+  <ul class="points below">
+    <li data-step="2">Callee-saved registers: a C routine or a system call leaves them alone</li>
+    <li data-step="3">The top of the stack stays in a register: most words touch memory less</li>
+    <li data-step="4"><code>x8</code>–<code>x15</code> are scratch; the hardware <code>sp</code> is kept for exceptions</li>
+  </ul>
+  <div class="talk">
+    <p>A Forth system is a small virtual machine, and here it lives in five registers. <span data-say="I P">IP</span>, the instruction pointer, says which word runs next. Two stack pointers say where the data stack and the return stack are. The top of the data stack is kept in a register of its own. And <span data-say="U P">UP</span> points at the user area of the task that's running, which you met in the lecture on tasks.</p>
+    <p>They're all callee-saved registers in the ARM calling convention. That means any ordinary subroutine, including the platform's own, promises to leave them alone, so the kernel can call out without saving anything.</p>
+    <p>Keeping the top of the stack in a register is a classic Forth speed-up. Plus, for example, needs one load from memory instead of two loads and a store.</p>
+    <p>Registers <span data-say="x8">x8</span> to <span data-say="x15">x15</span> are scratch for any primitive. The hardware stack pointer isn't used by Forth at all: it's kept for exceptions and calls into platform code.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>Threaded code, and <code>NEXT</code></h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 200" role="img" aria-label="square: a header, a code field, then a thread of execution tokens for dup, star and exit; IP walks along the thread">
+      <defs><marker id="k1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-accent" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="box faint" x="20" y="60" width="150" height="56" rx="4"/><text x="95" y="93" text-anchor="middle" class="small">header: square</text>
+      <rect class="box accent" x="170" y="60" width="200" height="56"/><text x="270" y="84" text-anchor="middle" class="mono">nop</text><text x="270" y="104" text-anchor="middle" class="mono">bl docol</text>
+      <rect class="box blue" x="370" y="60" width="150" height="56"/><text x="445" y="93" text-anchor="middle" class="mono">xt of dup</text>
+      <rect class="box blue" x="520" y="60" width="150" height="56"/><text x="595" y="93" text-anchor="middle" class="mono">xt of *</text>
+      <rect class="box blue" x="670" y="60" width="150" height="56"/><text x="745" y="93" text-anchor="middle" class="mono">xt of exit</text>
+      <text x="270" y="44" text-anchor="middle" class="small">code field: 8 bytes</text>
+      <text x="595" y="44" text-anchor="middle" class="small">the thread: one cell per word</text>
+      <path class="line accent" d="M 445 150 L 445 122" marker-end="url(#k1)"/>
+      <text x="445" y="170" text-anchor="middle" class="mono">IP</text>
+      <path class="line" d="M 470 160 L 570 160" marker-end="url(#k1)"/>
+      <text x="580" y="165" class="small">each NEXT moves it one cell on</text>
+    </svg>
+  </div>
+  <div class="cols below">
+    <div data-step="2">
+      <pre class="code" data-src="arch/aarch64/macros.s">.macro NEXT
+	ldr	x8, [IP], #8
+	br	x8
+.endm</pre>
+      <div class="src"><a href="../../arch/aarch64/macros.s" data-ref="arch/aarch64/macros.s">arch/aarch64/macros.s › NEXT</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="2">Load the next xt, step IP on, jump to it</li>
+      <li data-step="3"><b>Direct threading</b>: an xt is the address of machine code</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Here's a compiled colon word, square, in memory. After its header comes an eight-byte code field, which we'll come back to. Then the thread: one cell for each word in the definition, holding that word's execution token. Dup, star, and exit, which semicolon compiled at the end.</p>
+    <p>The instruction pointer walks along the thread. And this is how it moves: the macro NEXT. Load the cell IP points at into a scratch register, stepping IP on by eight bytes in the same instruction, then branch to that address. Two instructions. Every primitive ends with them, so control passes straight from one word to the next without returning anywhere in between.</p>
+    <p>This scheme is called direct threading. An execution token is the address of real machine code, so NEXT can jump to it directly. For a primitive, that's the primitive's own code. For anything else, it's the code field.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Primitives</h2>
+  <div class="cols even">
+    <div data-step="1">
+      <pre class="code" data-src="arch/aarch64/prims.s">	defcode	"dup", w_dup			<span class="c">// ( x -- x x )</span>
+	str	TOS, [DSP, #-8]!
+	NEXT</pre>
+      <pre class="code" style="margin-top:12px" data-src="arch/aarch64/prims.s">	defcode	"+", w_plus			<span class="c">// ( a b -- a+b )</span>
+	ldr	x0, [DSP], #8
+	add	TOS, x0, TOS
+	NEXT</pre>
+      <div class="src"><a href="../../arch/aarch64/prims.s" data-ref="arch/aarch64/prims.s:dup">arch/aarch64/prims.s › dup, +</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1"><code>dup</code>: one store, because the top is already in <code>TOS</code></li>
+      <li data-step="2"><code>+</code>: pop the second item, add into <code>TOS</code></li>
+      <li data-step="3">About ninety primitives: stack, arithmetic, memory, loops, the terminal</li>
+      <li data-step="4">Each has a stack comment, like any Forth word</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Primitives are the words written directly in assembly. Here are two.</p>
+    <p>Dup has a single instruction before NEXT. The top of the stack is already in the TOS register, so duplicating it just means storing a copy to memory, pushing it down a place. The register still holds the top.</p>
+    <p>Plus pops the second item from memory into a scratch register, adds it to the top of stack register, and that's the result, already where it needs to be.</p>
+    <p>There are about ninety primitives, covering the stacks, arithmetic, memory access, counted loops, and the terminal, plus a few measured hot spots. Each starts with a line called defcode, which lays down its dictionary header, and each has a stack comment, just like a Forth word.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>Calling a colon word</h2>
+  <div class="cols even">
+    <div>
+      <pre class="code" data-src="arch/aarch64/compiler.s" data-step="1"><span class="w">docol</span>:					<span class="c">// colon definition: run the thread in the body</span>
+	CHECK_STACKS
+	RPUSH	IP
+	mov	IP, x30
+	NEXT</pre>
+      <pre class="code" style="margin-top:12px" data-src="arch/aarch64/prims.s" data-step="2">	defcode	"exit", w_exit, F_CONLY			<span class="c">// ( -- ) ( R: ip -- )</span>
+	RPOP	IP
+	NEXT</pre>
+      <div class="src"><a href="../../arch/aarch64/compiler.s" data-ref="arch/aarch64/compiler.s:docol">arch/aarch64/compiler.s › docol</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The code field's <code>bl docol</code> leaves the body's address in <code>x30</code></li>
+      <li data-step="1"><code>docol</code>: push IP, point IP at the body, carry on</li>
+      <li data-step="2"><code>exit</code>: pop IP, carry on where the caller left off</li>
+      <li data-step="3">A call costs a branch, a push and a <code>NEXT</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>So what happens when NEXT jumps to a colon word like square? It lands on the code field, whose second instruction is a branch-and-link to a routine called <span data-say="doe col">docol</span>.</p>
+    <p>Branch-and-link puts the address of the following instruction in register <span data-say="x30">x30</span>. The following instruction is exactly where the thread begins, the body of the word. So docol has everything it needs. It checks the stacks haven't overflowed, pushes the caller's instruction pointer on the return stack, points IP at the body, and runs NEXT. The first word of square starts.</p>
+    <p>At the end of the thread is exit, a primitive that pops the saved instruction pointer and runs NEXT. The caller carries on from where it left off.</p>
+    <p>That's the whole calling convention. A call to a Forth word costs one branch, one push and one NEXT. It's why Forth can afford to have so many small words.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>Code fields: what kind of word is this?</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 200" role="img" aria-label="Code fields: nop then bl docol for colon words, bl dovar for created words, bl docon for constants, mov x9 x30 then bl dodoes for does words">
+      <g>
+        <rect class="box accent" x="20" y="20" width="200" height="56"/><text x="120" y="44" text-anchor="middle" class="mono">nop</text><text x="120" y="64" text-anchor="middle" class="mono">bl docol</text>
+        <text x="240" y="54">colon word: run the thread that follows</text>
+        <rect class="box blue" x="20" y="90" width="200" height="56"/><text x="120" y="114" text-anchor="middle" class="mono">nop</text><text x="120" y="134" text-anchor="middle" class="mono">bl dovar / docon</text>
+        <text x="240" y="124">variable: push the body's address; constant: push its value</text>
+        <rect class="box green" x="20" y="160" width="200" height="34"/><text x="120" y="182" text-anchor="middle" class="mono">mov x9, x30; bl dodoes</text>
+        <text x="240" y="176">in the defining word, compiled by <tspan class="mono">does&gt;</tspan>: its children's</text><text x="240" y="194">code fields branch here; x9 is the child's body</text>
+      </g>
+    </svg>
+  </div>
+  <div class="cols even below">
+    <div data-step="2">
+      <pre class="code" data-src="arch/aarch64/compiler.s"><span class="w">dovar</span>:					<span class="c">// CREATE, VARIABLE: push the body address</span>
+	PUSH	x30
+	NEXT
+
+<span class="w">docon</span>:					<span class="c">// CONSTANT: push the value held in the body</span>
+	str	TOS, [DSP, #-8]!
+	ldr	TOS, [x30]
+	NEXT</pre>
+      <div class="src"><a href="../../arch/aarch64/compiler.s" data-ref="arch/aarch64/compiler.s:dovar">arch/aarch64/compiler.s › dovar, docon</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="2">The same trick everywhere: <code>x30</code> is the body</li>
+      <li data-step="3">So <code>execute</code> never needs to know what kind of word it runs</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Every word that isn't a primitive starts with an eight-byte code field: one instruction, then a branch-and-link to a handler. The handler decides what kind of word it is.</p>
+    <p>For colon words it's docol, as we've seen. For variables and anything made by create, it's <span data-say="doe var">dovar</span>, which simply pushes <span data-say="x30">x30</span>, the body's address. For constants, <span data-say="doe con">docon</span> pushes the value stored in the body instead.</p>
+    <p>Words made by a defining word that uses <span data-say="does">does</span> are a little different. Their code field branches into the defining word itself, to a stub that <span data-say="does">does</span> compiled there. The stub's first instruction copies x30, the child's body, into <span data-say="x9">x9</span>; then it branches to a handler called <span data-say="doe does">dodoes</span>, which pushes the child's body and runs the Forth code that follows <span data-say="does">does</span>.</p>
+    <p>The neat result is that every execution token is just an address to jump to. Execute, NEXT and the compiler never need to know what kind of word they're dealing with.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="7">
+  <h2>Reaching the handlers: trampolines</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 500 250" role="img" aria-label="The kernel is far away in the higher half; trampolines at the start of the dictionary jump there">
+        <defs><marker id="k2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <rect class="box blue" x="20" y="20" width="180" height="60" rx="6"/><text x="110" y="46" text-anchor="middle">kernel</text><text x="110" y="66" text-anchor="middle" class="small">docol, dovar…</text>
+        <text x="110" y="100" text-anchor="middle" class="small">far away: any distance</text>
+        <rect class="box green" x="280" y="20" width="200" height="60" rx="6"/><text x="380" y="46" text-anchor="middle">trampolines</text><text x="380" y="66" text-anchor="middle" class="small">16 bytes each</text>
+        <rect class="box accent" x="280" y="80" width="200" height="140" rx="0"/><text x="380" y="140" text-anchor="middle">the dictionary</text><text x="380" y="162" text-anchor="middle" class="small">up to 128 MiB</text>
+        <path class="line" d="M 280 50 L 204 50" marker-end="url(#k2)"/>
+        <text x="216" y="40" class="small">br x16</text>
+        <path class="line" d="M 300 190 Q 250 130 300 70" marker-end="url(#k2)"/>
+        <text x="200" y="170" class="small">bl: within 128 MiB</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="1"><code>bl</code> reaches 128 MiB either way</li>
+      <li data-step="2">Four trampolines at the start of the dictionary jump the rest of the way</li>
+      <li data-step="3">Compile code fields with the <code>docol</code> <code>dovar</code> <code>docon</code> words: they give the trampolines' addresses</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="arch/aarch64/kernel.s">	.equ	DICT_MAX, (1 &lt;&lt; 27) - 4096
+	.equ	TRAMPOLINE, 16			<span class="c">// bytes per trampoline: ldr x16, 8; br x16; .quad handler</span></pre>
+    <div class="src"><a href="../../arch/aarch64/kernel.s" data-ref="arch/aarch64/kernel.s">arch/aarch64/kernel.s</a></div>
+  </div>
+  <div class="talk">
+    <p>There's a catch with code fields. An ARM branch-and-link can only reach a hundred and twenty-eight megabytes either way. On bare metal the kernel sits in the top of the address space and the dictionary is in ordinary RAM, much further apart than that.</p>
+    <p>The answer is trampolines. When the system starts, it writes four tiny stubs at the very start of the dictionary, one for each handler. Each loads the handler's full address into a register and branches to it. Code fields branch to the trampolines, which are always close by, and the trampolines jump the rest of the way.</p>
+    <p>That's also why the dictionary is capped at a hundred and twenty-eight megabytes: the furthest code field must still reach the trampolines at the start.</p>
+    <p>For you, this means one thing. When Forth code compiles a code field, it uses the words named docol, dovar and docon, which return the trampolines' addresses. Never the kernel's own labels.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="8">
+  <h2>Code written at run time</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="arch/aarch64/macros.s" data-step="1">.macro SYNC_ICACHE addr
+	dc	cvau, \addr
+	dsb	ish
+	ic	ivau, \addr
+	dsb	ish
+	isb
+.endm</pre>
+      <div class="src"><a href="../../arch/aarch64/macros.s" data-ref="arch/aarch64/macros.s">arch/aarch64/macros.s › SYNC_ICACHE</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Data and instructions have separate caches</li>
+      <li data-step="2">Clean the data cache line, invalidate the instruction cache line, then wait</li>
+      <li data-step="3">One RWX memory region: the brief's flat address space</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Every colon definition you type writes two new instructions, its code field, into memory. On an ARM processor that needs care, because data and instructions go through separate caches. The new instructions might sit in the data cache while the processor fetches stale ones from the instruction cache.</p>
+    <p>So after writing a code field, the kernel runs this sequence. Clean the data cache line out to the point where instruction fetches can see it. Wait. Invalidate the instruction cache line. Wait again. And finally an instruction barrier, so the processor discards anything it fetched early.</p>
+    <p>It also means the dictionary must be readable, writable and executable at once. On bare metal it's one flat region mapped that way; hosted, it's a block of memory asked for with all three permissions. That's a deliberate choice from the brief: one simple address space, no protection between parts of the system.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="9">
+  <h2>Assembly words in the dictionary</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="arch/aarch64/kernel.s" data-step="1">.macro defcode name, label, flags=0
+	.balign	8
+\label\()_nt:
+	.quad	link
+	.set	link, \label\()_nt
+	.byte	\flags + 9f - 8f
+8:	.ascii	"\name"
+9:	.balign	8
+\label:
+.endm</pre>
+      <div class="src"><a href="../../arch/aarch64/kernel.s" data-ref="arch/aarch64/kernel.s">arch/aarch64/kernel.s › defcode</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The assembler builds the same headers Forth does</li>
+      <li data-step="2">Some kernel words are threads written by hand</li>
+      <li data-step="3">The link chain runs through every file: one assembly unit</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="arch/aarch64/compiler.s">	defword	":", w_colon			<span class="c">// ( "name" -- ) start a colon definition</span>
+	.quad	w_parsename, w_header, w_docol, w_cfcomma, w_hide, w_rbracket, w_exit</pre>
+    <div class="src"><a href="../../arch/aarch64/compiler.s" data-ref="arch/aarch64/compiler.s::">arch/aarch64/compiler.s › :</a></div>
+  </div>
+  <div class="talk">
+    <p>The kernel's words have to be in the dictionary too, so the assembler builds their headers. This macro, defcode, lays down exactly the header from lecture one: the link to the previous word, the flags and length, and the name, padded to eight bytes. Then the label where the code begins. Each use updates a symbol called link, so the chain grows as the file is assembled.</p>
+    <p>A few kernel words are colon definitions written by hand as a list of addresses. Here is colon itself: parse a name, lay down a header, compile a code field branching to docol, hide the word until it's finished, and turn compiling on.</p>
+    <p>Because one symbol threads through every word, the kernel's assembly files are included into kernel dot s and assembled as a single unit. The last header becomes the initial value of latest, and the Forth boot files carry on the chain from there.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="10">
+  <h2>Forth stays the reference</h2>
+  <pre class="code" data-src="arch/aarch64/compiler.s" data-step="1">	<span class="c">// ( addr u nt -- nt' | 0 ) the newest word named addr u from nt back, ignoring</span>
+	<span class="c">// case and hidden words. A measured hot spot: interpreter.fs has</span>
+	<span class="c">// SEARCH-LIST-REF, the Forth definition, which tests/reference checks.</span>
+	defcode	"search-list", w_searchlist</pre>
+  <div class="src"><a href="../../arch/aarch64/compiler.s" data-ref="arch/aarch64/compiler.s:search-list">arch/aarch64/compiler.s › search-list</a></div>
+  <pre class="code below" data-src="tests/reference.in" data-step="2">: agree ( addr u -- flag ) 2dup latest @ search-list &gt;r latest @ search-list-ref r&gt; = ;</pre>
+  <div class="src"><a href="../../tests/reference.in">tests/reference.in</a></div>
+  <ul class="points below">
+    <li data-step="3">Hot spots in assembly: <code>search-list</code>, <code>cmove</code>, <code>fill</code>, <code>um/mod</code>, SHA-256's block</li>
+    <li data-step="3">Each keeps its Forth definition, and a test that the two agree</li>
+  </ul>
+  <div class="talk">
+    <p>The rule is Forth first. But a few words turned out to be too slow in Forth, measured, not guessed. Looking words up in the dictionary is one: it runs for every word you type and every word in every boot file.</p>
+    <p>When a word moves to assembly, its Forth definition stays. Here, the comment on the assembly search-list points to search-list-ref, the Forth version, in the interpreter file.</p>
+    <p>And a test checks they agree. This line from the reference test defines a word that looks a name up both ways and compares the answers. It's run with words that exist, words in a different case, and words that don't exist.</p>
+    <p>The same goes for the other hot spots: moving and filling memory, a division, and the inner block of SHA-256. The Forth is the specification; the assembly is an optimisation that must keep matching it.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>A primitive ends with <code>NEXT</code> instead of returning. What would a "return to a central loop" design cost per word?</li>
+    <li>Why is the code field <code>nop; bl docol</code> rather than one instruction? What uses the first slot?</li>
+    <li>You write a new defining word that compiles its own code field. Which address must it branch to, and what goes wrong if it uses <code>docol</code>'s label directly?</li>
+  </ol>
+  <div class="talk">
+    <p>That's the kernel. Five registers hold the Forth machine, NEXT passes control from word to word, code fields say what kind of word each is, trampolines reach the handlers, and the instruction cache is kept in step with code written at run time.</p>
+    <p>Three questions to think about: what NEXT saves, why a code field has two instructions, and what goes wrong if you skip the trampolines. Next, lecture three: how the machine boots into all this.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

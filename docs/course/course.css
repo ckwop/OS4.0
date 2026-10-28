@@ -98,9 +98,22 @@ svg .fill-muted { fill: var(--muted); }
 pre.code {
   background: var(--code-bg); color: var(--code-ink); font: 14px/1.5 var(--mono);
   border-radius: 10px; padding: 14px 16px; margin: 0; overflow-x: auto; box-shadow: var(--shadow);
+  tab-size: 4;
 }
 pre.code .c { color: var(--code-dim); }
 pre.code .w { color: var(--code-word); }
+/* Bands: groups of lines in an excerpt, labelled, matched by .tintN in the text */
+pre.code .band { display: block; margin: 0 -16px; padding: 0 16px 0 13px; border-left: 3px solid; position: relative; }
+pre.code .band::after { content: attr(data-label); position: absolute; right: 12px; bottom: 1px; font: 600 11px/1.9 var(--sans); text-transform: uppercase; letter-spacing: 0.08em; }
+pre.code .band.tint1 { background: rgb(127 176 220 / 0.13); border-color: #7fb0dc; }
+pre.code .band.tint2 { background: rgb(124 194 140 / 0.13); border-color: #7cc28c; }
+pre.code .band.tint3 { background: rgb(236 138 79 / 0.15); border-color: #ec8a4f; }
+pre.code .band.tint1::after { color: #7fb0dc; }
+pre.code .band.tint2::after { color: #7cc28c; }
+pre.code .band.tint3::after { color: #ec8a4f; }
+b.tint1 { color: var(--blue); }
+b.tint2 { color: var(--green); }
+b.tint3 { color: var(--accent); }
 .src { font-size: 13px; color: var(--muted); margin-top: 6px; }
 .src a { font-family: var(--mono); }
 code { font-family: var(--mono); font-size: 0.92em; background: var(--faint); padding: 1px 5px; border-radius: 4px; }
@@ -135,11 +148,13 @@ code { font-family: var(--mono); font-size: 0.92em; background: var(--faint); pa
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 16px;
   border-top: 1px solid var(--faint); background: var(--panel);
 }
-.controls button, .controls select {
+.controls button, .controls select, .controls a.code {
   font: 14px var(--sans); color: var(--ink); background: var(--bg); border: 1px solid var(--faint);
   border-radius: 8px; padding: 7px 12px; cursor: pointer; min-height: 36px;
 }
-.controls button:hover { border-color: var(--muted); }
+.controls button:hover, .controls a.code:hover { border-color: var(--muted); }
+.controls a.code { text-decoration: none; display: inline-flex; align-items: center; }
+.controls a.code[hidden] { display: none; }
 .controls button.primary { background: var(--accent); border-color: var(--accent); color: #fff; min-width: 92px; font-weight: 600; }
 .controls button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .controls .count { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 14px; min-width: 56px; text-align: center; }

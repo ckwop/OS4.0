@@ -1,0 +1,71 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "4 · When things go wrong",
+  "description": "The code behind lecture 4 (docs/course/04-errors.html): catch and throw, the REPL's catch per line, messages, kernel errors, stack limits, CPU faults and error locations. About ten minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 4, When things go wrong**. Every error, from a typo to a CPU fault, ends up as a number passed to `throw` and caught by a `catch`."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": ": catch  \\(",
+      "title": "catch",
+      "description": "The frame on the return stack: the saved data stack pointer (`sp@`), then the enclosing handler. `handler` is a user variable, so every task has its own chain of frames."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": ": throw  \\(",
+      "title": "throw",
+      "description": "Back to the frame with `rp!`, restore the handler, restore the data stack with `sp!`, leave the code. Returning from `throw` now returns from `catch`. The next line, `' throw 'throw !`, tells the kernel where it is."
+    },
+    {
+      "file": "forth/interpreter.fs",
+      "pattern": ": repl  \\(",
+      "title": "The REPL",
+      "description": "Each line under `catch`; on an error, `.error` then `reset` (just above: empty the stack, stop compiling, clear the error location, give up the dictionary)."
+    },
+    {
+      "file": "forth/output.fs",
+      "pattern": ": message:  \\(",
+      "title": "Messages",
+      "description": "A linked list of code, length and text. Each file registers its own codes near its top, e.g. `-262` in `forth/tasks.fs` and `-273` in `forth/net/tcp.fs`. `message` below looks one up."
+    },
+    {
+      "file": "arch/aarch64/outer.s",
+      "pattern": "^try_throw:",
+      "title": "Kernel errors",
+      "description": "Each `err_*` label above sets a code and comes here. While the boot files load (or before `throw` exists) it returns, and the caller prints `file:line:` and stops. Otherwise it resets both stacks to the catch frame and jumps to the Forth `throw`."
+    },
+    {
+      "file": "arch/aarch64/kernel.s",
+      "pattern": "^\\.macro CHECK_STACKS",
+      "title": "Stack limits",
+      "description": "Two loads, two compares. Used in `docol`, `branch`, `0branch`, the loop words and `pause`. The limits (`U_SLIMIT`, `U_RLIMIT`) leave `STACK_MARGIN` (16 cells) for reporting. `new-task` in `forth/tasks.fs` sets them for each task."
+    },
+    {
+      "file": "arch/aarch64/vectors.s",
+      "pattern": "^exc_common:",
+      "title": "CPU faults",
+      "description": "Save the registers, switch to an exception stack (the faulting one may be the problem), print the dump, then `eret` into `exception_throw` in `outer.s`, which throws -256. A fault while reporting a fault gives up (`exc_busy`)."
+    },
+    {
+      "file": "forth/errors.fs",
+      "pattern": ": \\.error  \\(",
+      "title": "Reporting",
+      "description": "`.where` above prints `file:line:` (set by `note-error` in `forth/files.fs`) or `block n line m:` (set by `load` in `forth/blocks.fs`). Then the message, or `error n`."
+    },
+    {
+      "file": "forth/tasks.fs",
+      "pattern": ": run-task  \\(",
+      "title": "Errors in tasks",
+      "description": "A task's work under `catch`; the report, naming the task, under another `catch` because a session's terminal may be gone. `restarting` below supervises system loops."
+    },
+    {
+      "file": "tests/exceptions.in",
+      "pattern": "^: risky",
+      "title": "The tests",
+      "description": "`tests/exceptions`, `tests/errors` and `tests/limits` cover this lecture; `tests/baremetal/fault` and `tests/hosted/fault` cover CPU faults on each build.\n\nNext: lecture 5, tasks."
+    }
+  ]
+}

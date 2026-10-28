@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Forth in twelve minutes · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="01-forth">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">1 · Forth in twelve minutes</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/01-forth.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 1 of 12 · about 12 minutes</div>
+  <h1>Forth in twelve minutes</h1>
+  <p class="lede">Just enough Forth to read the rest of the system: the stack, words, the dictionary, and how Forth extends itself.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">The data stack, and words that work on it</li>
+    <li data-step="2">The dictionary, and the interpreter that searches it</li>
+    <li data-step="3">Immediate words and defining words: the language built in itself</li>
+  </ul>
+  <div class="talk">
+    <p>This lecture teaches just enough Forth to read the rest of OS 4.0. If you already know Forth, skim it: the examples are all from this system's own source.</p>
+    <p>We'll start with the stack and the words that work on it. Then the dictionary, where words live, and the interpreter, which reads your input and either runs words or compiles them.</p>
+    <p>Finally, the two ideas that make Forth unusual: immediate words, which run while a definition is being compiled, and defining words, which make new kinds of word. Between them, most of Forth is written in Forth.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>Everything goes through the stack</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 520 230" role="img" aria-label="2 3 + . : the stack holds 2, then 2 and 3, then 5, then is empty as 5 is printed">
+        <g class="mono">
+          <text x="50" y="30" text-anchor="middle">2</text>
+          <text x="160" y="30" text-anchor="middle">3</text>
+          <text x="270" y="30" text-anchor="middle">+</text>
+          <text x="380" y="30" text-anchor="middle">.</text>
+        </g>
+        <rect class="box blue" x="15" y="150" width="70" height="34" rx="4"/><text x="50" y="172" text-anchor="middle" class="mono">2</text>
+        <rect class="box blue" x="125" y="150" width="70" height="34" rx="4"/><text x="160" y="172" text-anchor="middle" class="mono">2</text>
+        <rect class="box blue" x="125" y="116" width="70" height="34" rx="4"/><text x="160" y="138" text-anchor="middle" class="mono">3</text>
+        <rect class="box accent" x="235" y="150" width="70" height="34" rx="4"/><text x="270" y="172" text-anchor="middle" class="mono">5</text>
+        <rect class="box faint" x="345" y="150" width="70" height="34" rx="4"/><text x="380" y="172" text-anchor="middle" class="small">empty</text>
+        <text x="460" y="172" class="mono">5 ok</text>
+        <line class="line" x1="10" y1="190" x2="510" y2="190"/>
+        <text x="260" y="218" text-anchor="middle" class="small">the stack after each word; the top is the highest box</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2">Numbers are pushed; words take their inputs from the top</li>
+      <li data-step="3">Words run left to right: no brackets, no precedence</li>
+      <li data-step="4"><code>.s</code> shows the stack without changing it</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Forth reads your input as words separated by spaces, and runs them from left to right. Here's the simplest possible example: two, three, plus, dot.</p>
+    <p>A number is pushed onto the data stack. Two goes on, then three goes on top of it. Plus takes the top two numbers off, adds them, and pushes the result, five. Dot takes the top number and prints it.</p>
+    <p>That's the whole syntax. There are no brackets and no operator precedence, because there's nothing to decide: each word runs as soon as it's read, and finds its inputs waiting on the stack. Words pass values to each other through the stack, not through named parameters.</p>
+    <p>When you're experimenting, <span data-say="dot S">.s</span> shows the whole stack without changing it. You'll use it constantly.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>New words from old</h2>
+  <pre class="code" data-step="1">: square  ( n -- n*n )  dup * ;
+5 square .            <span class="c">\ 25</span></pre>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="forth/core.fs">: <span class="w">rot</span>    ( a b c -- b c a )  &gt;r swap r&gt; swap ;
+: <span class="w">nip</span>    ( a b -- b )  swap drop ;
+: <span class="w">tuck</span>   ( a b -- b a b )  swap over ;
+: <span class="w">2dup</span>   ( a b -- a b a b )  over over ;</pre>
+    <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:rot">forth/core.fs › rot</a></div>
+  </div>
+  <ul class="points below">
+    <li data-step="3">The comment in brackets is the <b>stack effect</b>: before, then after</li>
+    <li data-step="3">Every word in OS 4.0 has one</li>
+  </ul>
+  <div class="talk">
+    <p>You make a new word with a colon, its name, the words it should run, and a semicolon. Square duplicates the top of the stack and multiplies, so five square leaves twenty-five.</p>
+    <p>Most of Forth is built exactly like this. These are the first lines of core dot fs, the first boot file. Rot, nip, tuck and two-dup are all defined from simpler stack words that the kernel provides in assembly. Rot even uses the return stack, which we'll meet shortly, to hold a value out of the way.</p>
+    <p>The comment in brackets is the stack effect. It shows what the word expects on the stack before the dashes, and what it leaves after. Forth itself ignores it, but every word in OS 4.0 has one, and it's the first thing to read when you meet a new word.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>The dictionary: a linked list of words</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 190" role="img" aria-label="Each header links to the previous one; latest points at the newest">
+      <defs><marker id="m1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <g>
+        <rect class="box" x="20" y="50" width="230" height="90" rx="6"/>
+        <text x="34" y="74" class="small">link: 0</text><text x="34" y="96" class="mono">dup</text><text x="34" y="122" class="small">code…</text>
+        <rect class="box" x="320" y="50" width="230" height="90" rx="6"/>
+        <text x="334" y="74" class="small">link</text><text x="334" y="96" class="mono">rot</text><text x="334" y="122" class="small">code field, thread…</text>
+        <rect class="box accent" x="620" y="50" width="230" height="90" rx="6"/>
+        <text x="634" y="74" class="small">link</text><text x="634" y="96" class="mono">square</text><text x="634" y="122" class="small">code field, thread…</text>
+        <path class="line" d="M 330 70 L 254 70" marker-end="url(#m1)"/>
+        <path class="line" d="M 630 70 L 554 70" marker-end="url(#m1)"/>
+        <text x="735" y="30" class="mono" text-anchor="middle">latest</text>
+        <path class="line" d="M 735 36 L 735 46" marker-end="url(#m1)"/>
+        <text x="450" y="176" text-anchor="middle" class="small">a lookup starts at the newest word and follows the links back</text>
+      </g>
+    </svg>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="arch/aarch64/kernel.s">// Dictionary header, 8-byte aligned:
+//   +0  link to the previous header (0 ends the chain)
+//   +8  flags: bit 7 immediate, bit 6 hidden, bits 0-4 name length
+//   +9  name, padded to 8 bytes
+//   then the xt</pre>
+    <div class="src"><a href="../../arch/aarch64/kernel.s" data-ref="arch/aarch64/kernel.s">arch/aarch64/kernel.s</a></div>
+  </div>
+  <div class="talk">
+    <p>Where do words live? In the dictionary, which is a linked list in memory. Each word starts with a header: a link to the previous word's header, a byte of flags and the name's length, and the name itself. The word's code follows straight after.</p>
+    <p>A variable called <span data-say="latest">latest</span> points at the newest header. Looking a word up means starting there and following the links back, comparing names, until it's found or the chain ends.</p>
+    <p>Two consequences are worth remembering. First, defining a word again doesn't replace the old one: the new one is simply found first, by everything compiled afterwards. Words compiled earlier still call the old one. Second, the address of a word's code is its execution token, the <span data-say="X T">xt</span>. It's how Forth refers to a word as a value, to be run later with execute.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>Interpreting and compiling</h2>
+  <pre class="code" data-src="forth/interpreter.fs" data-step="1">: <span class="w">interpret</span>  ( -- )  <span class="c">\ the current line, word by word</span>
+  begin parse-name dup while
+    2dup find-name ?dup if
+      state @ 0= over compile-only? and if  drop errname 2! -14 throw  then
+      nip nip  dup immediate? state @ 0= or if name&gt;xt execute else name&gt;xt , then
+    else
+      2dup number? 0= if undefined then  nip nip  state @ if postpone literal then
+    then ?stack
+  repeat 2drop ;</pre>
+  <div class="src"><a href="../../forth/interpreter.fs" data-ref="forth/interpreter.fs:interpret">forth/interpreter.fs › interpret</a></div>
+  <ul class="points below">
+    <li data-step="2">Found: run it, or, while compiling, append its xt with <code>,</code></li>
+    <li data-step="3">Not found: a number, pushed or compiled as a literal; else error -13</li>
+    <li data-step="4"><code>state</code> decides: <code>:</code> turns compiling on, <code>;</code> turns it off</li>
+  </ul>
+  <div class="talk">
+    <p>This is the outer interpreter, the loop that reads what you type. It's written in Forth, and it's short enough to read in full.</p>
+    <p>It takes the next word from the line and looks it up. If the word is found, there are two choices. Normally it's executed straight away. But if the system is compiling, the word's execution token is appended to the definition being built instead, with the comma word.</p>
+    <p>If the word isn't found, it might be a number. Then it's pushed, or, when compiling, compiled as a literal that pushes it later. If it's not a number either, that's error <span data-say="minus thirteen">-13</span>, undefined word.</p>
+    <p>What decides between running and compiling is one variable, <span data-say="state">state</span>. Colon parses a name, lays down a header and turns compiling on. Semicolon compiles an exit and turns it off again. A colon definition is just a list of execution tokens, built one word at a time by this loop.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>Immediate words build control flow</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/core.fs" data-step="1">: <span class="w">if</span>    ( C: -- orig )  ['] 0branch , here 0 , ; immediate compile-only
+: <span class="w">then</span>  ( C: orig -- )  here swap ! ; immediate compile-only</pre>
+      <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:if">forth/core.fs › if</a></div>
+      <div class="figure below" data-step="2">
+        <svg viewBox="0 0 500 120" role="img" aria-label="if compiles 0branch and an empty cell; then fills the cell with the address after the true part">
+          <defs><marker id="m2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-accent" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+          <rect class="box blue" x="10" y="30" width="100" height="36"/><text x="60" y="53" text-anchor="middle" class="mono">0branch</text>
+          <rect class="box accent" x="110" y="30" width="80" height="36"/><text x="150" y="53" text-anchor="middle" class="mono">addr</text>
+          <rect class="box" x="190" y="30" width="180" height="36"/><text x="280" y="53" text-anchor="middle" class="small">the true part</text>
+          <rect class="box green" x="370" y="30" width="110" height="36"/><text x="425" y="53" text-anchor="middle" class="small">after then</text>
+          <path class="line accent" d="M 150 70 Q 260 112 372 70" marker-end="url(#m2)"/>
+          <text x="10" y="20" class="small">if compiles</text>
+          <text x="300" y="112" class="small">then fills in addr</text>
+        </svg>
+      </div>
+    </div>
+    <ul class="points">
+      <li data-step="1">An <b>immediate</b> word runs even while compiling</li>
+      <li data-step="2"><code>if</code> leaves a hole; <code>then</code> fills it</li>
+      <li data-step="3"><code>begin until again while repeat do loop</code>: all the same trick</li>
+      <li data-step="4">So control flow is ordinary Forth, not syntax</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Some words are marked immediate. An immediate word runs even while the interpreter is compiling, so it can take part in building the definition. That's how Forth gets control flow without any special syntax.</p>
+    <p>Look at if. When it runs, during compilation, it appends a conditional branch, then an empty cell, and leaves that cell's address on the stack. The true part is compiled after it as usual. Then then runs, takes the address off the stack, and stores the current position into the empty cell. At run time, the conditional branch jumps there when the flag is zero, skipping the true part.</p>
+    <p>Begin, until, again, while, repeat, and the counted loops all work the same way, each in a line or two of core dot fs.</p>
+    <p>So control flow is not built into the compiler. It's ordinary Forth, and you could write new control structures of your own the same way.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="7">
+  <h2>Defining words</h2>
+  <pre class="code" data-src="forth/core.fs" data-step="1">: <span class="w">create</span>    ( "name" -- )  parse-name header dovar cf, ;
+: <span class="w">variable</span>  ( "name" -- )  create 0 , ;
+: <span class="w">constant</span>  ( x "name" -- )  parse-name header docon cf, , ;</pre>
+  <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:create">forth/core.fs › create</a></div>
+  <pre class="code below" data-src="forth/core.fs" data-step="2">: <span class="w">field</span>  ( offset size "name" -- offset' )  create over , +  does&gt; @ + ;  <span class="c">\ name ( addr -- addr' )</span></pre>
+  <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:field">forth/core.fs › field</a></div>
+  <ul class="points below">
+    <li data-step="1"><code>create</code>: a header, and code that pushes the body's address</li>
+    <li data-step="2"><code>does&gt;</code>: what the new words do when they run</li>
+    <li data-step="3">Used throughout: <code>task</code>, <code>semaphore</code>, <code>user</code>, <code>field</code></li>
+  </ul>
+  <div class="talk">
+    <p>A defining word makes new words. Create is the basic one: it parses a name, lays down a header, and compiles a code field that pushes the address of the word's body. Variable is create followed by one cell of zero. Constant uses a different code field, one that pushes the value stored in the body instead of its address.</p>
+    <p>The interesting one is <span data-say="does">does</span>. Field is a defining word for record layouts. When you use it, create makes the new word and stores its offset. The part after <span data-say="does">does</span> is what every word made by field will do when it runs: fetch the stored offset and add it to an address. So a field named after a part of a record turns a record's address into the address of that part.</p>
+    <p>You'll find this pattern all over the system. Task, semaphore, user variables, and every record layout are defining words.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="8">
+  <h2>Memory: the dictionary grows</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/core.fs" data-step="1">: <span class="w">here</span>     ( -- addr )  dp @ ;
+: <span class="w">allot</span>    ( n -- )  dp +! ;
+: <span class="w">c,</span>       ( c -- )  here c! 1 allot ;</pre>
+      <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:here">forth/core.fs › here</a></div>
+      <pre class="code below" data-step="3"><span class="c">\ fetch and store</span>
+variable count
+5 count !         <span class="c">\ store 5</span>
+count @ .         <span class="c">\ 5</span>
+1 count +!        <span class="c">\ now 6</span></pre>
+    </div>
+    <ul class="points">
+      <li data-step="1"><code>here</code> is the next free byte; <code>allot</code> and <code>,</code> move it on</li>
+      <li data-step="2">Definitions and data share this one space</li>
+      <li data-step="3"><code>@</code> fetches a cell, <code>!</code> stores one; <code>c@ c!</code> for bytes</li>
+      <li data-step="4">Running tasks take memory from the far end, with <code>reserve</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Forth's memory is simple. The dictionary grows upwards from the bottom of one region. Here is the address of the next free byte, held in a variable called <span data-say="D P">dp</span>. Allot moves it on by some number of bytes, and comma stores a cell there and moves on past it.</p>
+    <p>Definitions and data share that space. A variable is just a header followed by a cell, made with create and comma.</p>
+    <p>To use memory, fetch with the at sign and store with the exclamation mark, which Forth calls fetch and store. They work on whole cells, eight bytes here. C-fetch and C-store do single bytes, and plus-store adds to a cell.</p>
+    <p>One rule specific to OS 4.0. Memory that running tasks need, such as connection records, comes from the far end of the same region, through a word called reserve. Never from allot, because another task might be in the middle of compiling a definition at here.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="9">
+  <h2>The return stack</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 240" role="img" aria-label="Two stacks: data stack for values, return stack for return addresses, loop indexes and values put aside">
+        <text x="20" y="26" class="small">data stack</text>
+        <rect class="box blue" x="20" y="36" width="190" height="34" rx="4"/><text x="34" y="58" class="mono">values</text>
+        <rect class="box blue" x="20" y="70" width="190" height="34" rx="4"/><text x="34" y="92" class="mono">…</text>
+        <text x="250" y="26" class="small">return stack</text>
+        <rect class="box green" x="250" y="36" width="200" height="34" rx="4"/><text x="264" y="58" class="small">where to go back to</text>
+        <rect class="box green" x="250" y="70" width="200" height="34" rx="4"/><text x="264" y="92" class="small">loop limit and index</text>
+        <rect class="box accent" x="250" y="104" width="200" height="34" rx="4"/><text x="264" y="126" class="small">values put aside: <tspan class="mono">&gt;r r&gt;</tspan></text>
+        <text x="20" y="190" class="small">calling a word pushes the place to come back to;</text>
+        <text x="20" y="210" class="small">exit pops it</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2"><code>&gt;r</code> moves a value there, <code>r&gt;</code> brings it back, <code>r@</code> copies it</li>
+      <li data-step="3"><code>do … loop</code> keeps its index there: <code>i</code> reads it</li>
+      <li data-step="4">Rule: leave it as you found it before the word ends</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Forth has a second stack, the return stack. When a word calls another, the place to come back to is pushed here, and exit pops it. That's why the data stack can be left entirely to values.</p>
+    <p>You can borrow the return stack too. To-R moves a value from the data stack to the return stack, out of the way, and R-from brings it back. R-fetch copies it without removing it. Rot, which we saw earlier, uses exactly this.</p>
+    <p>Counted loops keep their limit and index there too, and the word i reads the current index.</p>
+    <p>The rule is that a word must leave the return stack as it found it, because the next thing on it is where the word returns to. In OS 4.0, getting this wrong usually shows up as a return stack error rather than a crash, as lecture four explains.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="10">
+  <h2>Try it on the console</h2>
+  <pre class="code" data-step="1">2 3 + .                            <span class="c">\ 5</span>
+: square  ( n -- n*n )  dup * ;
+7 square .                         <span class="c">\ 49</span>
+: stars  ( n -- )  0 ?do  [char] * emit  loop ;
+5 stars                            <span class="c">\ *****</span>
+: sign?  ( n -- )  0&lt; if ." negative" else ." not negative" then ;
+-3 sign?
+words                              <span class="c">\ every word, newest first</span></pre>
+  <p class="lede" style="margin-top:16px">Boot with <code>docker run --rm -it os4</code>, or <code>make run-hosted</code> for an instant start.</p>
+  <div class="talk">
+    <p>Boot the system and try a few of these. Add two numbers. Define square and use it. Stars uses a counted loop to print some asterisks; the question-do form does nothing if the count is zero.</p>
+    <p>Sign uses if, else and then inside a definition. Remember that if and then only work inside a definition, because they compile branches.</p>
+    <p>Finally, type words to list everything in the dictionary, newest first. You'll recognise many of the names from this lecture.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>You redefine <code>square</code> to print a message. Which existing words see the change, and why?</li>
+    <li><code>if</code> leaves an address on the stack while compiling. What happens if you forget the <code>then</code>?</li>
+    <li>Why might <code>constant</code> use its own code field instead of being <code>create</code> plus <code>does&gt;</code>?</li>
+  </ol>
+  <div class="talk">
+    <p>That's enough Forth to read the system. Values go through the stack, words live in a linked dictionary, the interpreter runs or compiles them, and immediate words and defining words let Forth build itself.</p>
+    <p>Three questions to think about. The first is about redefining a word, the second about what if leaves behind, and the third about why constant is built the way it is. Next, lecture two looks underneath, at the kernel that runs all this.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

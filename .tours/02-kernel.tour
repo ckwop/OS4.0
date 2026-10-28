@@ -1,0 +1,65 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "2 · The kernel",
+  "description": "The assembly behind lecture 2 (docs/course/02-kernel.html): the registers, NEXT, primitives, code fields and their handlers, trampolines, and the reference definitions. About ten minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 2, The kernel**. The kernel is `arch/aarch64/kernel.s`, which includes `outer.s`, `text.s`, `prims.s` and `compiler.s` as one assembly unit; `macros.s` is shared with the platform glue."
+    },
+    {
+      "file": "arch/aarch64/macros.s",
+      "pattern": "^IP\\s+\\.req",
+      "title": "Five registers",
+      "description": "IP, the two stack pointers, the cached top of stack and the user area pointer: all callee-saved under AAPCS64, so subroutines and the platform leave them alone. The `PUSH`, `POP`, `RPUSH` and `RPOP` macros below are used by every primitive."
+    },
+    {
+      "file": "arch/aarch64/macros.s",
+      "pattern": "^\\.macro NEXT",
+      "title": "NEXT",
+      "description": "Load the next execution token from the thread, post-incrementing IP, and branch to it. Every primitive ends with this."
+    },
+    {
+      "file": "arch/aarch64/prims.s",
+      "pattern": "defcode\\s+\"dup\"",
+      "title": "Primitives",
+      "description": "`dup`, `drop`, `swap` and `over`: with the top of stack in `TOS`, each is one or two instructions. Scroll down for arithmetic, memory, the counted-loop runtime and `pause`."
+    },
+    {
+      "file": "arch/aarch64/compiler.s",
+      "pattern": "^docol:",
+      "title": "docol",
+      "description": "The handler for colon words. The code field's `bl` left the body address in `x30`: check the stacks, push IP, point IP at the body, NEXT. `exit` at the top of `prims.s` undoes it."
+    },
+    {
+      "file": "arch/aarch64/compiler.s",
+      "pattern": "^dovar:",
+      "title": "The other handlers",
+      "description": "`dovar` pushes the body's address, `docon` the value in it, and `dodoes` runs the code after `DOES>` with the child's body (passed in `x9`) on the stack."
+    },
+    {
+      "file": "arch/aarch64/outer.s",
+      "pattern": "^forth_cold:",
+      "title": "Writing the trampolines",
+      "description": "The first thing `forth_cold` does with the dictionary region: four 16-byte trampolines (`ldr x16, 8; br x16; .quad handler`), then the dictionary proper starts after them. `deftramp` in `compiler.s` defines the words `docol`, `dovar` and `docon`, which give their addresses."
+    },
+    {
+      "file": "arch/aarch64/compiler.s",
+      "pattern": "^write_cf_sub:",
+      "title": "Writing a code field",
+      "description": "Store the first instruction, compute the `bl` offset to the handler and store it, then `SYNC_ICACHE` so instruction fetch sees the new code."
+    },
+    {
+      "file": "arch/aarch64/kernel.s",
+      "pattern": "^\\.macro defcode",
+      "title": "defcode",
+      "description": "Lays down a dictionary header in the assembler and advances the `link` symbol. `defword` adds a code field for hand-written threads, such as `:` and `;` in `compiler.s`. At the end of the file, `var_latest` starts as the last header."
+    },
+    {
+      "file": "arch/aarch64/compiler.s",
+      "pattern": "defcode\\s+\"search-list\"",
+      "title": "Forth stays the reference",
+      "description": "A measured hot spot. Its Forth definition is `search-list-ref` in `forth/interpreter.fs`, and `tests/reference.in` checks that the two agree, as it does for `cmove`, `fill`, `um/mod` and SHA-256's block.\n\nNext: lecture 3, booting."
+    }
+  ]
+}

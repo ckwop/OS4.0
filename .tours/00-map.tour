@@ -1,0 +1,59 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "0 · The map",
+  "description": "The repository behind lecture 0 (docs/course/00-map.html): the specification, the two builds, the boot files, the disks, the image and the tests. About eight minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 0, The map**, slide by slide. Each step opens a file and highlights a line: read the note, look around, then press **Next** (or `Ctrl+Right`).\n\nOn any slide of a lecture, the **Code** button (or the `v` key) jumps to its step here."
+    },
+    {
+      "file": "docs/brief.md",
+      "pattern": "^## Purpose",
+      "title": "The specification",
+      "description": "The brief says what OS 4.0 is for: a bare-metal Forth system on 64-bit ARM, serving a MUD over TCP, first under QEMU, then on AWS Graviton.\n\nRead **Goals and non-goals** and **Architecture** first; the milestones follow."
+    },
+    {
+      "file": "arch/aarch64/kernel.s",
+      "pattern": "^\\.ifdef HOSTED",
+      "title": "One kernel, two builds",
+      "description": "The kernel is assembled twice. With `HOSTED` defined it embeds the Linux drivers and is linked with `linux.s`; without it, the virtio drivers, linked with `virt.s` and `vectors.s`.\n\nThe `Makefile` rules `$(BUILD)/hosted/kernel.o` and `$(BUILD)/virt/kernel.o` do the two assemblies."
+    },
+    {
+      "file": "DECISIONS.md",
+      "pattern": "^\\| # \\| Date",
+      "title": "Where the reasons live",
+      "description": "Every choice the brief left open is a numbered row here, with a one-line reason. Comments in the code cite them as `#NN` or `DECISIONS.md #NN`.\n\nIts companion `docs/tech-debt.md` lists shortcuts and gaps; entries marked **must fix before public** block any internet-facing deployment."
+    },
+    {
+      "file": "arch/aarch64/kernel.s",
+      "pattern": "^boot_files:",
+      "title": "The boot files, in order",
+      "description": "Each `bootfile` line embeds one Forth file (with `.incbin`) and records its name, so that an error while loading can say `file:line:`.\n\nThe kernel's small interpreter compiles them in this order at every boot; `forth/start.fs` must stay last."
+    },
+    {
+      "file": "forth/blocks.fs",
+      "pattern": ": find-data-disk",
+      "title": "Telling disks apart",
+      "description": "The data disk is the first with an `OS40DISK` header; failing that, the first whose block 0 has no boot signature. The app disk is found in `forth/files.fs` by its FAT label `OS4APP`.\n\nNever by number: attachment order is not promised."
+    },
+    {
+      "file": "Dockerfile",
+      "pattern": "^FROM",
+      "title": "The image",
+      "description": "Debian with the ARM cross binutils, QEMU (system and user), UEFI firmware, Limine pinned to a commit, gforth and Python. The end of the file builds the kernel and boot disk and installs the base in `/opt/os4` for applications."
+    },
+    {
+      "file": "tests/stack.in",
+      "pattern": "rot \\.s",
+      "title": "A transcript test",
+      "description": "Typed at the console line by line; `tests/stack.out` holds what must come back. `tools/run-tests.py` runs every test, each with its own disks, on both builds.\n\nLecture 11 covers the test tools."
+    },
+    {
+      "file": "CLAUDE.md",
+      "pattern": "^## Hard rules",
+      "title": "The rules",
+      "description": "The hard rules and conventions in one place: Forth first, hardware through the HAL, `sync` for durability, the sandbox for strangers, and no Forth source or execution tokens in stored data.\n\nThat's the map. Next: lecture 1, Forth in twelve minutes."
+    }
+  ]
+}

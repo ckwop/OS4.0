@@ -3,7 +3,10 @@
 // a sentence at a time, with captions, a transcript, and "builds": while it
 // narrates, parts of the slide marked data-step="n" stay dim until paragraph n
 // of the talk begins. In the talk, <span data-say="..."> is spoken as data-say.
-// Keys: space plays or pauses, arrows move, c captions, t transcript.
+// A slide with data-code="n" has a Code button that opens step n of the
+// lecture's code tour (<body data-tour="name">, .tours/name.tour) in VS Code,
+// through CodeTour's URI handler.
+// Keys: space plays or pauses, arrows move, c captions, t transcript, v code.
 
 (() => {
   const slides = [...document.querySelectorAll(".slide")];
@@ -35,6 +38,7 @@
     <button class="next" title="Next slide (right arrow)">&#9654;</button>
     <span class="count"></span>
     <span class="spacer"></span>
+    <a class="code" title="Open this slide's step of the code tour in VS Code (v)">Code</a>
     <button class="cc" title="Captions (c)" aria-pressed="false">CC</button>
     <button class="tt" title="Transcript of this slide (t)" aria-pressed="false">Transcript</button>
     <select class="rate" title="Speed">
@@ -46,7 +50,8 @@
   document.body.insertBefore(progress, document.querySelector(".stage"));
   document.body.append(transcript, captions, controls);
   const $ = (sel) => controls.querySelector(sel);
-  const playButton = $(".play"), rateSelect = $(".rate"), voiceSelect = $(".voice");
+  const playButton = $(".play"), rateSelect = $(".rate"), voiceSelect = $(".voice"), codeLink = $(".code");
+  const tour = document.body.dataset.tour;
 
   // ---- Narration: each slide's talk as sentences, with the paragraph each is in
 
@@ -137,6 +142,9 @@
     transcript.innerHTML = talk ? talk.innerHTML : "";
     try { history.replaceState(null, "", `#${index + 1}`); } catch { /* file: URLs in some browsers */ }
     setPara(-1);
+    const step = slides[index].dataset.code;
+    codeLink.hidden = !(tour && step);
+    if (tour && step) codeLink.href = `vscode://vsls-contrib.codetour/startTour?tour=${tour}&step=${step}`;
     document.querySelector(".stage").scrollTop = 0;
     if (playing) play(); else silence();
   };
@@ -185,6 +193,7 @@
   $(".prev").onclick = () => show(index - 1);
   $(".next").onclick = () => show(index + 1);
   playButton.onclick = () => (playing ? stop() : play());
+  codeLink.onclick = () => { if (playing) stop(); };       // reading the code now
   $(".cc").onclick = () => toggle($(".cc"), captions, "captions");
   $(".tt").onclick = () => toggle($(".tt"), transcript, "transcript");
   rateSelect.onchange = () => { rate = parseFloat(rateSelect.value); store.set("rate", rateSelect.value); if (playing) play(); };
@@ -200,6 +209,7 @@
     else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); show(index - 1); }
     else if (e.key === "c") $(".cc").click();
     else if (e.key === "t") $(".tt").click();
+    else if (e.key === "v" && !codeLink.hidden) codeLink.click();
   });
   window.addEventListener("beforeunload", () => synth && synth.cancel());
 

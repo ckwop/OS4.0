@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Booting · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="03-booting">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">3 · Booting</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/03-booting.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 3 of 12 · about 12 minutes</div>
+  <h1>Booting</h1>
+  <p class="lede">From power on to the <code>ok</code> prompt: firmware, Limine, a little assembly, and then the system compiling itself.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">The boot disk, Limine, and the higher half</li>
+    <li data-step="2">Memory, devices and the timer</li>
+    <li data-step="3">The bootstrap interpreter, and handing over to Forth</li>
+  </ul>
+  <div class="talk">
+    <p>This lecture follows the machine from the moment it's switched on to the moment you see <span data-say="okay">ok</span>. It takes about ten seconds under QEMU, and most of that is the firmware.</p>
+    <p>We'll look at the boot disk and the boot loader, Limine, and why the kernel lives at the very top of the address space. Then the few things the kernel must set up for itself: memory for the dictionary, access to devices, and a timer.</p>
+    <p>And finally the most Forth-like part: a tiny interpreter in assembly that compiles the boot files, and then hands the keyboard over to the real interpreter, written in Forth.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>The journey</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 170" role="img" aria-label="UEFI firmware, then Limine, then _start in virt.s, then forth_cold, then the boot files, then start.fs and the REPL">
+      <defs><marker id="b1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="box faint" x="10" y="40" width="130" height="64" rx="8"/><text x="75" y="68" text-anchor="middle">UEFI</text><text x="75" y="88" text-anchor="middle" class="small">firmware</text>
+      <rect class="box faint" x="160" y="40" width="130" height="64" rx="8"/><text x="225" y="68" text-anchor="middle">Limine</text><text x="225" y="88" text-anchor="middle" class="small">boot loader</text>
+      <rect class="box blue" x="310" y="40" width="130" height="64" rx="8"/><text x="375" y="68" text-anchor="middle" class="mono">_start</text><text x="375" y="88" text-anchor="middle" class="small">virt.s</text>
+      <rect class="box blue" x="460" y="40" width="130" height="64" rx="8"/><text x="525" y="68" text-anchor="middle" class="mono">forth_cold</text><text x="525" y="88" text-anchor="middle" class="small">outer.s</text>
+      <rect class="box green" x="610" y="40" width="130" height="64" rx="8"/><text x="675" y="68" text-anchor="middle">boot files</text><text x="675" y="88" text-anchor="middle" class="small">compiled</text>
+      <rect class="box accent" x="760" y="40" width="130" height="64" rx="8"/><text x="825" y="68" text-anchor="middle" class="mono">start.fs</text><text x="825" y="88" text-anchor="middle" class="small">app, REPL</text>
+      <path class="line" d="M 140 72 L 156 72" marker-end="url(#b1)"/><path class="line" d="M 290 72 L 306 72" marker-end="url(#b1)"/>
+      <path class="line" d="M 440 72 L 456 72" marker-end="url(#b1)"/><path class="line" d="M 590 72 L 606 72" marker-end="url(#b1)"/>
+      <path class="line" d="M 740 72 L 756 72" marker-end="url(#b1)"/>
+      <text x="150" y="140" class="small" text-anchor="middle">not ours</text>
+      <text x="450" y="140" class="small" text-anchor="middle">assembly</text>
+      <text x="750" y="140" class="small" text-anchor="middle">Forth</text>
+      <line class="line" x1="20" y1="124" x2="280" y2="124"/><line class="line accent" x1="320" y1="124" x2="580" y2="124"/><line class="line" x1="620" y1="124" x2="880" y2="124"/>
+    </svg>
+  </div>
+  <ul class="points below">
+    <li data-step="2">Firmware and Limine find the kernel on the boot disk and load it</li>
+    <li data-step="3">Two short stretches of assembly set up the machine and the Forth</li>
+    <li data-step="4">From there on, Forth builds the rest of the system</li>
+  </ul>
+  <div class="talk">
+    <p>Here's the whole journey in one line. The first two steps aren't ours. QEMU starts its UEFI firmware, the same kind of firmware a PC has. The firmware finds the boot loader, Limine, on the boot disk and runs it. Limine reads its configuration, loads our kernel into memory, and jumps to it.</p>
+    <p>Then come two short stretches of assembly. Underscore start, in virt dot s, sets up the machine: exceptions, devices, the console, the timer and memory. Then forth cold, in outer dot s, sets up the Forth machine and starts compiling the boot files.</p>
+    <p>From there, everything is Forth. The boot files are compiled one by one, and the last of them starts the application, or the network REPL, and then the interactive prompt on the console.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>The boot disk</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="Makefile">$(BOOT_IMG): $(KERNEL_ELF) $(ARCH)/limine.conf
+	rm -f $@
+	truncate -s 64M $@
+	mkfs.fat -F 32 -n OS40BOOT $@ &gt;/dev/null
+	mmd -i $@ ::/EFI ::/EFI/BOOT ::/boot
+	mcopy -i $@ $(LIMINE_DIR)/BOOTAA64.EFI ::/EFI/BOOT/
+	mcopy -i $@ $(ARCH)/limine.conf ::/boot/
+	mcopy -i $@ $(KERNEL_ELF) ::/boot/kernel.elf</pre>
+      <div class="src"><a href="../../Makefile">Makefile › $(BOOT_IMG)</a></div>
+    </div>
+    <div data-step="2">
+      <pre class="code" data-src="arch/aarch64/limine.conf">timeout: 0
+quiet: yes
+
+/OS 4.0
+    protocol: limine
+    path: boot():/boot/kernel.elf</pre>
+      <div class="src"><a href="../../arch/aarch64/limine.conf">arch/aarch64/limine.conf</a></div>
+    </div>
+  </div>
+  <ul class="points below">
+    <li data-step="1">A 64 MiB FAT disk, made with ordinary tools</li>
+    <li data-step="2">Limine sits where UEFI looks for a removable disk's loader</li>
+    <li data-step="3">Attached read-only: the OS never writes it</li>
+  </ul>
+  <div class="talk">
+    <p>The boot disk is made by this rule in the Makefile, with ordinary tools. Make a sixty-four megabyte file, format it as FAT, and copy three things onto it.</p>
+    <p>First, Limine itself, as <span data-say="boot A A 64 dot E F I">BOOTAA64.EFI</span> in the folder E F I slash boot. That's the place UEFI firmware looks for the boot loader of a removable disk on an ARM machine, so no firmware settings are needed. Second, Limine's configuration, shown on the right: no menu, no delay, one entry, which loads the kernel using Limine's own protocol. And third, the kernel itself.</p>
+    <p>QEMU attaches this disk read-only. The operating system never writes to it, and that also lets every test share one copy.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Into the higher half</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 530 280" role="img" aria-label="The address space: the kernel at the top, Limine's direct map of RAM, and our identity map of the low 1 GiB for devices">
+        <rect class="box blue" x="20" y="16" width="250" height="44" rx="4"/><text x="34" y="44" class="mono">0xffffffff80000000</text>
+        <text x="286" y="34">the kernel</text><text x="286" y="52" class="small">where Limine loads it</text>
+        <rect class="box green" x="20" y="74" width="250" height="60" rx="4"/><text x="34" y="108">Limine's direct map</text>
+        <text x="286" y="98">all RAM, read, write,</text><text x="286" y="116" class="small">execute: the dictionary is here</text>
+        <rect class="box faint" x="20" y="148" width="250" height="56" rx="4"/><text x="145" y="181" text-anchor="middle" class="small">unmapped</text>
+        <rect class="box accent" x="20" y="218" width="250" height="44" rx="4"/><text x="34" y="246" class="mono">0 – 1 GiB</text>
+        <text x="286" y="236">devices, mapped by us</text><text x="286" y="254" class="small">through TTBR0, as Device memory</text>
+      </svg>
+    </div>
+    <div>
+      <pre class="code" data-src="arch/aarch64/virt.ld" data-step="2">SECTIONS
+{
+    . = 0xffffffff80000000;</pre>
+      <div class="src"><a href="../../arch/aarch64/virt.ld">arch/aarch64/virt.ld</a></div>
+      <ul class="points below">
+        <li data-step="2">Limine's protocol requires a higher-half kernel</li>
+        <li data-step="3">The dictionary: the largest usable region in Limine's memory map</li>
+        <li data-step="4">Capped at 128 MiB, for the code fields' reach</li>
+      </ul>
+    </div>
+  </div>
+  <div class="talk">
+    <p>Limine's protocol expects the kernel in the higher half: the top two gigabytes of the sixty-four-bit address space. The linker script puts it there, starting at this address, as one segment that's readable, writable and executable.</p>
+    <p>Limine also leaves the MMU on, with page tables of its own. They map the kernel, and all of RAM in a second place called the direct map.</p>
+    <p>The kernel asks Limine two questions through request blocks in its data section: the memory map, and where the direct map starts. It picks the largest usable region of RAM, reached through the direct map, and that becomes the Forth dictionary. Lecture two explained the cap: it's limited to a hundred and twenty-eight megabytes so that code fields can reach the trampolines.</p>
+    <p>What Limine doesn't map is the devices. That's the next job.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2><code>_start</code>: setting up the machine</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="arch/aarch64/virt.s">_start:
+	mov	x0, sp				<span class="c">// run on SP_EL1, keeping Limine's stack,</span>
+	msr	spsel, #1			<span class="c">// so exceptions and the kernel share one</span>
+	mov	sp, x0
+	ldr	x0, =vectors
+	msr	vbar_el1, x0
+	isb
+	bl	map_devices
+	bl	uart_init
+	bl	timer_init
+	<span class="c">… check that Limine accepted base revision 3</span>
+1:	bl	find_memory
+	cbnz	x1, forth_cold</pre>
+      <div class="src"><a href="../../arch/aarch64/virt.s" data-ref="arch/aarch64/virt.s:_start">arch/aarch64/virt.s › _start</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="2">Exception vectors first: a fault from here on is reported</li>
+      <li data-step="3">Devices, the serial port, the timer</li>
+      <li data-step="4">Then the dictionary's memory, and into the Forth kernel</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>This is underscore start, the first of our code to run. It's short enough to read in one go.</p>
+    <p>The first three lines choose which stack pointer the processor uses, keeping the stack Limine gave us. Then the exception vectors are installed: the table of handlers the processor jumps to on an interrupt or a fault. Doing this first means that any fault from here on prints a report, instead of hanging silently.</p>
+    <p>Then three subroutines. Map the devices into the address space, make sure the serial port is on, and start the ten-millisecond timer.</p>
+    <p>After checking that Limine understood which version of its protocol we asked for, find memory picks the region for the dictionary, and, if it found one, the code branches into forth cold, in the portable kernel. The platform part of booting is done.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>Mapping the devices</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 210" role="img" aria-label="A level 0 table points to a level 1 table, whose first entry maps a 1 GiB block of devices">
+        <defs><marker id="b2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <text x="20" y="28" class="mono">TTBR0</text>
+        <path class="line" d="M 70 34 L 70 56" marker-end="url(#b2)"/>
+        <rect class="box" x="20" y="60" width="120" height="40" rx="4"/><text x="80" y="85" text-anchor="middle" class="small">level 0, entry 0</text>
+        <path class="line" d="M 140 80 L 186 80" marker-end="url(#b2)"/>
+        <rect class="box" x="190" y="60" width="120" height="40" rx="4"/><text x="250" y="85" text-anchor="middle" class="small">level 1, entry 0</text>
+        <path class="line" d="M 310 80 L 346 80" marker-end="url(#b2)"/>
+        <rect class="box accent" x="350" y="40" width="100" height="80" rx="4"/><text x="400" y="76" text-anchor="middle">1 GiB</text><text x="400" y="96" text-anchor="middle" class="small">at physical 0</text>
+        <text x="20" y="150" class="small">UART 0x09000000 · GIC 0x08000000</text>
+        <text x="20" y="172" class="small">virtio-mmio 0x0a000000: disks, network, entropy</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2">Two page tables and one 1 GiB block: virtual = physical</li>
+      <li data-step="3"><b>Device</b> memory: no caching, no reordering, never executed</li>
+      <li data-step="4">TTBR0 covers the low half, which Limine leaves to us</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="arch/aarch64/virt.s">	<span class="c">// 1 GiB block at physical 0: Device memory, access flag set, never executable</span>
+	.equ	PTE_DEVICE_BLOCK, (1 &lt;&lt; 54) | (1 &lt;&lt; 53) | (1 &lt;&lt; 10) | (MAIR_IDX_DEVICE &lt;&lt; 2) | 0x1</pre>
+    <div class="src"><a href="../../arch/aarch64/virt.s" data-ref="arch/aarch64/virt.s:map_devices">arch/aarch64/virt.s › map_devices</a></div>
+  </div>
+  <div class="talk">
+    <p>On QEMU's virt board, every device sits in the first gigabyte of physical addresses: the serial port, the interrupt controller, and thirty-two slots for virtio devices, which is where the disks, the network card and the entropy source appear.</p>
+    <p>The kernel maps that whole gigabyte with just two small page tables. The level zero table points to a level one table, whose first entry maps one gigabyte block, so that each virtual address equals the physical address. An address you read in a device's data sheet works as it is.</p>
+    <p>The entry's bits mark it as Device memory. That matters: device registers must not be cached, and reads and writes to them must not be reordered or merged, or the device would see nonsense. The never-execute bits stop the processor from ever fetching instructions there.</p>
+    <p>The table goes in the register <span data-say="T T B R zero">TTBR0</span>, which handles the lower half of the address space. Limine only uses the upper half, so the two don't collide.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="7">
+  <h2>The timer tick</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="arch/aarch64/virt.s">1:	ldr	x0, =tick_period		<span class="c">// the tick</span>
+	ldr	x0, [x0]
+	msr	cntv_tval_el0, x0
+	mrs	x0, elr_el1
+	str	w9, [sp, #-16]!
+	bl	watchdog_sub
+	ldr	w9, [sp], #16
+	cbz	x0, 8f
+	msr	elr_el1, x0			<span class="c">// resume the running task in watchdog_throw</span></pre>
+      <div class="src"><a href="../../arch/aarch64/virt.s" data-ref="arch/aarch64/virt.s:hal_irq">arch/aarch64/virt.s › hal_irq</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The virtual timer interrupts every 10 ms, through the GIC</li>
+      <li data-step="2">Each tick: re-arm the timer, then ask the watchdog</li>
+      <li data-step="3">The only interrupt: devices are polled</li>
+      <li data-step="4">An idle CPU waits in <code>wfi</code> until the next tick</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Timer init programmed the processor's virtual timer to interrupt a hundred times a second, routed through the interrupt controller, the <span data-say="G I C">GIC</span>.</p>
+    <p>This is what happens on each tick. Set the timer for the next one. Then call the watchdog, passing the address the interrupted code was about to run. If the running task has gone too long without pausing, the watchdog returns a different address, and the interrupt returns there instead, so the task throws an error. You saw the watchdog in lecture five.</p>
+    <p>The tick is the only interrupt the system uses. Disks, the network and the console are all polled: a task asks whether there's anything new, and pauses if not. That keeps the code simple, with no interrupt handlers racing the tasks.</p>
+    <p>And when no task has anything to do, the processor waits for an interrupt, so an idle machine sleeps until the next tick.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="8">
+  <h2><code>forth_cold</code>: the Forth machine</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="arch/aarch64/outer.s">	ldr	UP, =user0			<span class="c">// the console task: a ring of one</span>
+	str	UP, [UP, #U_LINK]
+	<span class="c">… its stacks, limits, name and number base</span>
+	ldr	DSP, =dstack_top
+	mov	TOS, #0
+	ldr	x0, =boot_files		<span class="c">// start at the first boot file</span>
+	ldr	x0, [x0, #BF_START]
+	ldr	x1, =var_boot_pos
+	str	x0, [x1]
+	bl	refill_sub
+	b	do_quit</pre>
+      <div class="src"><a href="../../arch/aarch64/outer.s" data-ref="arch/aarch64/outer.s:forth_cold">arch/aarch64/outer.s › forth_cold</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The trampolines first, then the dictionary after them</li>
+      <li data-step="2">The console becomes task zero: a ring of one</li>
+      <li data-step="3">The first line of the first boot file is the input</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Forth cold is where the portable kernel takes over. It's given the dictionary's address and size, and the same code runs on both builds.</p>
+    <p>It first writes the four trampolines from lecture two at the start of the dictionary, and starts the dictionary proper just after them.</p>
+    <p>Then it makes the console into a task. The user area pointer is set to a block of memory reserved for it, and its link points to itself, so the ring of tasks has exactly one member. Its stacks, their limits, its name and its number base are filled in, which is the part elided here.</p>
+    <p>Last, it points the input at the first line of the first boot file, and jumps into the interpreter loop. From now on the system is reading Forth, just as if someone were typing it very fast.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="9">
+  <h2>The bootstrap interpreter</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="arch/aarch64/outer.s"><span class="w">interpret</span>:
+	<span class="c">…</span>
+	bl	parse_name_sub
+	cbz	x1, 5f
+	mov	x24, x0
+	mov	x25, x1
+	bl	find_sub
+	cbz	x0, 2f
+	ldr	x2, [UP, #U_STATE]
+	cbz	x2, 1f			<span class="c">// interpreting</span>
+	cmp	x1, #1
+	b.eq	1f			<span class="c">// immediate</span>
+	bl	comma_sub
+	NEXT
+1:	mov	x8, x0
+	br	x8</pre>
+      <div class="src"><a href="../../arch/aarch64/outer.s" data-ref="arch/aarch64/outer.s:interpret">arch/aarch64/outer.s › interpret</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The same logic as the Forth <code>interpret</code>, in assembly</li>
+      <li data-step="2">Numbers in <code>2:</code>; the end of a line refills from the next</li>
+      <li data-step="3">Only for the boot files: an error prints <code>file:line:</code> and stops</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>To compile the first boot file, the kernel needs an interpreter before any Forth exists. So it has a small one in assembly. Compare it with the Forth interpret from lecture one: it's the same logic.</p>
+    <p>Parse the next word. If the line is empty, go and get the next line. Look the word up. If it's found, and the system is compiling, and the word isn't immediate, compile it with comma. Otherwise jump straight to it. After label two, not shown, a word that isn't found is tried as a number.</p>
+    <p>Its input comes from the embedded files, a line at a time, moving on to the next file at the end of each. It's only used for the boot files. An error here is fatal: it prints the file name, the line number and the message, and the system stops, because a half-built system isn't worth running.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="10">
+  <h2>Handing over to Forth</h2>
+  <div class="cols even">
+    <div>
+      <pre class="code" data-src="forth/interpreter.fs" data-step="1">: <span class="w">(quit)</span>  ( -- )  repl bye ;
+' (quit) 'quit !</pre>
+      <div class="src"><a href="../../forth/interpreter.fs" data-ref="forth/interpreter.fs:(quit)">forth/interpreter.fs › (quit)</a></div>
+      <pre class="code below" data-src="forth/start.fs" data-step="2">.( OS 4.0) cr
+start-app
+quit</pre>
+      <div class="src"><a href="../../forth/start.fs">forth/start.fs</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The interpreter file stores the Forth REPL in <code>'quit</code></li>
+      <li data-step="2"><code>start.fs</code> prints the banner, starts the app, and calls <code>quit</code></li>
+      <li data-step="3"><code>quit</code> now runs the Forth loop: the assembly one is never used again</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>How does the assembly interpreter hand over? Through one variable. Near the end of the interpreter file, the Forth REPL is defined, and its execution token is stored in a kernel variable called tick-quit.</p>
+    <p>Start dot fs is the last boot file, and it's three lines. Print the banner, start the application or the network REPL, and call quit.</p>
+    <p>Quit resets the return stack and looks at tick-quit. Now that it's set, quit switches the input from the boot files to the terminal and runs the Forth loop. The assembly interpreter is never used again. Everything you type is read by the REPL written in Forth, which means it can be changed and extended in Forth, like the rest of the system.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-code="11">
+  <h2>The hosted build: the same boot, on Linux</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="arch/aarch64/linux.s">1:	mov	x28, x0
+	bl	terminal_raw
+	bl	faults_init
+	bl	timer_init
+	mov	x0, x28
+	ldr	x1, =DICT_BYTES
+	b	forth_cold</pre>
+      <div class="src"><a href="../../arch/aarch64/linux.s" data-ref="arch/aarch64/linux.s:_start">arch/aarch64/linux.s › _start</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The dictionary: 128 MiB from <code>mmap</code>, readable, writable, executable</li>
+      <li data-step="2">The terminal in raw mode: Forth does its own echo</li>
+      <li data-step="2">Faults arrive as signals: reported and thrown as on bare metal</li>
+      <li data-step="3">The tick is <code>SIGALRM</code>, every 10 ms</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>The hosted build boots the same way, with Linux standing in for the hardware. Its underscore start asks Linux for a hundred and twenty-eight megabytes of memory that can be written and executed, for the dictionary.</p>
+    <p>It puts the terminal in raw mode, so that keys arrive one at a time and the Forth does its own echoing, just as on the serial console. It catches faults, which Linux delivers as signals, so that a bad memory access is reported and thrown, as on bare metal. And it asks for an alarm signal every ten milliseconds, which stands in for the timer interrupt and drives the same watchdog.</p>
+    <p>Then it branches to the same forth cold, with the memory's address and size. From that point the two builds run identical code.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>Why install the exception vectors before mapping the devices? What would you see if the order were reversed and the mapping faulted?</li>
+    <li>Device memory forbids caching and reordering. Which bug would you expect if the devices were mapped as normal memory?</li>
+    <li>An error in a boot file stops the system. An error typed at the prompt doesn't. Why is each the right choice?</li>
+  </ol>
+  <div class="talk">
+    <p>That's booting. The firmware and Limine load the kernel, a little assembly sets up the machine and the Forth machine, the bootstrap interpreter compiles the boot files, and the Forth REPL takes over.</p>
+    <p>Three questions to think about: the order of the first steps, why devices need their own kind of memory, and why errors at boot and errors at the prompt are treated so differently. That last one leads straight into lecture four: when things go wrong.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

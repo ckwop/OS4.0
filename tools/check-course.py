@@ -7,8 +7,12 @@ point into it; this fails when the code has moved on without them:
   data-ref="FILE:WORD"   ... and defines WORD (a Forth definition, or an
                          assembly defcode, defconst or label)
   <pre data-src="FILE">  every line of the excerpt is a line of FILE (spacing
-                         aside); a line of just "…" stands for lines left out
+                         aside); a line starting with "…" stands for lines
+                         left out, and may say what they do
+  data-code="N"          on a slide: step N exists in the tour <body data-tour>
+                         names, which the slide's Code button opens
   .tours/*.tour          each step's file exists, and its pattern matches it
+                         (multiline, as CodeTour matches: ^ starts a line)
 
 Usage: check-course.py   (from the repository root; make check-course)
 """
@@ -43,13 +47,26 @@ def check_lecture(path, problems):
             problems.append(f"{where}: {file} does not exist")
         elif word and not defines(open(file, encoding="utf-8").read(), file, word):
             problems.append(f"{where}: {file} no longer defines {word}")
+    tour = re.search(r'<body[^>]*data-tour="([^"]+)"', page)
+    steps = re.findall(r'<section[^>]*data-code="(\d+)"', page)
+    if tour:
+        tour_path = f".tours/{tour.group(1)}.tour"
+        if not os.path.isfile(tour_path):
+            problems.append(f"{where}: {tour_path} does not exist")
+        else:
+            count = len(json.load(open(tour_path, encoding="utf-8")).get("steps", []))
+            for step in steps:
+                if not 1 <= int(step) <= count:
+                    problems.append(f"{where}: data-code={step}, but {tour_path} has {count} steps")
+    elif steps:
+        problems.append(f"{where}: slides name tour steps, but <body> names no data-tour")
     for file, body in re.findall(r'<pre[^>]*data-src="([^"]+)"[^>]*>(.*?)</pre>', page, re.S):
         if not os.path.isfile(file):
             problems.append(f"{where}: {file} does not exist")
             continue
         lines = {squash(l) for l in open(file, encoding="utf-8").read().splitlines()}
         for line in html.unescape(re.sub(r"<[^>]+>", "", body)).splitlines():
-            if squash(line) and squash(line) != "…" and squash(line) not in lines:
+            if squash(line) and not squash(line).startswith("…") and squash(line) not in lines:
                 problems.append(f"{where}: excerpt line not in {file}: {line.strip()!r}")
 
 
@@ -62,7 +79,7 @@ def check_tour(path, problems):
             continue
         if not os.path.isfile(file):
             problems.append(f"{where} step {n}: {file} does not exist")
-        elif "pattern" in step and not re.search(step["pattern"], open(file, encoding="utf-8").read()):
+        elif "pattern" in step and not re.search(step["pattern"], open(file, encoding="utf-8").read(), re.M):
             problems.append(f"{where} step {n}: pattern {step['pattern']!r} not found in {file}")
 
 

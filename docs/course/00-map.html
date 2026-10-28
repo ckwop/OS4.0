@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The map · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="00-map">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">0 · The map</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/00-map.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 0 of 12 · about 10 minutes</div>
+  <h1>The map</h1>
+  <p class="lede">What OS 4.0 is, how the repository is laid out, and how it is built and tested. The rest of the course fills in each area.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">A Forth operating system, from the processor up</li>
+    <li data-step="2">Two builds of one kernel, three disks</li>
+    <li data-step="3">Docker for every tool, transcripts for every test</li>
+  </ul>
+  <div class="talk">
+    <p>Welcome to the course on OS 4.0. This first lecture is the map. It won't go deep into anything. Instead it shows you the whole territory, so that when later lectures zoom in on tasks, or storage, or the network, you know where you are.</p>
+    <p>We'll see what the system is and what it's for, how one kernel is built two ways, and the three disks it uses.</p>
+    <p>Then the practical side: how everything is built inside Docker, and how every feature is tested by a transcript of a real session. Each lecture ends with questions to think about, and the Code button opens the same code in your editor.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>A Forth operating system</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 520 290" role="img" aria-label="Layers: the app on top, then the Forth boot files, the assembly kernel, and the machine">
+        <rect class="box accent" x="20" y="16" width="480" height="50" rx="8"/>
+        <text x="40" y="47">an app: the MUD, or anything else</text>
+        <text x="480" y="47" class="small" text-anchor="end">app disk</text>
+        <rect class="box green" x="20" y="78" width="480" height="96" rx="8"/>
+        <text x="40" y="104">Forth boot files</text>
+        <text x="40" y="126" class="small">the language, drivers, tasks, blocks, network, REPL</text>
+        <text x="40" y="146" class="small">about 3,000 lines of Forth</text>
+        <text x="480" y="104" class="small" text-anchor="end">forth/, hal/</text>
+        <rect class="box blue" x="20" y="186" width="480" height="50" rx="8"/>
+        <text x="40" y="216">the kernel: primitives, a compiler, start-up</text>
+        <text x="480" y="216" class="small" text-anchor="end">arch/aarch64/</text>
+        <rect class="box faint" x="20" y="248" width="480" height="34" rx="8"/>
+        <text x="40" y="270" class="small">a 64-bit ARM machine: QEMU's virt today, AWS Graviton later</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2">No Linux underneath: it owns the machine</li>
+      <li data-step="3">Most of it is Forth, even the drivers</li>
+      <li data-step="4">Built to run a MUD, kept general for other apps</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>OS 4.0 is a small operating system written in Forth for 64-bit ARM processors. Here are its layers, from the bottom up.</p>
+    <p>At the bottom is the machine. Today that's QEMU's virtual ARM board, called <span data-say="virt">virt</span>. Later it will be an AWS Graviton server. There's no Linux underneath and no other operating system: OS 4.0 owns the machine, from the first instruction.</p>
+    <p>Above it is a small kernel in assembly language. It holds the Forth primitives, a minimal compiler, and the start-up code. Everything else is Forth, loaded at boot from the files in the forth and <span data-say="hal">HAL</span> folders: the rest of the language, the device drivers, multitasking, disk blocks, a network stack, and the interactive prompt, which Forth calls the REPL.</p>
+    <p>On top runs an application. The first will be a MUD, a text adventure that many people play at once over the network. But the base is kept general, so that other applications can run on it too.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>One kernel, two builds</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 520 250" role="img" aria-label="kernel.s is assembled twice: with linux.s for the hosted build, with virt.s for bare metal">
+        <rect class="box accent" x="170" y="14" width="180" height="56" rx="8"/>
+        <text x="260" y="38" text-anchor="middle" class="mono">kernel.s</text>
+        <text x="260" y="58" text-anchor="middle" class="small">+ the boot files</text>
+        <path class="line" d="M 220 70 L 120 120"/>
+        <path class="line" d="M 300 70 L 400 120"/>
+        <rect class="box green" x="20" y="120" width="210" height="110" rx="8"/>
+        <text x="36" y="146">hosted</text>
+        <text x="36" y="168" class="mono">linux.s</text>
+        <text x="36" y="190" class="small">a Linux program, run by</text>
+        <text x="36" y="208" class="small">qemu-aarch64: starts at once</text>
+        <rect class="box blue" x="290" y="120" width="210" height="110" rx="8"/>
+        <text x="306" y="146">bare metal</text>
+        <text x="306" y="168" class="mono">virt.s, vectors.s</text>
+        <text x="306" y="190" class="small">booted by Limine on</text>
+        <text x="306" y="208" class="small">QEMU's virt machine</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2">The same Forth on both: only the drivers differ</li>
+      <li data-step="2">The platform supplies <code>hal_key</code>, <code>hal_emit</code>, <code>hal_bye</code>…</li>
+      <li data-step="3">Every test runs on both builds</li>
+    </ul>
+  </div>
+  <div class="below" data-step="2">
+    <pre class="code" data-src="arch/aarch64/kernel.s">.ifdef HOSTED
+	bootfile "hal/linux-blk.fs"
+	<span class="c">…</span>
+.else
+	bootfile "hal/virtio.fs"
+	<span class="c">…</span>
+.endif</pre>
+    <div class="src"><a href="../../arch/aarch64/kernel.s" data-ref="arch/aarch64/kernel.s:boot_files">arch/aarch64/kernel.s › boot_files</a></div>
+  </div>
+  <div class="talk">
+    <p>The kernel is one assembly file, kernel dot s, which pulls in the rest of the assembly and embeds the Forth boot files. It's assembled twice, once for each platform.</p>
+    <p>The hosted build links it with linux dot s and runs it as an ordinary Linux program, under a small emulator called <span data-say="Q emu A arch 64">qemu-aarch64</span>. It starts in a blink, which makes it ideal for quick tests. The bare-metal build links it with virt dot s instead and boots on QEMU's virtual machine, through a boot loader called Limine. The Forth on top is the same: only a handful of tiny routines, for reading a key, printing a character, and shutting down, come from the platform. And a few drivers differ, which the conditional block here chooses.</p>
+    <p>Because the two builds share everything else, every test runs on both. When they agree, you can trust that the Forth is right and the platform code is right.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Where things live</h2>
+  <div class="cols even">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 470 330" role="img" aria-label="The repository's folders">
+        <g class="mono">
+          <text x="20" y="34">arch/aarch64/</text>
+          <text x="20" y="72">forth/</text>
+          <text x="20" y="110">forth/net/</text>
+          <text x="20" y="148">hal/</text>
+          <text x="20" y="186">tools/</text>
+          <text x="20" y="224">tests/</text>
+          <text x="20" y="262">docs/</text>
+          <text x="20" y="300">examples/</text>
+        </g>
+        <g class="small">
+          <text x="170" y="34">the kernel and platform glue, in assembly</text>
+          <text x="170" y="72">the language, tasks, blocks, the REPL…</text>
+          <text x="170" y="110">Ethernet, ARP, IP, ICMP, UDP, TCP, telnet</text>
+          <text x="170" y="148">drivers: virtio and hosted Linux</text>
+          <text x="170" y="186">Python: tests, disks, network peers</text>
+          <text x="170" y="224">transcripts: .in and .out</text>
+          <text x="170" y="262">the brief, tech debt, this course</text>
+          <text x="170" y="300">hello, an example app</text>
+        </g>
+        <rect class="fill-accent" x="8" y="20" width="4" height="138"/>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2"><code>docs/brief.md</code>: the specification</li>
+      <li data-step="2"><code>DECISIONS.md</code>: every open choice, with its reason</li>
+      <li data-step="3"><code>docs/tech-debt.md</code>: shortcuts, gaps and risks</li>
+      <li data-step="3"><code>CLAUDE.md</code>: the conventions, in brief</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Here's the repository. The four folders marked in orange are the operating system itself. Arch slash <span data-say="A arch 64">aarch64</span> holds the assembly. Forth holds the language and the system services, with the network stack in its own sub-folder. And <span data-say="HAL">hal</span>, the hardware abstraction layer, holds the drivers, also written in Forth.</p>
+    <p>Tools holds the Python helpers that build disks and run tests, tests holds the tests, docs holds the documentation including this course, and examples holds a small example application.</p>
+    <p>Four documents explain the why. The brief is the specification: read it first. Decisions records every choice the brief left open, with a one-line reason, numbered so that code comments can point at them. Tech debt lists shortcuts and known gaps, and some are marked must fix before the system goes public. And the CLAUDE file gathers the conventions in one place.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>The boot files, in order</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="arch/aarch64/kernel.s">	bootfile "forth/core.fs"
+	bootfile "forth/output.fs"
+	<span class="c">…  drivers from hal/</span>
+	bootfile "forth/blocks.fs"
+	bootfile "forth/errors.fs"
+	bootfile "forth/tasks.fs"
+	bootfile "forth/random.fs"
+	bootfile "forth/crypto.fs"
+	bootfile "forth/records.fs"
+	bootfile "forth/net/eth.fs"
+	<span class="c">…  arp, ip, icmp, udp, tcp, telnet, net</span>
+	bootfile "forth/interpreter.fs"
+	bootfile "forth/sandbox.fs"
+	bootfile "forth/files.fs"
+	bootfile "forth/net/repl.fs"
+	bootfile "forth/app.fs"
+	bootfile "forth/start.fs"	<span class="c">// last: starts the Forth QUIT loop</span></pre>
+      <div class="src"><a href="../../arch/aarch64/kernel.s" data-ref="arch/aarch64/kernel.s">arch/aarch64/kernel.s</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="2">Each file builds on the ones before it</li>
+      <li data-step="3">Compiled from source at every boot: under a second</li>
+      <li data-step="4">An error while loading prints <code>file:line:</code> and stops</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>This list in the kernel is the order in which the system builds itself. Each line embeds one Forth source file in the kernel image.</p>
+    <p>Core comes first and finishes the language. Output adds printing and strings. Then come the drivers for the platform, then blocks, error reporting, tasks, random numbers and cryptography, crash-safe records, and the network stack, layer by layer. Then the interpreter, the sandbox, the app disk's files, the network REPL and app start-up. Each file uses only words defined by the files above it.</p>
+    <p>All of this is compiled from source at every boot, by the small interpreter in the kernel. It takes well under a second. There's no separate build step for the Forth, and nothing precompiled to drift out of date.</p>
+    <p>If a boot file has a mistake, the kernel prints the file name and line number, and stops. You'll see that mechanism again in the lecture on booting.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>Three disks, three jobs</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 220" role="img" aria-label="Boot disk: FAT, Limine and the kernel, read only. Data disk: blocks, written. App disk: FAT, the app's files, read only.">
+      <rect class="box faint" x="20" y="20" width="270" height="150" rx="10"/>
+      <text x="40" y="52">boot disk</text>
+      <text x="40" y="78" class="small">FAT: Limine, its config, the kernel</text>
+      <text x="40" y="100" class="small">made by make image</text>
+      <text x="40" y="150" class="mono">read only</text>
+      <rect class="box accent" x="315" y="20" width="270" height="150" rx="10"/>
+      <text x="335" y="52">data disk</text>
+      <text x="335" y="78" class="small">1 KiB blocks, header in block 0</text>
+      <text x="335" y="100" class="small">screens, records, the app's data</text>
+      <text x="335" y="150" class="mono">the only disk written</text>
+      <rect class="box blue" x="610" y="20" width="270" height="150" rx="10"/>
+      <text x="630" y="52">app disk</text>
+      <text x="630" y="78" class="small">FAT labelled OS4APP</text>
+      <text x="630" y="100" class="small">app.fs and the files it includes</text>
+      <text x="630" y="150" class="mono">read only</text>
+      <text x="450" y="205" text-anchor="middle" class="small">told apart by what is on them, never by their order</text>
+    </svg>
+  </div>
+  <ul class="points below">
+    <li data-step="2">A hard rule: the OS never writes the boot disk or the app disk</li>
+    <li data-step="3">FAT for what the OS only reads; blocks for what it writes</li>
+  </ul>
+  <div class="talk">
+    <p>The system runs with three disks, each with one job.</p>
+    <p>The boot disk holds the boot loader and the kernel. The data disk is a plain array of one-kilobyte blocks, with a header in block zero, and it's the only disk the system ever writes. And the app disk holds the application's source files. It's formatted as FAT, the same file system as a USB stick, so it can be made with ordinary tools.</p>
+    <p>That split is one of the hard rules. The operating system never writes to the boot disk or the app disk. FAT is used for what the system only reads, because standard tools can build it; blocks are used for what it writes, because they're simple enough to make crash safe.</p>
+    <p>Notice the line at the bottom. The system tells the disks apart by looking at what's on them, never by the order they happen to be attached in. Cloud machines don't promise an order.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="7">
+  <h2>Everything builds in Docker</h2>
+  <pre class="code" data-step="1"><span class="c"># once: the toolchain image, the kernel and the boot disk</span>
+docker build -t os4 .
+
+<span class="c"># boot to the Forth prompt on the serial console</span>
+docker run --rm -it os4
+
+<span class="c"># the test suites, against your working copy</span>
+docker run --rm -v "${PWD}:/src" os4 make test</pre>
+  <ul class="points below">
+    <li data-step="2">Nothing is installed on the host but Docker</li>
+    <li data-step="2">The image holds cross binutils, QEMU, Limine, gforth and Python</li>
+    <li data-step="3">Make targets: <code>build image run run-hosted test test-hosted test-virt</code></li>
+  </ul>
+  <div class="talk">
+    <p>The host machine has no tools of its own: no assembler, no QEMU, no make. Everything happens inside a Docker image.</p>
+    <p>Building the image fetches the cross assembler for ARM, QEMU, the Limine boot loader, gforth, which is a standard Forth used to check results, and Python for the tools. It also builds the kernel and the boot disk, so the second command boots the system straight away.</p>
+    <p>For day-to-day work, you mount your working copy into the container and run make targets against it. Make test runs the whole suite. There are targets to build, to make the boot image, to boot either build, and to run the tests on one build only.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="8">
+  <h2>Tests are transcripts</h2>
+  <div class="cols even">
+    <div data-step="1">
+      <pre class="code" data-src="tests/stack.in">1 2 3 .s
+rot .s
+-rot .s
+swap .s</pre>
+      <div class="src"><a href="../../tests/stack.in">tests/stack.in</a>: typed at the console</div>
+    </div>
+    <div data-step="2">
+      <pre class="code" data-src="tests/stack.out">OS 4.0
+1 2 3 .s &lt;3&gt; 1 2 3  ok
+rot .s &lt;3&gt; 2 3 1  ok
+-rot .s &lt;3&gt; 1 2 3  ok
+swap .s &lt;3&gt; 1 3 2  ok</pre>
+      <div class="src"><a href="../../tests/stack.out">tests/stack.out</a>: what must come back</div>
+    </div>
+  </div>
+  <ul class="points below">
+    <li data-step="3">Byte for byte, on both builds</li>
+    <li data-step="3">Every feature adds tests; the whole suite runs on every change</li>
+  </ul>
+  <div class="talk">
+    <p>Every test is a transcript. The dot <span data-say="in">in</span> file is typed at the console, line by line, exactly as a person would.</p>
+    <p>The dot <span data-say="out">out</span> file is what must come back: the banner, then each line as the system echoes it, its output, and <span data-say="okay">ok</span>. The values are checked by hand, and against gforth for standard words, before a transcript is committed.</p>
+    <p>The output must match byte for byte, on both builds. It's a blunt instrument, and that's its strength: any change in behaviour, however small, shows up as a difference. Every feature adds tests, and the whole suite runs on every change. The last lecture shows the test tools in detail.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="9">
+  <h2>The rules that shape it</h2>
+  <ul class="points">
+    <li data-step="1"><b>Forth first.</b> Assembly only for primitives, the thinnest hardware access, start-up and measured hot spots</li>
+    <li data-step="2"><b>Hardware through the HAL.</b> <code>key emit blk-read blk-write net-send net-poll</code>: no driver details above <code>hal/</code></li>
+    <li data-step="3"><b>Durable means synced.</b> <code>sync</code> writes the buffers, flushes the device and waits</li>
+    <li data-step="4"><b>Strangers get a sandbox.</b> A player-facing wordlist never reaches the full dictionary</li>
+    <li data-step="5"><b>Data is data.</b> Never store player data as Forth source; never persist execution tokens</li>
+  </ul>
+  <div class="talk">
+    <p>A few rules run through the whole system, and knowing them makes the code easier to read.</p>
+    <p>Forth first. Assembly is used only where it must be: the primitives, the thinnest layer of hardware access, start-up, and places where measurement showed Forth was too slow. Even then, the Forth version is kept as the reference.</p>
+    <p>Hardware goes through the HAL. Everything above the drivers uses a few words like key, emit, block read and block write, network send and network poll, so the same code runs on QEMU, on Linux, and later on real cloud hardware.</p>
+    <p>Durable means synced. A change is only safe once sync has written the buffers, flushed the device, and waited for it to finish.</p>
+    <p>Strangers get a sandbox. Anyone connecting over the network sees a small wordlist that cannot reach the rest of the system.</p>
+    <p>And data is data. Player data is never stored as Forth source to be run later, and execution tokens, which are memory addresses, are never written to disk.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <h2>The course</h2>
+  <div class="cols even">
+    <ol class="points" style="list-style:none">
+      <li data-step="1"><b>1</b> Forth in twelve minutes</li>
+      <li data-step="1"><b>2</b> The kernel</li>
+      <li data-step="1"><b>3</b> Booting</li>
+      <li data-step="1"><b>4</b> When things go wrong</li>
+      <li data-step="2"><b>5</b> Tasks</li>
+      <li data-step="2"><b>6</b> Storage</li>
+    </ol>
+    <ol class="points" style="list-style:none">
+      <li data-step="2"><b>7</b> Network I: up to UDP</li>
+      <li data-step="2"><b>8</b> Network II: TCP</li>
+      <li data-step="3"><b>9</b> The REPL and security</li>
+      <li data-step="3"><b>10</b> Applications</li>
+      <li data-step="3"><b>11</b> Testing</li>
+    </ol>
+  </div>
+  <div class="talk">
+    <p>Here's the rest of the course. The first four lectures are the foundations: enough Forth to read the code, then the kernel, how the machine boots, and how errors are handled.</p>
+    <p>The middle four are the services the system offers: tasks, storage, and the network in two parts, first up to UDP, then TCP.</p>
+    <p>The last three bring it together: the REPL and security, applications, and finally how all of it is tested. Each lecture is about ten to twelve minutes, and stands on its own, though they build in this order.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>The boot files are compiled from source at every boot. What does that buy, and what would precompiling them cost?</li>
+    <li>Why tell disks apart by their contents rather than their order? Think about a cloud server with volumes attached and detached.</li>
+    <li>A transcript test fails if a single space changes. When is that a strength, and when a nuisance?</li>
+  </ol>
+  <div class="talk">
+    <p>That's the map. A Forth system on ARM, built two ways, with three disks, built in Docker and tested by transcripts.</p>
+    <p>Here are three questions to think about before the coaching session. The first is about compiling at boot, the second about telling disks apart, and the third about how strict the tests are. Next, lecture one: just enough Forth to read everything else.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

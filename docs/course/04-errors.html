@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>When things go wrong · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="04-errors">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">4 · When things go wrong</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/04-errors.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 4 of 12 · about 11 minutes</div>
+  <h1>When things go wrong</h1>
+  <p class="lede">One mechanism for every error, from a typo to a bad memory access: <code>throw</code> a code, <code>catch</code> it further up.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2"><code>catch</code> and <code>throw</code>, and how the REPL survives every line</li>
+    <li data-step="2">Errors the kernel finds: stacks, division, undefined words</li>
+    <li data-step="3">Faults the processor finds, and where an error happened</li>
+  </ul>
+  <div class="talk">
+    <p>This lecture is about errors, and the good news is that there's only one mechanism to learn. Whatever goes wrong, whether it's a mistyped word, a division by zero, a stack overflow, or the processor itself refusing a bad memory access, the result is the same: a number is thrown, and something further up catches it.</p>
+    <p>We'll look at catch and throw themselves, and at how the REPL uses them so that no single line can bring the system down.</p>
+    <p>Then the errors the kernel detects in assembly, the faults the processor detects, and how the system reports not just what went wrong, but where.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>Throw a number, catch it further up</h2>
+  <div class="cols">
+    <div class="figure" data-step="1">
+      <svg viewBox="0 0 500 270" role="img" aria-label="The return stack holds catch frames; handler points to the innermost; throw unwinds to it">
+        <defs><marker id="e1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-accent" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+        <text x="20" y="22" class="small">return stack, growing down</text>
+        <rect class="box faint" x="20" y="32" width="220" height="30"/><text x="34" y="52" class="small">the REPL's caller</text>
+        <rect class="box green" x="20" y="62" width="220" height="44"/><text x="34" y="82">catch frame</text><text x="34" y="98" class="small">the REPL's, round each line</text>
+        <rect class="box faint" x="20" y="106" width="220" height="30"/><text x="34" y="126" class="small">calls…</text>
+        <rect class="box green" x="20" y="136" width="220" height="44"/><text x="34" y="156">catch frame</text><text x="34" y="172" class="small">safe-div's</text>
+        <rect class="box faint" x="20" y="180" width="220" height="30"/><text x="34" y="200" class="small">/ … divides by zero</text>
+        <text x="300" y="160" class="mono">handler</text>
+        <path class="line accent" d="M 296 156 L 246 156" marker-end="url(#e1)"/>
+        <path class="line accent" d="M 250 200 Q 290 190 250 172" marker-end="url(#e1)"/>
+        <text x="300" y="206" class="small">-10 throw lands here</text>
+        <text x="20" y="250" class="small">each frame: the saved data stack pointer, and the frame outside it</text>
+      </svg>
+    </div>
+    <ul class="points">
+      <li data-step="2"><code>xt catch</code> runs xt; returns 0, or the code thrown</li>
+      <li data-step="3"><code>n throw</code> unwinds to the innermost <code>catch</code>; <code>0 throw</code> does nothing</li>
+      <li data-step="4">The data stack's depth is put back as it was at <code>catch</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Catch takes an execution token and runs it. If it finishes normally, catch leaves a zero. If anything inside it, however deeply nested, throws a number, the throw comes straight back out of catch, which leaves that number instead.</p>
+    <p>Each catch leaves a frame on the return stack, and a user variable called handler points at the innermost one. Here the REPL has a frame round the current line, and inside it, a word called safe-div has a frame of its own round a division. When the division throws <span data-say="minus ten">-10</span>, throw jumps straight to safe-div's frame. Nothing in between runs any further.</p>
+    <p>Zero throw does nothing at all, which is convenient: you can pass a result code straight to throw without testing it first.</p>
+    <p>And when a throw arrives, the data stack is put back to the depth it had when catch started, so the catcher knows exactly what's on it.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>Six lines of Forth</h2>
+  <pre class="code" data-src="forth/core.fs" data-step="1">: <span class="w">catch</span>  ( i*x xt -- j*x 0 | i*x n )
+  sp@ &gt;r  handler @ &gt;r  rp@ handler !
+  execute
+  r&gt; handler !  r&gt; drop  0 ;
+: <span class="w">throw</span>  ( k*x n -- k*x | i*x n )
+  ?dup if
+    handler @ 0= if abort then   <span class="c">\ nothing to catch it: the kernel's ABORT</span>
+    handler @ rp!  r&gt; handler !  r&gt; swap &gt;r  sp! drop  r&gt;
+  then ;</pre>
+  <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:catch">forth/core.fs › catch, throw</a></div>
+  <ul class="points below">
+    <li data-step="1"><code>catch</code>: save the stack pointer and the old handler; this frame is the handler now</li>
+    <li data-step="2"><code>throw</code>: return stack back to the frame, restore the handler, then the data stack</li>
+    <li data-step="3">Returning from <code>throw</code> returns from <code>catch</code>, with the code</li>
+  </ul>
+  <div class="talk">
+    <p>Here they are, and they're short. Catch saves the data stack pointer on the return stack, then the current handler, then makes this frame the handler. It executes the token. If that returns normally, catch takes its frame off and leaves zero.</p>
+    <p>Throw, with a non-zero code, first checks there's a handler at all. If not, it falls back to the kernel's abort. Otherwise it sets the return stack pointer to the frame, which instantly discards every call in between. It restores the outer handler, puts the data stack pointer back, and leaves the code.</p>
+    <p>Here's the clever part. Throw now returns, and because the return stack was reset to catch's frame, it returns to wherever catch was going to return to. So the code appears as catch's result, exactly as if catch had finished normally. There's no special unwinding machinery: just two stack pointers being put back.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>The REPL catches every line</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/interpreter.fs" data-step="1">: <span class="w">repl</span>  ( -- )  <span class="c">\ until the end of input</span>
+  unclaim
+  begin refill while
+    ['] interpret catch ?dup if .error reset else prompt then
+    state @ 0= if unclaim then
+  repeat reset ;</pre>
+      <div class="src"><a href="../../forth/interpreter.fs" data-ref="forth/interpreter.fs:repl">forth/interpreter.fs › repl</a></div>
+      <pre class="code below" data-src="tests/exceptions.out" data-step="2">1 0 / division by zero
+-99 throw error -99
+: uncaught 7 throw ;  uncaught error 7</pre>
+      <div class="src"><a href="../../tests/exceptions.out">tests/exceptions.out</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Each line runs under <code>catch</code></li>
+      <li data-step="2"><code>.error</code> prints the message; <code>reset</code> empties the stack and stops compiling</li>
+      <li data-step="3">Every task's REPL does the same: a telnet session too</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Now the REPL. Each line you type is interpreted under catch. If the line throws, dot-error prints a message for the code, and reset empties the data stack, stops any half-finished definition, and gives up the dictionary.</p>
+    <p>Here are three lines from the exceptions test. Dividing by zero prints division by zero. Throwing a code with no message of its own prints error and the number. And a word that throws and isn't caught anywhere inside is caught by the REPL in just the same way.</p>
+    <p>So no single line can stop the system. You lose that line, and you're back at the prompt. Every task that interprets, including each telnet session, runs this same loop with its own handler and its own stacks, so one session's mistake never touches another.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>Codes and their messages</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/output.fs" data-step="1">: <span class="w">message:</span>  ( n "text" -- )  <span class="c">\ the rest of the line is the message</span>
+  align here  messages @ ,  messages !  ,
+  0 parse  dup ,  here swap dup allot cmove  align ;</pre>
+      <div class="src"><a href="../../forth/output.fs" data-ref="forth/output.fs:message:">forth/output.fs › message:</a></div>
+      <pre class="code below" data-src="forth/tasks.fs" data-step="2">-262 message: stopped by the watchdog: it ran too long without pausing</pre>
+      <pre class="code" style="margin-top:8px" data-src="forth/net/tcp.fs" data-step="2">-273 message: timed out</pre>
+    </div>
+    <ul class="points">
+      <li data-step="1">Standard codes: -4 underflow, -10 division by zero, -13 undefined…</li>
+      <li data-step="2">The system's own from -256 down, each file registering its own</li>
+      <li data-step="3">New error conditions <code>throw</code> a code; they never print and abort</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Error codes come from the Forth standard where one fits. Minus four is stack underflow, minus ten is division by zero, minus thirteen is an undefined word, and so on.</p>
+    <p>The system's own codes count down from <span data-say="minus two five six">-256</span>. Each file registers text for the codes it throws, with message-colon, which simply adds an entry to a linked list: the code, and the rest of the line as its text. The tasks file registers the watchdog's message; the TCP file registers timed out.</p>
+    <p>That leads to a rule for new code. A new kind of error throws a code, and registers a message for it if it needs one. It never prints something and gives up on its own. That way the caller always gets to decide: report it, retry, or turn one client away while serving the rest.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>Errors the kernel finds</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="arch/aarch64/outer.s"><span class="w">try_throw</span>:
+	<span class="c">… nothing to do while the boot files load</span>
+	ldr	x1, [UP, #U_HANDLER]		<span class="c">// frame: enclosing handler, then saved SP@</span>
+	cbz	x1, 2f
+	mov	RSP, x1
+	ldr	x3, [x1, #8]
+	add	DSP, x3, #8			<span class="c">// as SP! does</span>
+	ldr	TOS, [x3]
+2:	PUSH	x0
+	mov	x8, x2
+	br	x8</pre>
+      <div class="src"><a href="../../arch/aarch64/outer.s" data-ref="arch/aarch64/outer.s:try_throw">arch/aarch64/outer.s › try_throw</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Primitives find errors too: division by zero, overflow, a missing name</li>
+      <li data-step="2"><code>try_throw</code> calls the Forth <code>throw</code>, as if the word had</li>
+      <li data-step="3">It resets both stacks to the frame first: they may be the problem</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Some errors are found in assembly. The division primitive checks for zero. The compiler checks names. And the stack checks, which we'll see next, are in the kernel too.</p>
+    <p>They all end up in a routine called try throw, which hands the code to the Forth throw, as if the word that failed had called throw itself. The kernel learns where the Forth throw is when core dot fs stores its execution token in a kernel variable.</p>
+    <p>There's one subtlety. Before calling throw, it resets both stack pointers to the catch frame, doing by hand what throw would do. Why? Because the error might be that a stack has overflowed. Throw is a Forth word that uses the stacks, and it mustn't trip over the very problem it's reporting.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="7">
+  <h2>Stack limits</h2>
+  <div class="cols">
+    <div data-step="1">
+      <pre class="code" data-src="arch/aarch64/kernel.s">.macro CHECK_STACKS
+	ldp	x9, x10, [UP, #U_SLIMIT]
+	cmp	DSP, x9
+	b.lo	err_overflow
+	cmp	RSP, x10
+	b.lo	err_roverflow
+.endm</pre>
+      <div class="src"><a href="../../arch/aarch64/kernel.s" data-ref="arch/aarch64/kernel.s">arch/aarch64/kernel.s › CHECK_STACKS</a></div>
+      <pre class="code below" data-src="tests/limits.out" data-step="2">deep return stack overflow
+pusher stack overflow</pre>
+    </div>
+    <ul class="points">
+      <li data-step="1">Checked in every colon call, branch, loop and <code>pause</code></li>
+      <li data-step="2">So runaway recursion and runaway loops are caught</li>
+      <li data-step="3">The limit leaves 16 cells of room: enough to report the error</li>
+      <li data-step="4">Underflow is checked after each word at the prompt</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Each task's stacks are only two kilobytes, and they sit right next to its user area. A runaway recursion that simply kept going would overwrite the task's own variables, and then anything could happen.</p>
+    <p>So the kernel checks. Every time a colon word is called, every backward branch, every loop and every pause runs this macro: two loads and two comparisons against limits stored in the user area. Those are exactly the places where a stack can grow without end.</p>
+    <p>The two lines from the limits test show it working. A word that calls itself for ever gets return stack overflow. A loop that pushes for ever gets stack overflow. Both come back to the prompt.</p>
+    <p>The limit is set sixteen cells short of the real end, so there's room left to report the error. Underflow, taking more than is there, is cheaper to check after each word at the prompt, and that's what the interpreter does.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="8">
+  <h2>Faults the processor finds</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="tests/baremetal/fault.out" data-step="1">$123456789000 @
+exception: synchronous
+ESR=0000000096000004 ELR=&lt;addr&gt; FAR=0000123456789000 SPSR=&lt;psr&gt;
+x0=&lt;reg&gt; x1=&lt;reg&gt; x2=&lt;reg&gt; x3=&lt;reg&gt;
+<span class="c">…</span></pre>
+      <div class="src"><a href="../../tests/baremetal/fault.out">tests/baremetal/fault.out</a></div>
+      <pre class="code below" data-src="arch/aarch64/vectors.s" data-step="2">	ldr	x0, =exception_throw		<span class="c">// resume as if the faulting word had thrown</span>
+	msr	elr_el1, x0
+	mov	x0, #SPSR_EL1H_IRQ
+	msr	spsr_el1, x0
+	eret</pre>
+      <div class="src"><a href="../../arch/aarch64/vectors.s" data-ref="arch/aarch64/vectors.s:exc_common">arch/aarch64/vectors.s › exc_common</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">A register dump: the kind of fault, the address, every register</li>
+      <li data-step="2">Then return from the exception into <code>exception_throw</code></li>
+      <li data-step="3">It throws -256, caught like any other error</li>
+      <li data-step="4">Hosted: a signal, the same report and the same throw</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Some errors only the processor can see. Reading from an address where there's no memory is the classic case. Here the test reads from a made-up address, and the processor raises a synchronous exception.</p>
+    <p>The exception handler prints a register dump: the kind of exception, the syndrome register, which encodes why, the address of the instruction, the address that was accessed, and all the registers. The test's filter masks the registers, which change from build to build.</p>
+    <p>Then comes the trick. Instead of returning to the faulting instruction, the handler changes the return address to exception throw, and returns there. That routine throws <span data-say="minus two five six">-256</span>, which is caught like any other error. The REPL prints nothing more, because the dump has said it all, and you're back at the prompt.</p>
+    <p>On the hosted build, Linux reports the fault as a signal. The handler prints a shorter report and makes the same throw, so the same test passes on both.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="9">
+  <h2>Saying where</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/errors.fs" data-step="1">: <span class="w">.error</span>  ( n -- )
+  dup -1 = over -256 = or if drop exit then   <span class="c">\ ABORT; a CPU fault has its own report</span>
+  .where
+  dup -2 = if drop abort-msg 2@ type cr exit then
+  dup -13 = if drop errname 2@ type ."  ?" cr exit then
+  dup -14 = if drop errname 2@ type ."  is compile-only" cr exit then
+  dup message if type cr drop exit then
+  ." error " (.) type cr ;</pre>
+      <div class="src"><a href="../../forth/errors.fs" data-ref="forth/errors.fs:.error">forth/errors.fs › .error</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="2"><code>.where</code>: <code>app.fs:12:</code> for a file, <code>block 20 line 3:</code> for a block</li>
+      <li data-step="3">The boot files: <code>forth/tasks.fs:40:</code>, then the system stops</li>
+      <li data-step="4">An undefined word names itself: <code>nosuchword ?</code></li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>A good error report says where, as well as what. Dot-error is the one place reports are printed. It ignores abort and processor faults, which have reported themselves. Then dot-where prints the location, if the error happened while loading source rather than at the prompt.</p>
+    <p>For a file on the app disk, that's the file name and line number, like a compiler would print. For a block of Forth source on the data disk, it's the block and the line within it. Both are tracked as the source is loaded, and noted at the moment of the error, by the innermost file or block, before the stacks unwind.</p>
+    <p>The boot files get the same treatment from the kernel, as you saw in lecture three, except that an error there stops the system.</p>
+    <p>Finally, a few codes have special reports. An undefined word prints the word itself, followed by a question mark, which is the traditional Forth way of saying I don't know that.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="10">
+  <h2>Errors in tasks</h2>
+  <div class="cols even">
+    <div>
+      <pre class="code" data-src="forth/tasks.fs" data-step="1">: <span class="w">report</span>  ( n -- )  task-name 2@ type ." : " .error ;
+: <span class="w">run-task</span>  ( i*x xt -- )  <span class="c">\ a task's whole life: run xt, report how it ended, sleep</span>
+  catch ?dup if  ['] report catch if drop then  then   <span class="c">\ its terminal may be gone</span></pre>
+      <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:report">forth/tasks.fs › report, run-task</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">A task's work runs under <code>catch</code>: the report names the task</li>
+      <li data-step="2">Even the report is caught: a session's terminal may have gone</li>
+      <li data-step="3">System loops restart; per-item <code>catch</code> keeps a fault to one item</li>
+      <li data-step="4">The watchdog's -262 is just another throw</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Tasks use the same mechanism. Every task's work runs under catch, in run-task. If it throws, report prints the task's name and the error, so you can tell which task failed.</p>
+    <p>Notice that the report is itself under catch. A telnet session's terminal is its network connection, and if the error was that the connection closed, printing the report would fail too. That second error is quietly dropped.</p>
+    <p>The tasks lecture covered the rest. System loops run under a word called restarting, and catch per item inside, so a bad packet costs one packet. And the watchdog's error, <span data-say="minus two six two">-262</span>, is just another throw, landing in whichever task wouldn't pause.</p>
+    <p>One mechanism, used everywhere: that's what makes the system hard to knock over.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-code="11">
+  <h2>Try it on the console</h2>
+  <pre class="code" data-step="1">1 0 /                              <span class="c">\ division by zero</span>
+: risky  ( n -- )  dup 0= if -42 throw then . ;
+5 ' risky catch .                  <span class="c">\ 5 0</span>
+0 ' risky catch . .                <span class="c">\ -42 0</span>
+: deep  ( -- )  recurse ;
+deep                               <span class="c">\ return stack overflow</span>
+$123456789000 @                    <span class="c">\ a register dump, then ok</span>
+nosuchword                         <span class="c">\ nosuchword ?</span></pre>
+  <div class="talk">
+    <p>Try these at the console. Divide by zero. Define risky, which throws <span data-say="minus forty-two">-42</span> when given zero, and catch it: with five it prints five and returns zero, with zero it leaves the code and the untouched input.</p>
+    <p>Then recurse for ever, and see the return stack overflow caught. Read from a made-up address and watch the register dump, followed by the prompt. And type a word that doesn't exist. After each one, the system is exactly as it was.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>After <code>0 ' risky catch</code>, the stack holds <code>0 -42</code>. Where did the 0 come from, and why must <code>catch</code> restore the depth?</li>
+    <li>Why does <code>try_throw</code> reset the stacks itself instead of leaving it to <code>throw</code>? Construct the failure it prevents.</li>
+    <li>A word you are writing finds a corrupt record. Should it print a warning, return a flag, or throw? What does each choice cost its callers?</li>
+  </ol>
+  <div class="talk">
+    <p>That's errors. Throw a number, catch it further up; the REPL catches every line; the kernel and the processor feed their errors into the same throw; and reports say what and where.</p>
+    <p>Three questions to think about: what catch leaves on the stack, why the kernel resets the stacks itself, and how to choose between printing, returning a flag and throwing. Next, lecture five, on tasks, if you haven't seen it already.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>
