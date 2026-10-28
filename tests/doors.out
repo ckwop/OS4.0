@@ -15,5 +15,6 @@ peer: C closed by the OS
 peer: A> hello
 peer: A| 
 peer: A| hello You said: hello
+peer: A| Another key waiting: 0 
 peer: A closed by the OS
 peer: done
