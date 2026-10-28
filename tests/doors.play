@@ -1,0 +1,9 @@
+# tests/doors.in's peer: the door lets A in, turns B away; 4001 has no password yet
+A connect 5001
+A? Say something.
+B connect 5001
+B gone
+C connect 4001
+C gone
+A> hello
+A gone

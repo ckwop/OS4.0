@@ -249,6 +249,7 @@ rooms @ close-file throw</pre>
     <p>Here's the whole of app start-up. Start dot fs calls start-app as the system boots. If the app disk holds app dot fs, boot-app runs; otherwise the base starts the network REPL, as before.</p>
     <p>Boot-app makes a wordlist for the app, puts it first in the search order, and makes it current, so every definition the app makes goes there, apart from the base's. Then, under catch, it includes app dot fs, and, if the app defined a word called main, runs it. Main's job is to start the app's tasks and return promptly.</p>
     <p>If anything goes wrong, the error is reported with its file and line, prefixed with app, and the system carries on: the console comes up regardless. A broken app never stops the machine from booting, so you can always get in and look.</p>
+    <p>With an app, the network REPL is the app's to choose. It can serve clients through a door of its own, made with port-door, and call start-admin to keep the operator's full Forth on port <span data-say="four thousand and one">4001</span> without the sandbox.</p>
   </div>
 </section>
 

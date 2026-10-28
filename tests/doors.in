@@ -1,0 +1,4 @@
+\ doors.in: an app's own door (doors.app, PORT-DOOR) beside port 4001 alone (START-ADMIN)
+200 ms  sandbox-port listener-of 0= .  admin-port listener-of 0<> .  5001 listener-of 0<> .
+: served? ( n -- ) 30000 deadline begin 100 ms over sessions-served @ > 0= over expired? or until 2drop ;
+2 served?  2000 ms  sessions-served @ .  sessions-refused @ .  shout-door door.count @ .

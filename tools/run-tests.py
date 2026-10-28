@@ -11,8 +11,9 @@ run side by side. In the command and in --setup (which may be given more than
 once), "{disk}" is replaced by the test's data disk image, "{appdisk}" by its
 app disk image, "{appdir}" by the directory of files for its app disk
 (<dir>/<name>.app if it exists, else --app, else empty), "{port}" by the OS's
-UDP port for network frames, "{peerport}" by the network peer's and "{tools}"
-by this script's directory (so an app's tests can name tools/netpeer.py). If
+UDP port for network frames, "{peerport}" by the network peer's, "{tools}"
+by this script's directory (so an app's tests can name tools/netpeer.py) and
+"{name}" by the test's path without its extension (for files beside it). If
 <dir>/<name>.peer exists, it holds the peer's command (with the same
 placeholders), passed to tools/console-run.py as OS4_PEER.
 
@@ -35,7 +36,8 @@ def run_test(index, path, args):
     disk = os.path.join(args.disks, name.replace(os.sep, "-"))
     fill = dict(disk=disk + ".img", appdisk=disk + "-app.img",
                 appdir=name + ".app" if os.path.isdir(name + ".app") else args.app,
-                port=port, peerport=port + 1, tools=os.path.dirname(os.path.abspath(__file__)))
+                port=port, peerport=port + 1, tools=os.path.dirname(os.path.abspath(__file__)),
+                name=name)
     for command in args.setup:
         setup = subprocess.run(shlex.split(command.format(**fill)), capture_output=True)
         if setup.returncode:

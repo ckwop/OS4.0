@@ -1,0 +1,19 @@
+OS 4.0
+\ doors.in: an app's own door (doors.app, PORT-DOOR) beside port 4001 alone (START-ADMIN)  ok
+200 ms  sandbox-port listener-of 0= .  admin-port listener-of 0<> .  5001 listener-of 0<> . -1 -1 -1  ok
+: served? ( n -- ) 30000 deadline begin 100 ms over sessions-served @ > 0= over expired? or until 2drop ;  ok
+2 served?  2000 ms  sessions-served @ .  sessions-refused @ .  shout-door door.count @ . 2 1 0  ok
+--- peer ---
+peer: A connected
+peer: A| Say something.
+peer: B connected
+peer: B| Too many sessions: try again later.
+peer: B closed by the OS
+peer: C connected
+peer: C| No admin password is set: set one on the console with set-admin-password.
+peer: C closed by the OS
+peer: A> hello
+peer: A| 
+peer: A| hello You said: hello
+peer: A closed by the OS
+peer: done

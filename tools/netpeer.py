@@ -41,6 +41,9 @@ Scripts:
   connect PORT [LINE ...]  for an app's tests: connect to the OS's TCP port
          (retrying while nothing listens), send each LINE with CR LF, then
          print what the OS sent until it closed the connection
+  players PORT FILE  for an app's tests: several telnet clients at once,
+         driven by the steps in FILE (see script_players), printing what
+         each one sends and receives; clients can reconnect after a reboot
 """
 
 import argparse
@@ -464,6 +467,80 @@ class Peer:
         for problem in c.problems:
             print(f"peer: {port}: {problem}", flush=True)
 
+    def script_players(self):
+        """Several telnet clients driven by a script file, one step a line:
+        NAME connect [PORT], NAME> TEXT (send a line), NAME? TEXT (wait for it),
+        NAME close, NAME gone (wait for the OS to close), sleep SECONDS, and
+        # comments. A client that connects again gets a fresh port, so it can
+        come back after the OS reboots. What each client receives is printed
+        when a step waits on it, up to the end of what it waited for."""
+        if not self.find_os():
+            print("peer: no ARP reply from 10.0.2.15", flush=True)
+            return
+        port, path = int(self.args[0]), self.args[1]
+        with open(path) as f:
+            steps = [line.rstrip("\n") for line in f]
+        clients, sport = {}, 52000
+
+        def say(name, text):
+            for line in text.split("\n"):
+                print(f"peer: {name}| {line}", flush=True)
+
+        def show(name, c, upto=None):      # what arrived since last shown, up to upto
+            upto = len(c.received) if upto is None else upto
+            text = telnet_text(c.received[c.shown:upto]).replace("\x1b", "\\e")
+            c.shown = max(c.shown, upto)
+            if text:
+                say(name, text[:-1] if text.endswith("\n") else text)
+
+        def problems(name, c):
+            for problem in c.problems:
+                print(f"peer: {name}: {problem}", flush=True)
+            c.problems = []
+
+        for step in steps:
+            if not step.strip() or step.startswith("#"):
+                continue
+            head, _, rest = step.partition(" ")
+            if head == "sleep":
+                time.sleep(float(rest))
+                continue
+            if head[-1:] in (">", "?"):
+                name, action = head[:-1], head[-1]
+            else:
+                name, (action, _, rest) = head, rest.partition(" ")
+            c = clients.get(name)
+            if action == "connect":            # NAME connect [PORT]
+                c = clients[name] = TcpClient(self, sport, dport=int(rest) if rest else port)
+                c.shown = 0
+                sport += 1
+                print(f"peer: {name} {'connected' if c.connect() else 'could not connect'}", flush=True)
+            elif c is None:
+                print(f"peer: {name}: no such client for {step!r}", flush=True)
+            elif action == ">":
+                print(f"peer: {name}> {rest}", flush=True)
+                c.send_reliably(rest.encode() + b"\r\n")
+            elif action == "?":
+                if c.wait_for(lambda: rest.encode() in c.received[c.shown:], 20):
+                    show(name, c, c.received.index(rest.encode(), c.shown) + len(rest))
+                else:
+                    show(name, c)
+                    print(f"peer: {name}: no {rest!r}", flush=True)
+            elif action == "close":
+                c.close()
+                show(name, c)
+                print(f"peer: {name} {'closed' if c.closed else 'not closed'}", flush=True)
+            elif action == "gone":
+                c.wait_for(lambda: c.fin_received, 20)
+                c.close()
+                show(name, c)
+                print(f"peer: {name} {'closed by the OS' if c.closed else 'not closed'}", flush=True)
+            else:
+                print(f"peer: unknown step {step!r}", flush=True)
+            if c is not None:
+                problems(name, c)
+        print("peer: done", flush=True)
+
     def script_ping(self):
         deadline = time.time() + 20
         while self.os_mac is None and time.time() < deadline:
@@ -762,6 +839,23 @@ def backoff(budget):
 FIN, SYN, RST, PSH, ACK = 1, 2, 4, 8, 16
 
 
+def telnet_text(data):
+    """Bytes from a telnet server as text: telnet commands removed, LF line ends."""
+    out, i = bytearray(), 0
+    while i < len(data):
+        if data[i] != 255:
+            out.append(data[i])
+            i += 1
+        elif i + 1 < len(data) and data[i + 1] == 255:
+            out.append(255)
+            i += 2
+        elif i + 1 < len(data) and 251 <= data[i + 1] <= 254:
+            i += 3
+        else:
+            i += 2
+    return out.replace(b"\r\n", b"\n").decode(errors="replace")
+
+
 class TcpClient:
     """One scripted client of the OS's line echo server: connect, send ten
     lines and check each comes back, then close. Sequence numbers are kept as
@@ -991,19 +1085,7 @@ class TcpClient:
 
     def transcript(self):
         """What the OS sent, without telnet commands, with LF line ends."""
-        out, data, i = bytearray(), self.received, 0
-        while i < len(data):
-            if data[i] != 255:
-                out.append(data[i])
-                i += 1
-            elif i + 1 < len(data) and data[i + 1] == 255:
-                out.append(255)
-                i += 2
-            elif i + 1 < len(data) and 251 <= data[i + 1] <= 254:
-                i += 3
-            else:
-                i += 2
-        return out.replace(b"\r\n", b"\n").decode(errors="replace")
+        return telnet_text(self.received)
 
     def expect_reset(self):
         self.snd_una = self.snd_nxt = self.iss
@@ -1023,7 +1105,7 @@ def main():
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--os-port", type=int, required=True)
     p.add_argument("script", choices=["ping", "udp", "tcp", "tcp-attack", "repl", "hostile", "soak",
-                                      "connect"])
+                                      "connect", "players"])
     p.add_argument("args", nargs="*", help="the script's arguments")
     args = p.parse_args()
     peer = Peer(args.port, args.os_port)

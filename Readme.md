@@ -112,19 +112,19 @@ task server  ' line-server server start
 
 ### Applications
 
-This repository is the base. An application lives in a repository of its own and depends on a tagged image of the base, `os4:0.9b`, built from here:
+This repository is the base. An application lives in a repository of its own and depends on a tagged image of the base, `os4:0.10`, built from here:
 
 ```powershell
-docker build -t os4:0.9b -t os4 .
+docker build -t os4:0.10 -t os4 .
 ```
 
-An app is a directory of Forth files with `app.fs` as its entry point, which can `include` the others (paths with `/`, any case). At boot the OS finds the app disk, includes `app.fs` and runs the app's `main`, which starts the app's tasks and returns; the console follows. If loading fails, the OS reports where (`app.fs:12: ...`) and the console still comes up. Without an app, the OS starts the network REPL as above.
+An app is a directory of Forth files with `app.fs` as its entry point, which can `include` the others (paths with `/`, any case). At boot the OS finds the app disk, includes `app.fs` and runs the app's `main`, which starts the app's tasks and returns; the console follows. If loading fails, the OS reports where (`app.fs:12: ...`) and the console still comes up. Without an app, the OS starts the network REPL as above. With one, the app chooses: it can serve its own port through a door with a session cap (`port-door`, `serve-door`, as `tests/doors.app` does) and call `start-admin` to keep the full Forth on port 4001 without the sandbox on 4000.
 
 The app disk is FAT, made with ordinary tools, and the OS only reads it. Everything the OS writes goes in blocks on the data disk. [examples/hello](examples/hello) greets whoever connects to port 5000. From an app's directory:
 
 ```powershell
-docker run --rm -v "${PWD}:/app" -w /app os4:0.9b os4-app test         # its tests/*.in on both builds
-docker run --rm -it -p 127.0.0.1:5000:5000 -v "${PWD}:/app" -w /app os4:0.9b os4-app run . 5000
+docker run --rm -v "${PWD}:/app" -w /app os4:0.10 os4-app test         # its tests/*.in on both builds
+docker run --rm -it -p 127.0.0.1:5000:5000 -v "${PWD}:/app" -w /app os4:0.10 os4-app run . 5000
 ```
 
 `os4-app run` keeps the app's data disk in `build/data.img` in the app's directory. On the console, `dir` lists the app disk and `include` loads a file from it.

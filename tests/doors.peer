@@ -1,0 +1,1 @@
+python3 {tools}/netpeer.py --port {peerport} --os-port {port} players 5001 {name}.play
