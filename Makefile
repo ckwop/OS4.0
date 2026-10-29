@@ -128,14 +128,15 @@ check-course:
 WORDS_DUMP := $(BUILD)/words.txt
 
 WORDS_LEAN := proofs/OS4/Words.lean
-EFFECTS_LEAN := proofs/OS4/Effects.lean
+SPECS_LEAN := proofs/OS4/Specs.lean
+FINDINGS := $(BUILD)/proof-findings.txt
 
 # Nothing stale may survive a failure, or lake would re-prove the old code.
 proofs-extract: $(HOSTED) $(DATA_IMG) $(APP_IMG) FORCE
-	@rm -f $(WORDS_DUMP) $(WORDS_LEAN) $(EFFECTS_LEAN)
+	@rm -f $(WORDS_DUMP) $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS)
 	$(CONSOLE) $(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG)) < tools/dump-words.fs | grep '^@@ ' > $(WORDS_DUMP).tmp
 	mv $(WORDS_DUMP).tmp $(WORDS_DUMP)
-	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt --effects $(EFFECTS_LEAN)
+	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt --specs $(SPECS_LEAN) --findings $(FINDINGS)
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)

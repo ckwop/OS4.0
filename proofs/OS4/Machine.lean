@@ -252,8 +252,8 @@ and subtract the divisor from hi if it fits (or a bit carried out). -/
   | ⟨d :: hi :: lo :: s, r, m, u, e⟩ =>
     if d = 0 then .error ⟨.divZero, m, e⟩
     else if ¬ hi.ult d then .error ⟨.outOfRange, m, e⟩
-    else let (rem, quot) := umdivRounds d 64 hi lo
-         .ok ⟨quot :: rem :: s, r, m, u, e⟩
+    else let p := umdivRounds d 64 hi lo        -- (rem, quot)
+         .ok ⟨p.2 :: p.1 :: s, r, m, u, e⟩
   | s => s.fail .underflow
 
 @[forth] def fetch : Sem
