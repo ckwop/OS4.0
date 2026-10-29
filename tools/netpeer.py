@@ -516,7 +516,8 @@ class Peer:
                 c = clients[name] = TcpClient(self, sport, dport=int(rest) if rest else port)
                 c.shown = 0
                 sport += 1
-                print(f"peer: {name} {'connected' if c.connect() else 'could not connect'}", flush=True)
+                # long enough for a reboot on a busy machine: the OS may still be booting
+                print(f"peer: {name} {'connected' if c.connect(120) else 'could not connect'}", flush=True)
             elif c is None:
                 print(f"peer: {name}: no such client for {step!r}", flush=True)
             elif action == ">":
@@ -948,10 +949,10 @@ class TcpClient:
 
     # ---- the script
 
-    def connect(self):
+    def connect(self, budget=30):
         self.snd_una = self.snd_nxt = self.iss
         self.rcv_nxt = 0
-        for wait in backoff(30):
+        for wait in backoff(budget):
             self.send_seg(SYN, self.iss, options=struct.pack("!BBH", 2, 4, self.mss_option))
             deadline = time.time() + wait
             while time.time() < deadline:
