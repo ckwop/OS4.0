@@ -267,10 +267,10 @@ class Generator:
                 parts.append(f".call {op[1]}")
             else:
                 parts.append(f".{op[0]} {op[1]}")
-        self.defs.append(f"@[forth] def {name}.code : List Ins := [{', '.join(parts)}]\n")
+        self.defs.append(f"@[forth] noncomputable def {name}.code : List Ins := [{', '.join(parts)}]\n")
         runner = "loopThread" if loops else "thread"
         attr = "" if loops else "@[forth] "
-        self.defs.append(f"/-- {what} -/\n{attr}def {name} : Sem := {runner} {name}.code\n")
+        self.defs.append(f"/-- {what} -/\n{attr}noncomputable def {name} : Sem := {runner} {name}.code\n")
         if self.deep:                               # runs a loop, here or in a callee
             self.loopy.add(name)
         self.deep = False
@@ -282,14 +282,14 @@ class Generator:
             calls = "True.intro"
             for op in reversed(insns):
                 calls = f"And.intro {self.specs[op[1]][4] if op[0] == 'call' else 'True.intro'} ({calls})"
-            self.thms.append(f"def {name}.cert : List Cert := [{', '.join(certs)}]\n")
+            self.thms.append(f"noncomputable def {name}.cert : List Cert := [{', '.join(certs)}]\n")
             self.prove(name, (k, j, 0, 0),
                        f"{runner}_spec (code := {name}.code) (cert := {name}.cert)\n"
                        f"    (by decide)\n    ({calls})")
         return name
 
     def emit(self, ident, what, body):
-        self.defs.append(f"/-- {what} -/\n@[forth] def {lean_name(ident)} : Sem := {body}\n")
+        self.defs.append(f"/-- {what} -/\n@[forth] noncomputable def {lean_name(ident)} : Sem := {body}\n")
         if self.deep:
             self.loopy.add(lean_name(ident))
         self.deep = False

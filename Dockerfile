@@ -30,7 +30,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         iproute2 \
         iputils-ping \
         dosfstools \
+        curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Lean 4 for the proofs (docs/verification.md); the version matches
+# proofs/lean-toolchain.
+ARG LEAN_TOOLCHAIN=leanprover/lean4:v4.19.0
+ENV ELAN_HOME=/opt/elan \
+    PATH=/opt/elan/bin:$PATH
+RUN curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+        | sh -s -- -y --no-modify-path --default-toolchain none \
+    && elan toolchain install "$LEAN_TOOLCHAIN" \
+    && elan default "$LEAN_TOOLCHAIN"
 
 # Builds the host-side `limine` tool next to the prebuilt EFI binaries.
 RUN git init -q /opt/limine \

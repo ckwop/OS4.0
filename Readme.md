@@ -31,7 +31,7 @@ docker run --rm -it -v "${PWD}:/src" os4 make run-hosted  # the same Forth as a 
 
 Booting takes about ten seconds: UEFI firmware, then Limine, then the OS. Leave with `bye`, Ctrl-D on an empty line, or Ctrl-A then x.
 
-Make targets (run inside the container): `build` (the default), `image`, `data`, `app`, `run`, `run-hosted`, `test`, `test-hosted`, `test-virt`, `test-app` and `clean`.
+Make targets (run inside the container): `build` (the default), `image`, `data`, `app`, `run`, `run-hosted`, `test`, `test-hosted`, `test-virt`, `test-app`, `proofs` and `clean`.
 
 ### Blocks
 
@@ -129,6 +129,16 @@ docker run --rm -it -p 127.0.0.1:5000:5000 -v "${PWD}:/app" -w /app os4:0.9b os4
 
 `os4-app run` keeps the app's data disk in `build/data.img` in the app's directory. On the console, `dir` lists the app disk and `include` loads a file from it.
 
+### Proofs
+
+The base is certified as it goes, with Lean 4 proofs about the words as the system actually compiles them ([docs/verification.md](docs/verification.md)). `make proofs` boots the hosted build, dumps its dictionary, turns every word it can into a Lean definition, and checks every theorem. It is part of `make test`, so a change that breaks a property fails the suite like a failing test.
+
+```powershell
+docker run --rm -v "${PWD}:/src" os4 make proofs   # extract, generate and check
+```
+
+Every word with a fixed stack effect has it proven, layered through its callees' proofs, and every plain stack comment is checked against what the code does. A comment that disagrees, or a word whose effect depends on its data, is listed in `build/proof-findings.txt`. Hand-written theorems (`proofs/OS4/*.lean`) prove deeper properties: arithmetic words for all inputs, the Forth reference definitions against the assembly primitives' models, and memory. What is trusted rather than proven is listed in `proofs/OS4/Machine.lean`.
+
 ### Milestones
 
 Each milestone is done when its acceptance test passes in the Docker image.
@@ -151,3 +161,17 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 11 | Fargate deployment | Not started |
 | 12 | EC2 AMI | Not started |
 | 13 | x86-64 port | Not started |
+
+The verification track ([docs/verification.md](docs/verification.md)) runs beside these and strengthens the base. V2 and V4 come before milestone 11, as they cover what faces the internet.
+
+| # | Verification milestone | Status |
+| --- | --- | --- |
+| V0 | Spike: Lean definitions generated from the compiled dictionary; 472 of 575 colon words modelled | Done |
+| V1 | Proofs in the suite: every fixed stack effect proven compositionally; reference definitions proven against the primitives; TD-13 checked | In progress |
+| V2 | Sandbox isolation: a sandboxed task can run only the exposed words | Not started |
+| V3 | Crash-safe records: after a crash, `record@` gives the old record or the new one | Not started |
+| V4 | Parser safety: the network parsers read only the frame and write only their buffers | Not started |
+| V5 | Primitives proven against the assembly | Not started |
+| V6 | Tasks and semaphores: mutual exclusion, lock discipline | Not started |
+| V7 | TCP state machine invariants | Not started |
+| V8 | Cryptography against its standards | Not started |

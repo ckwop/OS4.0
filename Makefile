@@ -58,7 +58,7 @@ TESTS   := python3 tools/run-tests.py --disks /tmp/os4-test-disks --setup "$(TES
 TEST_HOSTED = --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk}$(comma){appdisk},{port} {peerport})"
 TEST_VIRT   = --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST),{appdisk})"
 
-.PHONY: all build image data app run run-hosted run-tap proofs-extract test test-hosted test-virt test-app check-course ping-check tcp-check clean FORCE
+.PHONY: all build image data app run run-hosted run-tap proofs proofs-extract test test-hosted test-virt test-app check-course ping-check tcp-check clean FORCE
 
 all: build
 
@@ -116,17 +116,16 @@ run: $(BOOT_IMG) $(DATA_IMG) $(APP_IMG)
 run-hosted: $(HOSTED) $(DATA_IMG) $(APP_IMG)
 	@$(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG))
 
-test: check-course test-hosted test-virt
+test: check-course test-hosted test-virt proofs
 
 # The course (docs/course) and code tours (.tours) still match the code.
 check-course:
 	python3 tools/check-course.py
 
-# Proofs (spike): dump the hosted build's dictionary as compiled, then generate
-# the Lean definitions of the words proofs/roots.txt names. lake build runs in
-# the os4-lean image (proofs/Dockerfile).
+# Proofs (docs/verification.md, DECISIONS.md #103-105): dump the hosted build's
+# dictionary as compiled, generate the Lean definitions of its words and their
+# stack-effect theorems, then check every proof.
 WORDS_DUMP := $(BUILD)/words.txt
-
 WORDS_LEAN := proofs/OS4/Words.lean
 SPECS_LEAN := proofs/OS4/Specs.lean
 FINDINGS := $(BUILD)/proof-findings.txt
@@ -137,6 +136,9 @@ proofs-extract: $(HOSTED) $(DATA_IMG) $(APP_IMG) FORCE
 	$(CONSOLE) $(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG)) < tools/dump-words.fs | grep '^@@ ' > $(WORDS_DUMP).tmp
 	mv $(WORDS_DUMP).tmp $(WORDS_DUMP)
 	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt --specs $(SPECS_LEAN) --findings $(FINDINGS)
+
+proofs: proofs-extract
+	cd proofs && lake build
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)
