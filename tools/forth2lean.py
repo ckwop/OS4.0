@@ -495,7 +495,7 @@ def main():
         ] + gen.thms + thms + ["end OS4.Words"]
         open(path, "w", newline="\n").write("\n".join(lines) + "\n")
         open(report, "w", newline="\n").write("".join(f + "\n" for f in findings))
-        print(f"{path}: {len(gen.thms)} stack effects proven; stack comments:")
+        print(f"{path}: {sum(t.startswith("theorem") for t in gen.thms)} stack effects proven; stack comments:")
         for r, n in counts.most_common():
             print(f"  {n:4}  {r}")
         print(f"{report}: {len(findings)} findings")

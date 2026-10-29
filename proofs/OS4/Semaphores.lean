@@ -5,6 +5,10 @@ import OS4.Memory
 /-!
 # Semaphores
 
+**Draft, not yet built** (it is not imported by `OS4.lean`): finishing it is
+part of milestone V6. Like `Refs.lean`, it must not open `OS4.Words`, where
+the Forth word FORTH shadows the `forth` simp set.
+
 `locked` ( i*x xt sem -- j*x ) runs xt holding a semaphore, and releases it
 however xt ends (core.fs; DECISIONS.md #76). Proven here: if the semaphore is
 free when LOCKED starts, it is free again afterwards, whether xt returns or

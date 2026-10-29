@@ -66,10 +66,10 @@ theorem max (a b : Cell) :
 
 /-- WITHIN is the usual one-comparison trick: for lo ≤ hi it is lo ≤ n < hi.
 (The SAT step takes seconds; the timeout leaves room for a loaded machine.) -/
-set_option sat.timeout 120 in
 theorem within (n lo hi : Cell) (h : lo.sle hi) :
     «within» ⟨hi :: lo :: n :: s, r, m, u, e⟩ = .ok ⟨flag (lo.sle n && n.slt hi) :: s, r, m, u, e⟩ := by
-  have key : (n - lo).ult (hi - lo) = (lo.sle n && n.slt hi) := by bv_decide
+  have key : (n - lo).ult (hi - lo) = (lo.sle n && n.slt hi) := by
+    bv_decide (config := { timeout := 120 })
   clear h
   forth_run
 

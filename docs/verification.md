@@ -33,8 +33,8 @@ that no longer holds fails the build, as a test would.
 
 V1 has started. Stack effects are now proven compositionally (DECISIONS.md #107):
 
-- **648 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems.
-- **263 stack comments proven in their own terms:** none disagree with their code.
+- **649 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems.
+- **262 stack comments proven in their own terms:** none disagree with their code.
 - **What is still missing a proven effect:**
   - words whose effect depends on their data (`?dup`, `digit?`, `get-order`);
   - words that reach their callees through `execute` or `catch` (`type`, `emit`, `locked`);
