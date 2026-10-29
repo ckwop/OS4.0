@@ -119,7 +119,7 @@ run: $(BOOT_IMG) $(DATA_IMG) $(APP_IMG)
 run-hosted: $(HOSTED) $(DATA_IMG) $(APP_IMG)
 	@$(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG))
 
-test: check-course test-hosted test-virt proofs
+test: check-course test-hosted test-virt
 
 # The course (docs/course) and code tours (.tours) still match the code.
 check-course:

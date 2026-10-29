@@ -131,7 +131,7 @@ docker run --rm -it -p 127.0.0.1:5000:5000 -v "${PWD}:/app" -w /app os4:0.10 os4
 
 ### Proofs
 
-The base is certified as it goes, with Lean 4 proofs about the words as the system actually compiles them ([docs/verification.md](docs/verification.md)). `make proofs` boots the hosted build, dumps its dictionary, turns every word it can into a Lean definition, and checks every theorem. It is part of `make test`, so a change that breaks a property fails the suite like a failing test.
+The base is certified as it goes, with Lean 4 proofs about the words as the system actually compiles them ([docs/verification.md](docs/verification.md)). `make proofs` boots the hosted build, dumps its dictionary, turns every word it can into a Lean definition, and checks every theorem. Run it at each milestone and before merging a change to the base: a change that breaks a property fails it like a failing test. It takes about twenty minutes under emulation, so it is not yet part of `make test` (TD-30).
 
 ```powershell
 docker run --rm -v "${PWD}:/src" os4 make proofs   # extract, generate and check

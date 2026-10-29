@@ -28,8 +28,17 @@ that no longer holds fails the build, as a test would.
 | Colon words modelled | 472 of 575 (82%) |
 | Not modelled | The compiler (`,`, `parse`, `search-list` ...) and some threads with inline data |
 | Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown |
-| Proven | Stack effects of the core words, `within`, `abs`, `min`, `max`; `/` on its ambiguous case; FILL-REF equals FILL's model |
+| Proven | `within`, `abs`, `min`, `max` and the core stack words for all inputs; `/` on its ambiguous case; reading a cell back after a store |
 | Shown to catch | A signed `u>` that passes all 36 hosted tests fails its proof |
+
+V1 has started. Stack effects are now proven compositionally (DECISIONS.md #107):
+
+- **648 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems.
+- **263 stack comments proven in their own terms:** none disagree with their code.
+- **What is still missing a proven effect:**
+  - words whose effect depends on their data (`?dup`, `digit?`, `get-order`);
+  - words that reach their callees through `execute` or `catch` (`type`, `emit`, `locked`);
+  - every word that calls one of those.
 
 Trusted today:
 
@@ -41,7 +50,9 @@ Trusted today:
 
 ## Principles for every milestone
 
-- **Proofs run in the test suite.** `make test` builds them, and a failure fails the suite.
+- **Proofs gate the milestone.** `make proofs` checks them all, and a
+  milestone is not done while it fails. They join `make test` once they are
+  fast enough (TD-30).
 - **Coverage only goes up.** Record the number of modelled words and proven
   effects; the build fails if either drops without a decision in DECISIONS.md.
 - **Every trust assumption is written down.** Each one goes in `Machine.lean`'s header and in this file's trusted list, and each milestone says what it adds or removes.
@@ -61,8 +72,10 @@ relative: S is a session or two, XL is many.
   - `make proofs` added to `make test`.
   - The coverage check described above.
 - **Stack comments:** every plain stack comment proven, including words with
-  loops. Each failure is either a wrong comment (fix the comment) or an
-  automation gap (fix `forth_effect`).
+  loops. The work left:
+  - teach the checker the `?dup if` idiom and branches that end in a THROW;
+  - state effects for vectored words (`type`, `key`, `emit`) as hypotheses about their vectors;
+  - get the proof build fast enough for every `make test`.
 - **Reference definitions:** each one proven equal to its primitive's model.
   These are `fill-ref`, `cmove-ref`, `cmove>-ref`, `pick-ref`, `um/mod-ref` and
   `search-list-ref`. Together they give the brief's "keep the Forth definition
@@ -195,5 +208,6 @@ This removes the largest trusted piece, the primitive models.
   its callees' theorems, not their code).
 - **Lean versions:** pin the toolchain, and upgrade deliberately, as a change
   of its own.
-- **Build time:** today about a minute. Keep the generated theorems cheap,
-  and split the slow ones out so `make test` stays quick.
+- **Build time:** about twenty minutes from clean under emulation, and nearly
+  as long after a Forth change (TD-30). Until that is under a minute, the
+  proofs are a gate of their own: `make proofs`, run at each milestone.
