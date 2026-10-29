@@ -11,8 +11,8 @@ Proofs are about the system as it is compiled, never about a copy of it.
 1. `make proofs-extract` boots the hosted build, which loads every boot file,
    and dumps each word's compiled thread (`tools/dump-words.fs`).
 2. `tools/forth2lean.py` turns the threads into Lean definitions
-   (`proofs/OS4/Words.lean`, generated) and each plain stack comment into a
-   theorem (`proofs/OS4/Effects.lean`, generated).
+   (`proofs/OS4/Words.lean`, generated). It also certifies each word's stack effect
+   (`Specs.lean`) and the system tasks' step counts (`Costs.lean`), all generated.
 3. `proofs/OS4/Machine.lean` models what the primitives do. It is the trusted
    base, and every milestone below either uses it or shrinks it.
 4. Hand-written theorems (`proofs/OS4/*.lean`) state the properties that
@@ -21,17 +21,27 @@ Proofs are about the system as it is compiled, never about a copy of it.
 Change a word's Forth, and its generated definition changes with it. A theorem
 that no longer holds fails the build, as a test would.
 
-## Where the spike left us (V0)
+## Where we are
 
 | | |
 | --- | --- |
-| Colon words modelled | 472 of 575 (82%) |
-| Not modelled | The compiler (`,`, `parse`, `search-list` ...) and some threads with inline data |
+| Colon words modelled | 525 of 577 |
+| Not modelled | The compiler and interpreter primitives (`,`, `parse`, `parse-name`, `search-list` ...) and the words that use them |
 | Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown |
-| Proven | `within`, `abs`, `min`, `max` and the core stack words for all inputs; `/` on its ambiguous case; reading a cell back after a store |
+| Proven | 651 stack effects and 264 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses |
+| Found | A listener and the TCP timer sweep that could run without pausing, both fixed (#108, #109) |
 | Shown to catch | A signed `u>` that passes all 36 hosted tests fails its proof |
 
-V1 has started. Stack effects are now proven compositionally (DECISIONS.md #107):
+Three kinds of compositional proof now exist, all built the same way. The
+generator infers a certificate, Lean checks it by `decide`, and one bridge
+theorem, proven once, turns the certificate and the callees' theorems into
+the word's own theorem:
+
+- **Stack effects** (`Spec.lean`, #107);
+- **step counts between pauses** (`Yield.lean`, #108);
+- **footprints**, next: what a word may read and write (V9).
+
+Stack effects in detail (DECISIONS.md #107):
 
 - **651 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems. 525 of 577 colon words are modelled, since the generator decodes `(s")` (now a colon word) and stops at the data a `message:` leaves after a word.
 - **264 stack comments proven in their own terms:** none disagree with their code.
@@ -63,11 +73,40 @@ Trusted today:
 - **No `sorry`.** An unproven theorem is a missing theorem, not a placeholder.
 - **The course gets a lecture and tour on proofs.** Like every other area.
 
-## Milestones
+## Roadmap
 
-The order puts first what the OS needs soonest. V4 and V5 are what face the
-internet, and they should be done before milestone 11 (Fargate). Effort is
-relative: S is a session or two, XL is many.
+Milestones are numbered as they were first planned; this is the order they
+run in. Three rules set it:
+
+- **Foundations first:** work that several milestones need comes first.
+- **Exposure next:** what players reach comes before launching the MUD, and
+  what the internet reaches before milestone 11.
+- **Depth last:** proofs that only remove trust come after those that rule out
+  attacks.
+
+Effort is relative: S is a session or two, XL is many.
+
+| Phase | Milestone | Size | Why then |
+| --- | --- | --- | --- |
+| 1. Foundations | V1: proofs fast enough for `make test` (TD-30) | M | Every later phase adds proofs. At fifteen minutes or more a run, they cannot gate each change. |
+| | V9: footprints, what a word may read and write | M | V2, V4 and V6 all need it. |
+| | V1: models of the interpreter primitives, and `search-list-ref` | S | V2 needs `interpret` modelled. |
+| | Course: a lecture and tour on the proofs | S | Explains the approach once, while it has three kinds of proof: the model, certificates and bridges, stack effects, step counts, and what they found. |
+| 2. Before players | V2: sandbox isolation | M | The brief's hard rule, and what every player reaches. |
+| | V6: a stopped task leaves nothing broken | M | A player can make the watchdog fire, or drop the connection, at any point. |
+| | V10: proofs for an app (the MUD first) | M | The MUD's own tasks and commands, on the base's results. |
+| | V3: crash-safe records | M | Player data survives a crash at any point. |
+| 3. Before the internet (milestone 11) | V4: the network survives any input | L | Every byte from anyone goes through it. |
+| 4. Depth | V7: TCP state machine | XL | Off-path attacks and the RFC's invariants. |
+| | V5: primitives against the assembly | L | Removes the largest trusted piece. |
+| | V8: cryptography | XL | Removes trust in SHA-256, HMAC, PBKDF2, SipHash. |
+| | V1: the rest | S each | The `?dup` idiom, vectored words, other reference words, TD-13. Done when convenient. |
+
+A phase gates the milestone it names. The MUD does not launch until phase 2
+is done. Milestone 11 (Fargate) waits for phase 3, alongside the open tech
+debt marked **must fix before public**.
+
+## Milestones
 
 ### V1: Proofs in the suite — S
 
@@ -126,20 +165,39 @@ The brief's `sync` rule and DECISIONS.md #95.
   overwhelming probability, not certainty, so it is a named hypothesis, not an
   axiom.
 
-### V4: Parser safety — L
+### V4: The network survives any input — L
 
-Every byte from the network goes through `eth`, `arp`, `ip`, `icmp`, `udp`,
-`tcp` and `telnet` (#65–73).
+The goal is one invariant: whatever arrives on the wire, in any order, and
+whatever the network card writes, the network task keeps its memory intact,
+keeps its pools whole and the card supplied with buffers, and is back to
+polling within a bounded number of steps. Every byte from the network goes
+through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
 
+- **The receive ring (first, the smallest):**
+  - after every frame, `virtio-net.fs` has posted a buffer back, so the card
+    never runs out of places to put frames;
+  - every ring index stays in range.
+
+  The model already treats the device as unknown, so this holds even for a card
+  that writes nonsense lengths. It needs the bare-metal driver in the dump: an
+  extraction-only build with its registers as plain memory.
 - **Reads:** for any frame of length n, a parser reads only bytes inside the
   frame and its own state. Stated as noninterference: two memories that agree
   on those bytes give the same result.
-- **Writes:** a parser writes only its designated buffers and connection state.
+- **Writes:** a parser writes only its designated buffers and connection state
+  (V9's footprints).
 - **Overflow:** no length or offset computation wraps into a valid-looking
   address.
+- **Pools:** for connections, half-open slots and tasks, free plus live is the
+  total, and every path that closes returns its slot. This is the proof
+  counterpart of the `soak` peer.
+- **Steps:** the loops in `proofs/yields.txt` whose bound a peer sets are proven
+  bounded, or made to pause: `(tcp-output)`, and `room?` (`count-list`,
+  `half-open`).
 - This is the proof counterpart of the `hostile` peer: the tests try many bad
   frames, and the proof covers all of them.
-- **Done before milestone 11.**
+- **Done when:** the invariant holds for the base's protocols, as one theorem
+  about any sequence of frames.
 
 ### V5: Primitives against the assembly — L
 
@@ -168,9 +226,14 @@ This removes the largest trusted piece, the primitive models.
     same semaphore.
   - **Release:** `locked` always releases, which extends the single-task proof
     drafted in `Semaphores.lean`.
-  - **Lock discipline:** every word that sends a frame holds `tx-lock`, and
-    every block word holds `blocks-lock` (#76–78). This is checked statically
-    over the call graph.
+  - **Lock discipline:** every word that sends a frame holds `tx-lock`, every
+    block word holds `blocks-lock`, and `free-conn` holds `conns-lock`
+    (#76–78, #109). This is checked statically over the call graph.
+  - **A stopped task leaves nothing broken (before players):** when a session
+    is stopped at any point, by the watchdog, a dropped connection or an
+    error, it holds no semaphore and no dictionary claim, its connection is
+    closed, and its task goes back to the pool. Phase 2 needs this one; the
+    rest of V6 can wait.
 - **Watchdog (done for the system tasks; DECISIONS.md #108):** a task that pauses
   within bounded steps is never stopped (#48–56).
   - `Yield.lean` counts a run in Forth instructions: each thread cell spends one
@@ -200,12 +263,9 @@ This removes the largest trusted piece, the primitive models.
 - **Invariants:** from any well-formed connection state, any segment, timeout
   or call leaves it well-formed. Well-formed means sequence numbers ordered as
   RFC 9293 requires, buffer indices in bounds, timers consistent.
-- **Resources:**
-  - every path that closes a connection returns it to its pool, which is the
-    proof counterpart of the `soak` peer;
-  - a forged segment from an off-path attacker cannot reset or desynchronise
-    a connection without guessing its sequence numbers, which is the
-    counterpart of `tcp-attack`.
+- **Off-path attacks:** a forged segment from an off-path attacker cannot reset
+  or desynchronise a connection without guessing its sequence numbers. This is
+  the counterpart of `tcp-attack`. Pool invariants are in V4.
 
 ### V8: Cryptography — XL
 
@@ -217,10 +277,47 @@ This removes the largest trusted piece, the primitive models.
   `hash-password` hash is stored.
 - **Leverage:** LNSym's SHA work is the precedent here.
 
+### V9: Footprints — M
+
+What a word may read and write, proven compositionally like stack effects and
+step counts. V2, V4 and V6 all depend on it.
+
+- **Statement:**
+  - **writes:** every address outside the word's footprint keeps its value;
+  - **reads:** two memories that agree on its read set give the same result.
+
+  A footprint is described in terms the word can name: its user area, its
+  task's buffers, fixed buffers (`rx-frame`, `tx-frame`), and a range given by
+  its arguments (a frame of length n).
+- **Certificates:** the generator infers each word's footprint, and a bridge
+  theorem checks it against its callees' footprints. Words that write through a
+  computed address (`buf + i` in a loop) need a bound: the reference-word proofs
+  (`cmove-ref`, `fill-ref`) are the pattern.
+- **Done when:** `fill`, `cmove` and the stack and arithmetic words have footprints,
+  and the bridge proves them for colon words. Then V2 and V4 build on it.
+
+### V10: Proofs for an app — M
+
+An app is verified as the base is, in its own repository, against a tagged
+`os4` image.
+
+- **Extraction:** `os4-app` dumps the dictionary with the app loaded, and the
+  generator models the app's words over the base's theorems.
+- **Yields:** the app's tasks and door handlers are roots in its own
+  `yields.txt`.
+- **Sandbox:** the app's player-facing commands keep V2's isolation. For the
+  MUD, a player's command reaches only that player's own state and the shared
+  world through the words meant for it.
+- **Done when:** `os4-app proofs` runs an app's proofs, and the MUD's pass.
+
 ## Not planned
 
 - **End-to-end correctness of the whole OS:** seL4 scale; not worth it.
-- **Device behaviour:** virtio devices and QEMU itself stay trusted.
+- **Device behaviour:** virtio devices and QEMU themselves stay trusted. Our
+  drivers are proven safe whatever the device does (V4); the device itself is
+  not proven.
+- **The memory model:** proofs assume program order. The `dmb` and `dsb`
+  barriers are what make that true on real hardware, and they stay trusted.
 - **Timing:** constant-time cryptography and performance are out of scope for
   Lean. They need different tools.
 
@@ -231,6 +328,10 @@ This removes the largest trusted piece, the primitive models.
   its callees' theorems, not their code).
 - **Lean versions:** pin the toolchain, and upgrade deliberately, as a change
   of its own.
-- **Build time:** about twenty minutes from clean under emulation, and nearly
-  as long after a Forth change (TD-30). Until that is under a minute, the
-  proofs are a gate of their own: `make proofs`, run at each milestone.
+- **Build time:** about fifteen minutes under emulation, and nearly as long
+  after a Forth change (TD-30). Until a typical change re-proves in a minute or
+  two, the proofs are a gate of their own: `make proofs`, run at each
+  milestone. Phase 1 fixes this first.
+- **Model drift:** each new kind of proof adds generated semantics beside the
+  plain one (step counts now, footprints next). Proving them equal is cheaper
+  while there are few, so do it as part of V9.

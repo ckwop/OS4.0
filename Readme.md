@@ -164,16 +164,18 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 12 | EC2 AMI | Not started |
 | 13 | x86-64 port | Not started |
 
-The verification track ([docs/verification.md](docs/verification.md)) runs beside these and strengthens the base. V2 and V4 come before milestone 11, as they cover what faces the internet.
+The verification track ([docs/verification.md](docs/verification.md)) runs beside these and strengthens the base. Its roadmap runs in phases. Foundations come first (proof speed, footprints). Then what players reach comes before the MUD launches (V2, V6's stopped tasks, V10, V3), and the network before milestone 11 (V4). The rest removes trust.
 
-| # | Verification milestone | Status |
-| --- | --- | --- |
-| V0 | Spike: Lean definitions generated from the compiled dictionary; 472 of 575 colon words modelled | Done |
-| V1 | Proofs in the suite: every fixed stack effect proven compositionally; reference definitions proven against the primitives; TD-13 checked | In progress |
-| V2 | Sandbox isolation: a sandboxed task can run only the exposed words | Not started |
-| V3 | Crash-safe records: after a crash, `record@` gives the old record or the new one | Not started |
-| V4 | Parser safety: the network parsers read only the frame and write only their buffers | Not started |
-| V5 | Primitives proven against the assembly | Not started |
-| V6 | Tasks and semaphores: the system tasks pause within bounded steps (done, outside the loops listed in `proofs/yields.txt`); mutual exclusion, lock discipline | In progress |
-| V7 | TCP state machine invariants | Not started |
-| V8 | Cryptography against its standards | Not started |
+| Phase | # | Verification milestone | Status |
+| --- | --- | --- | --- |
+| | V0 | Spike: Lean definitions generated from the compiled dictionary | Done |
+| 1 | V1 | Proofs in the suite: every fixed stack effect proven compositionally (done); proofs fast enough for `make test`; interpreter primitives modelled; reference definitions | In progress |
+| 1 | V9 | Footprints: what each word may read and write, proven compositionally | Not started |
+| 2 | V2 | Sandbox isolation: a sandboxed task can run only the exposed words | Not started |
+| 2 | V6 | Tasks: the system tasks pause within bounded steps (done); a stopped task leaves nothing broken; mutual exclusion, lock discipline | In progress |
+| 2 | V10 | Proofs for an app: the MUD's tasks yield and its commands stay isolated | Not started |
+| 2 | V3 | Crash-safe records: after a crash, `record@` gives the old record or the new one | Not started |
+| 3 | V4 | The network survives any input: the receive ring stays supplied, parsers read only the frame and write only their buffers, pools stay whole | Not started |
+| 4 | V7 | TCP state machine invariants, off-path attacks | Not started |
+| 4 | V5 | Primitives proven against the assembly | Not started |
+| 4 | V8 | Cryptography against its standards | Not started |
