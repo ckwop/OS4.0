@@ -1,9 +1,9 @@
 # OS 4.0 toolchain image: builds the kernel, runs QEMU and runs the tests; apps
 # depend on a tagged version of it.
-#   docker build -t os4:0.9b -t os4 .
+#   docker build -t os4:0.10 -t os4 .
 #   docker run --rm -it os4                          # boot to the Forth prompt on the serial console
 #   docker run --rm -v "${PWD}:/src" os4 make test   # against live source
-#   docker run --rm -v "${PWD}:/app" -w /app os4:0.9b os4-app test   # an app's tests
+#   docker run --rm -v "${PWD}:/app" -w /app os4:0.10 os4-app test   # an app's tests
 FROM debian:trixie-slim
 
 # Limine is not packaged by Debian; pin a commit on its prebuilt-binary branch.

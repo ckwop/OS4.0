@@ -46,40 +46,47 @@ variable new-pw-len
 
 : end-session  ( -- )  true eof ! ;               \ BYE in a session
 : greet  ( addr u -- )  ." OS 4.0 " type ." . Type bye to leave." cr ;
-: sandbox-session  ( -- )  sandbox-wordlist 1 set-order  s" sandbox" greet ;
+: sandbox-session  ( -- )  sandbox-wordlist 1 set-order  s" sandbox" greet  repl ;
 : admin-session  ( -- )
   admin-password? 0= if
     ." No admin password is set: set one on the console with set-admin-password." cr
-    end-session exit
+    exit
   then
-  login? 0= if  ." Goodbye." cr end-session exit  then
-  only  s" full Forth" greet ;
+  login? 0= if  ." Goodbye." cr exit  then
+  only  s" full Forth" greet  repl ;
 
-: (session)  ( setup-xt -- )  execute repl ;
+\ A session runs its door's word with the connection as its terminal; however
+\ it ends, the task is put back as it was and the connection closed.
 : farewell  ( n -- )  cr .error ;                  \ why the session ended, if it can be told
-: session  ( conn setup-xt -- )
+: session  ( conn run-xt -- )
   'bye @ >r
   swap telnet-terminal  0 eof !  ['] end-session 'bye !  0 state !  decimal
   session-idle @ io-timeout !
-  ['] (session) catch ?dup if  ['] farewell catch if drop then  then
+  catch ?dup if  ['] farewell catch if drop then  then
   reset  only  false hidden !  0 io-timeout !
   term-conn @  console-terminal  close-connection
   1 sessions-served +!  r> 'bye ! ;
 
-\ ---- Doors: a port, the setup for its sessions, how many it allows and has
+\ ---- Doors: a port, the word that runs its sessions, how many it allows and
+\ has. An app makes its own with PORT-DOOR and serves it with SERVE-DOOR.
 
 0
 1 cells field door.port
-1 cells field door.setup
+1 cells field door.run
 1 cells field door.limit
 1 cells field door.count
+1 cells field door.next
 constant /door
-create sandbox-door  sandbox-port , ' sandbox-session , 16 , 0 ,
-create admin-door    admin-port , ' admin-session , 4 , 0 ,
-: door-of  ( conn -- door )  c.lport @ admin-port = if admin-door else sandbox-door then ;
+variable doors                  \ every door, newest first
+: port-door  ( port run-xt limit "name" -- )
+  create  here >r  rot , swap , , 0 ,  doors @ ,  r> doors ! ;
+sandbox-port ' sandbox-session 16 port-door sandbox-door
+admin-port ' admin-session 4 port-door admin-door
+: door-of  ( conn -- door )  \ the door whose port it came in on
+  c.lport @  doors @  begin  2dup door.port @ <>  while  door.next @  repeat  nip ;
 
 : run-session  ( conn -- )
-  dup door-of >r  r@ door.setup @ session  -1 r> door.count +! ;
+  dup door-of >r  r@ door.run @ session  -1 r> door.count +! ;
 : turn-away  ( conn -- )  \ the door is full: say so, and close
   5000 io-timeout !
   dup >r  s" Too many sessions: try again later." r@ ['] send-line catch if drop 2drop then
@@ -103,8 +110,8 @@ create admin-door    admin-port , ' admin-session , 4 , 0 ,
 
 task sandbox-listener
 task admin-listener
+: start-admin  ( -- )  \ port 4001 alone, for an app that serves 4000 itself
+  net-up? if  ['] admin-doors ['] restarting admin-listener start-with  then ;
 : start-repl  ( -- )  \ the listeners are supervised: see RESTARTING
-  net-up? if
-    ['] sandbox-doors ['] restarting sandbox-listener start-with
-    ['] admin-doors ['] restarting admin-listener start-with
-  then ;
+  net-up? if  ['] sandbox-doors ['] restarting sandbox-listener start-with  then
+  start-admin ;

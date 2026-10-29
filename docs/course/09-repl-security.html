@@ -94,8 +94,8 @@ user emitted                          <span class="c">\ EMIT's character</span>
   <h2>Doors, with limits</h2>
   <div class="cols">
     <div>
-      <pre class="code" data-src="forth/net/repl.fs" data-step="1">create sandbox-door  sandbox-port , ' sandbox-session , 16 , 0 ,
-create admin-door    admin-port , ' admin-session , 4 , 0 ,</pre>
+      <pre class="code" data-src="forth/net/repl.fs" data-step="1">sandbox-port ' sandbox-session 16 port-door sandbox-door
+admin-port ' admin-session 4 port-door admin-door</pre>
       <pre class="code below" data-src="forth/net/repl.fs" data-step="2">: <span class="w">admit</span>  ( conn door -- )
   dup door.count @  over door.limit @ &lt; 0= if  drop away exit  then
   1 over door.count +!
@@ -104,27 +104,28 @@ create admin-door    admin-port , ' admin-session , 4 , 0 ,</pre>
       <div class="src"><a href="../../forth/net/repl.fs" data-ref="forth/net/repl.fs:admit">forth/net/repl.fs › admit</a></div>
     </div>
     <ul class="points">
-      <li data-step="1">A door: its port, its session setup, its limit, its count</li>
+      <li data-step="1">A door: its port, the word that runs its sessions, its limit, its count</li>
       <li data-step="2">Full: a task says "try again later" and closes</li>
       <li data-step="3">No task to be had (-275): the connection is reset</li>
-      <li data-step="4">A listener task per door, under <code>restarting</code></li>
+      <li data-step="4">A listener task per door, under <code>restarting</code>; an app can make doors of its own</li>
     </ul>
   </div>
   <div class="talk">
-    <p>Each port is a door. A door is four cells: its port number, the word that sets a session up, how many sessions it allows at once, and how many it has. The sandbox door allows sixteen; the admin door, four.</p>
+    <p>Each port is a door, made with port-door. A door holds its port number, the word that runs a session, how many sessions it allows at once, and how many it has, and the doors are kept in a list. The sandbox door allows sixteen; the admin door, four.</p>
     <p>A listener task waits at each door. For every connection it accepts, it calls admit. If the door is full, the connection is handed to a short-lived task that tells the client to try again later, and closes. Otherwise the count goes up and a pooled task is spawned to run the session.</p>
     <p>Spawn can fail, with <span data-say="minus two seven five">-275</span>, when every worker in the pool is busy. Admit catches that, puts the count back, and resets the connection. The listener itself carries on: a flood of connections costs connections, never the door.</p>
+    <p>Nothing here is special to the REPL. An application makes a door of its own the same way, with its own port, its own session word and its own limit, and gets the cap and the polite refusal for free. That's how the MUD serves its players.</p>
   </div>
 </section>
 
 <!-- 5 -->
 <section class="slide" data-code="5">
   <h2>A session's life</h2>
-  <pre class="code" data-src="forth/net/repl.fs" data-step="1">: <span class="w">session</span>  ( conn setup-xt -- )
+  <pre class="code" data-src="forth/net/repl.fs" data-step="1">: <span class="w">session</span>  ( conn run-xt -- )
   'bye @ &gt;r
   swap telnet-terminal  0 eof !  ['] end-session 'bye !  0 state !  decimal
   session-idle @ io-timeout !
-  ['] (session) catch ?dup if  ['] farewell catch if drop then  then
+  catch ?dup if  ['] farewell catch if drop then  then
   reset  only  false hidden !  0 io-timeout !
   term-conn @  console-terminal  close-connection
   1 sessions-served +!  r&gt; 'bye ! ;</pre>
@@ -137,7 +138,7 @@ create admin-door    admin-port , ' admin-session , 4 , 0 ,</pre>
   <div class="talk">
     <p>This is a session from start to finish, and it runs in a pooled task. First, set up: make the connection this task's terminal, point bye at a word that just ends the session, because bye on the console would shut the machine down, and start in decimal, not compiling.</p>
     <p>Then set the idle timeout, ten minutes. If the client goes quiet for that long, the next key it's waiting for throws <span data-say="minus two seven three">-273</span>, and the session ends.</p>
-    <p>The session itself runs under catch: the door's setup word, then the ordinary REPL. However it ends, by bye, by the client hanging up, by a timeout or by an error, everything is put back. The stack and state are reset, the search order goes back to the full one, the terminal goes back to the console, and the connection is closed. The task returns to the pool clean, ready for the next client.</p>
+    <p>The session itself runs under catch: the door's word, which for the sandbox and admin doors sets the search order and then runs the ordinary REPL. However it ends, by bye, by the client hanging up, by a timeout or by an error, everything is put back. The stack and state are reset, the search order goes back to the full one, the terminal goes back to the console, and the connection is closed. The task returns to the pool clean, ready for the next client.</p>
   </div>
 </section>
 

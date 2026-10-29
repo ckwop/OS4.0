@@ -34,7 +34,8 @@ HOSTED_CMD   = qemu-aarch64 $(HOSTED) $(1) $(2)
 # Network backends for the bare-metal NIC: QEMU's user networking (NAT, with
 # the PORTS forwarded) to run; for tests, frames as UDP to the test's own peer.
 PORTS    ?= 4000 4001
-NET_USER  = -netdev user$(comma)id=net$(foreach p,$(PORTS),$(comma)hostfwd=tcp::$(p)-:$(p))
+# (foreach joins with spaces, which would split the -netdev argument.)
+NET_USER  = -netdev user$(comma)id=net$(subst $(space),,$(foreach p,$(PORTS),$(comma)hostfwd=tcp::$(p)-:$(p)))
 NET_TEST := -netdev dgram,id=net,local.type=inet,local.host=127.0.0.1,local.port={port},remote.type=inet,remote.host=127.0.0.1,remote.port={peerport}
 
 # Bare metal: Limine boots the kernel on QEMU's virt machine (milestone 3).
@@ -53,6 +54,8 @@ VIRT_CMD    = qemu-system-aarch64 -machine virt,gic-version=2 -cpu cortex-a72 -m
               $(2) -device virtio-net-device,netdev=net -device virtio-rng-device
 
 comma   := ,
+empty   :=
+space   := $(empty) $(empty)
 CONSOLE := python3 tools/console-run.py
 TESTS   := python3 tools/run-tests.py --disks /tmp/os4-test-disks --setup "$(TEST_SETUP)" --setup "$(APP_SETUP)" --timeout 150
 TEST_HOSTED = --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk}$(comma){appdisk},{port} {peerport})"
@@ -122,7 +125,7 @@ test: check-course test-hosted test-virt proofs
 check-course:
 	python3 tools/check-course.py
 
-# Proofs (docs/verification.md, DECISIONS.md #103-105): dump the hosted build's
+# Proofs (docs/verification.md, DECISIONS.md #105-107): dump the hosted build's
 # dictionary as compiled, generate the Lean definitions of its words and their
 # stack-effect theorems, then check every proof.
 WORDS_DUMP := $(BUILD)/words.txt

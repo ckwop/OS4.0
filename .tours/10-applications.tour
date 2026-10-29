@@ -53,7 +53,7 @@
       "file": "forth/app.fs",
       "pattern": ": boot-app  \\(",
       "title": "Starting an app",
-      "description": "`app-wordlist` first in the search order and current; `app.fs` included and `main` run under `catch`; an error reported as `app: file:line: ...`. `start-app` (called from `forth/start.fs`) falls back to the network REPL."
+      "description": "`app-wordlist` first in the search order and current; `app.fs` included and `main` run under `catch`; an error reported as `app: file:line: ...`. `start-app` (called from `forth/start.fs`) falls back to the network REPL. An app chooses its own: a `port-door` of its own, and `start-admin` for port 4001 alone."
     },
     {
       "file": "examples/hello/app.fs",

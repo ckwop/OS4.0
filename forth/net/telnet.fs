@@ -48,8 +48,13 @@ user after-cr                  \ the last character in was a CR
     dup 13 = after-cr !
     dup -2 = while drop
   repeat ;
-: telnet-key?  ( -- flag )
-  term-conn @  dup rx-unread 0<>  over fin-received flag? or  swap c.state @ closed = or ;
+: skip-line-end  ( conn -- )  \ a LF or NUL just after a CR ends that line: take it now
+  after-cr @ 0= if drop exit then
+  dup rx-unread 0= if drop exit then
+  dup dup c.rx-out @ rx@  dup 10 =  swap 0= or if  cur-conn !  1 consumed  0 after-cr !  else drop then ;
+: telnet-key?  ( -- flag )  \ a key is waiting (the rest of a line end is not one)
+  term-conn @  dup skip-line-end
+  dup rx-unread 0<>  over fin-received flag? or  swap c.state @ closed = or ;
 
 \ ---- Output. Data goes out at once when nothing is waiting to be acknowledged,
 \ and otherwise with the next acknowledgement (Nagle's rule), so that echoing

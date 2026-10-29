@@ -23,7 +23,7 @@
       "file": "forth/net/repl.fs",
       "pattern": ": admit  \\(",
       "title": "Doors",
-      "description": "A door is port, setup, limit, count (`sandbox-door`, `admin-door` above). Full: `away` spawns a task to say so. `spawn` failing with -275: the connection is reset. `serve-door` below loops for ever; `start-repl` runs both listeners under `restarting`."
+      "description": "A door is port, run word, limit, count and a link (`port-door` makes one; `sandbox-door`, `admin-door` above; `door-of` finds a connection's door by its port). Full: `away` spawns a task to say so. `spawn` failing with -275: the connection is reset. `serve-door` below loops for ever; `start-repl` runs both listeners under `restarting`, `start-admin` only port 4001. An app makes and serves its own doors the same way."
     },
     {
       "file": "forth/net/repl.fs",
