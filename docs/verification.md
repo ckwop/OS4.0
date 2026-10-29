@@ -178,12 +178,16 @@ This removes the largest trusted piece, the primitive models.
     steps before its first pause (n) and between or after pauses (m).
   - Costs are proven compositionally, by a certificate per word and the bridge
     `threadT_cost`, like stack effects.
-  - Proven: `net-loop` takes at most 2380 steps between pauses, `serve-door` 937.
-    `serve-door` gained a `pause` after each connection to make this true.
+  - Proven: `net-loop` takes at most 3389 steps between pauses, `serve-door` 1010,
+    however many connections there are. Two changes made this true:
+    - `serve-door` pauses after each connection;
+    - the TCP timer sweep pauses after each connection (#109). It used to
+      retransmit to all 256 in one stretch.
   - Not counted, each listed in `proofs/yields.txt` with its bound: loops that
     never pause. Most walk the connection list or copy a frame a byte at a time.
-    The largest is `tcp-timers`, a round per connection (up to 256), each of
-    which may retransmit a segment.
+    The largest are `(tcp-output)`, up to 128 segments to a peer that claims a
+    64-byte MSS, and `count-list` and `half-open`, a walk over every connection
+    for each SYN.
   - **Still to do:** prove those bounds. Each needs its input bounded by the
     code above it: a frame's length, a list without a cycle, the pool's size.
     Then turn the step count into time on the slowest platform, which is an

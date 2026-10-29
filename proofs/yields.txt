@@ -22,7 +22,6 @@ uncounted siphash           \ a round per 8 bytes hashed: a connection's address
 uncounted hash-out          \ a round per connection in its hash bucket
 uncounted unlink            \ a round per connection in the list
 uncounted (tcp-output)      \ a segment a round: /tx / MSS, up to 128 with a peer's MSS of 64
-uncounted tcp-timers        \ a round per connection, up to max-conns (256), each may retransmit
 uncounted options-mss       \ each round moves on at least a byte of options: at most 40
 uncounted data-in           \ copies a segment's data a byte a round: under a frame
 uncounted find-conn         \ a round per connection in the segment's hash bucket

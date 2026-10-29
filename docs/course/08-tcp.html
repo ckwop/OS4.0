@@ -235,7 +235,7 @@
     </ul>
   </div>
   <div class="talk">
-    <p>Each connection has a retransmission timer, armed whenever data is in flight. The network task checks the timers on every pass of its loop. If one expires, retransmit runs.</p>
+    <p>Each connection has a retransmission timer, armed whenever data is in flight. Once a tick, the network task sweeps every connection's timers, and pauses after each one, so a thousand connections never hold up the other tasks. While it sweeps, it holds a lock that freeing a connection also takes, so no other task can free the one it goes to next. If a timer has expired, retransmit runs.</p>
     <p>First, has this connection tried too often? After eight attempts, or four for one that's still half open, it sends a reset and gives up. Otherwise it counts the attempt, and doubles the timeout, starting at one second and capped at a minute. Doubling is what keeps a struggling network from being flooded with retries.</p>
     <p>Then the go-back-N step, which is the last line here, and it's the whole of it. Set the sent count back to the acknowledged count. As far as the connection is concerned, everything in flight was never sent, so the next call to TCP output sends it again from the oldest unacknowledged byte. Counting bytes makes this a single store.</p>
   </div>

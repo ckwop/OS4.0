@@ -53,7 +53,7 @@
       "file": "forth/net/tcp.fs",
       "pattern": ": retransmit  \\(",
       "title": "Retransmission",
-      "description": "Give up after `max-retries` (8; `max-syn-retries`, 4, while half open), else double the RTO (1 s to 60 s), probe a closed window, and go back: `tx-sent` = `tx-acked`. `tcp-timers` below runs it for every connection, each under `catch`."
+      "description": "Give up after `max-retries` (8; `max-syn-retries`, 4, while half open), else double the RTO (1 s to 60 s), probe a closed window, and go back: `tx-sent` = `tx-acked`. `tcp-timers` below runs it for every connection, once a tick, each under `catch`, pausing after each while it holds `conns-lock` (which `free-conn` takes too)."
     },
     {
       "file": "forth/net/tcp.fs",

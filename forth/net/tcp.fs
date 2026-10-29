@@ -131,8 +131,12 @@ create buckets  #buckets cells allot   buckets #buckets cells 0 fill
     dup @ 2 pick = if  swap c.link @ swap !  exit  then
     @
   repeat 2drop ;
-: free-conn  ( conn -- )
+\ The timer sweep holds CONNS-LOCK while it walks the list, pausing between
+\ connections, so no other task may free the one it goes to next.
+semaphore conns-lock
+: (free-conn)  ( conn -- )
   dup hash-out  dup conns unlink  free-conns @ over c.link !  free-conns ! ;
+: free-conn  ( conn -- )  ['] (free-conn) conns-lock locked ;
 
 \ ---- Sequence numbers: 32 bits, wrapping
 
@@ -439,11 +443,20 @@ create rst-conn  /conn-header allot
     dup c.timeout @ ?dup if  expired? if dup timed-out then  then
   then
   drop ;
-: tcp-timers  ( -- )  \ a connection whose timers throw is released, and the rest go on
+\ Every connection's timers, pausing after each, so the sweep's time does not
+\ grow with the number of connections (proofs/yields.txt). It runs once a tick
+\ at most: the timers count in ticks, and the network task calls it per frame.
+variable next-sweep             \ when the sweep may run again
+: (tcp-timers)  ( -- )  \ a connection whose timers throw is released, and the rest go on
   conns @ begin ?dup while
     dup c.link @ swap                               ( next conn )
     ['] conn-timers catch if  ['] release-conn catch if drop then  then
+    pause
   repeat ;
+: tcp-timers  ( -- )
+  next-sweep @ expired? 0= if exit then
+  10 deadline next-sweep !
+  ['] (tcp-timers) conns-lock locked ;
 
 \ ---- For the application. Words that wait sleep until the network task wakes
 \ them, or until the task's IO-TIMEOUT runs out: then they throw -273, and a
