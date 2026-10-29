@@ -2,3 +2,4 @@
 OS4/Words.lean
 .lake/
 OS4/Specs.lean
+OS4/Costs.lean

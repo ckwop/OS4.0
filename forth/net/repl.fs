@@ -102,9 +102,11 @@ admin-port ' admin-session 4 port-door admin-door
   over ['] run-session ['] spawn catch
   if  2drop  -1 swap door.count +!  drop-connection  else  drop 2drop  then ;
 
+\ A pause after each connection: with several waiting, ACCEPT-CONNECTION
+\ returns at once, and the listener must still yield (proofs/yields.txt).
 : serve-door  ( door -- )  \ forever
   dup door.port @ listen
-  begin  dup door.port @ accept-connection  over admit  again ;
+  begin  dup door.port @ accept-connection  over admit  pause  again ;
 : sandbox-doors  ( -- )  sandbox-door serve-door ;
 : admin-doors    ( -- )  admin-door serve-door ;
 

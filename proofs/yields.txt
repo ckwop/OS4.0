@@ -1,0 +1,32 @@
+\ The system tasks' loops, whose steps between pauses are proven bounded
+\ (OS4/Yield.lean; tools/forth2lean.py --yields).
+root net-loop
+root serve-door
+
+\ Tables of xts: each EXECUTE in the first word runs one of the rest. Trusted:
+\ that the tables hold no other xts. An app that binds a UDP port or adds a
+\ protocol adds to them, so proves its own handlers.
+vector ip-in    icmp-in tcp-in udp-in no-protocol 2drop    \ ip-handlers, 'no-protocol
+vector udp-in                                              \ udp-ports: none in the base
+
+\ Loops that do not pause, so are not counted: each runs in no steps in the
+\ proofs. Each line says what bounds it, which is not yet proven.
+uncounted arp-find          \ #arp (8) rounds
+uncounted listener-of       \ #listeners (8) rounds
+uncounted sum16             \ a round per two bytes summed: at most a frame
+uncounted last-task         \ a round per task in the ring
+uncounted fold              \ each round shrinks the sum below 2^49: at most 4
+uncounted cstr>u            \ hosted driver: a round per digit of a port number argument
+uncounted (segment-out)     \ copies the segment a byte a round: at most the MSS
+uncounted siphash           \ a round per 8 bytes hashed: a connection's addresses and ports
+uncounted hash-out          \ a round per connection in its hash bucket
+uncounted unlink            \ a round per connection in the list
+uncounted (tcp-output)      \ a segment a round: /tx / MSS, up to 128 with a peer's MSS of 64
+uncounted tcp-timers        \ a round per connection, up to max-conns (256), each may retransmit
+uncounted options-mss       \ each round moves on at least a byte of options: at most 40
+uncounted data-in           \ copies a segment's data a byte a round: under a frame
+uncounted find-conn         \ a round per connection in the segment's hash bucket
+uncounted enqueue           \ a round per connection already waiting to be accepted
+uncounted count-list        \ a round per connection: up to max-conns (256)
+uncounted half-open         \ a round per connection: up to max-conns (256)
+uncounted udp-find          \ #udp-ports (16) rounds

@@ -139,6 +139,8 @@ docker run --rm -v "${PWD}:/src" os4 make proofs   # extract, generate and check
 
 Every word with a fixed stack effect has it proven, layered through its callees' proofs, and every plain stack comment is checked against what the code does. A comment that disagrees, or a word whose effect depends on its data, is listed in `build/proof-findings.txt`. Hand-written theorems (`proofs/OS4/*.lean`) prove deeper properties: arithmetic words for all inputs, the Forth reference definitions against the assembly primitives' models, and memory. What is trusted rather than proven is listed in `proofs/OS4/Machine.lean`.
 
+The system tasks' loops (the network task and the REPL listeners) are proven to pause within a bounded number of Forth instructions, so the watchdog never stops them (`proofs/OS4/Yield.lean`). Inner loops that never pause are listed in `proofs/yields.txt`, each with what bounds it; a new one that is not listed fails `make proofs`, and the bounds are reported in `build/yields.txt`.
+
 ### Milestones
 
 Each milestone is done when its acceptance test passes in the Docker image.
@@ -172,6 +174,6 @@ The verification track ([docs/verification.md](docs/verification.md)) runs besid
 | V3 | Crash-safe records: after a crash, `record@` gives the old record or the new one | Not started |
 | V4 | Parser safety: the network parsers read only the frame and write only their buffers | Not started |
 | V5 | Primitives proven against the assembly | Not started |
-| V6 | Tasks and semaphores: mutual exclusion, lock discipline | Not started |
+| V6 | Tasks and semaphores: the system tasks pause within bounded steps (done, outside the loops listed in `proofs/yields.txt`); mutual exclusion, lock discipline | In progress |
 | V7 | TCP state machine invariants | Not started |
 | V8 | Cryptography against its standards | Not started |

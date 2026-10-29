@@ -29,6 +29,10 @@ Abstractions, which the proofs inherit:
   unknown answers. Each such event counts in `ext`, and its outcome is an
   unknown function of that count, so no two events need agree. Output is not
   recorded. `bye` ends the run (`Err.bye`).
+* Step counts (`OS4.Yield`) are a second semantics of the same threads,
+  generated beside this one and not proven equal to it. They trust that each
+  table of xts in proofs/yields.txt holds only the words listed there, and that
+  the loops listed there as not counted end.
 -/
 
 namespace OS4
@@ -45,6 +49,7 @@ structure S where
 
 inductive Err where
   | underflow | rUnderflow | divZero | outOfRange | fuel | badBranch | bye
+  | unknownXt                   -- an xt outside the words a table may hold (OS4.Yield)
   | throw (n : Cell)
 deriving DecidableEq, Repr
 

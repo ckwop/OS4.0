@@ -33,8 +33,8 @@ that no longer holds fails the build, as a test would.
 
 V1 has started. Stack effects are now proven compositionally (DECISIONS.md #107):
 
-- **649 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems.
-- **262 stack comments proven in their own terms:** none disagree with their code.
+- **651 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems. 525 of 577 colon words are modelled, since the generator decodes `(s")` (now a colon word) and stops at the data a `message:` leaves after a word.
+- **264 stack comments proven in their own terms:** none disagree with their code.
 - **What is still missing a proven effect:**
   - words whose effect depends on their data (`?dup`, `digit?`, `get-order`);
   - words that reach their callees through `execute` or `catch` (`type`, `emit`, `locked`);
@@ -47,6 +47,10 @@ Trusted today:
 - **The dumper and the generator.**
 - **Lean's kernel.**
 - **One abstraction:** the outside world (other tasks, devices, the clock) is unknown, and theorems hold whatever it does.
+- **For step counts (`Yield.lean`):**
+  - the counted semantics is generated beside the plain one, not proven equal to it;
+  - the tables in `proofs/yields.txt` hold only the words listed there;
+  - the loops listed there as not counted end.
 
 ## Principles for every milestone
 
@@ -167,8 +171,23 @@ This removes the largest trusted piece, the primitive models.
   - **Lock discipline:** every word that sends a frame holds `tx-lock`, and
     every block word holds `blocks-lock` (#76–78). This is checked statically
     over the call graph.
-- **Watchdog:** a task that pauses within bounded steps is never stopped
-  (#48–56).
+- **Watchdog (done for the system tasks; DECISIONS.md #108):** a task that pauses
+  within bounded steps is never stopped (#48–56).
+  - `Yield.lean` counts a run in Forth instructions: each thread cell spends one
+    step of an allowance, and `pause` refills it. `Cost f n m p` bounds a word's
+    steps before its first pause (n) and between or after pauses (m).
+  - Costs are proven compositionally, by a certificate per word and the bridge
+    `threadT_cost`, like stack effects.
+  - Proven: `net-loop` takes at most 2380 steps between pauses, `serve-door` 937.
+    `serve-door` gained a `pause` after each connection to make this true.
+  - Not counted, each listed in `proofs/yields.txt` with its bound: loops that
+    never pause. Most walk the connection list or copy a frame a byte at a time.
+    The largest is `tcp-timers`, a round per connection (up to 256), each of
+    which may retransmit a segment.
+  - **Still to do:** prove those bounds. Each needs its input bounded by the
+    code above it: a frame's length, a list without a cycle, the pool's size.
+    Then turn the step count into time on the slowest platform, which is an
+    argument rather than a theorem.
 
 ### V7: TCP state machine — XL
 

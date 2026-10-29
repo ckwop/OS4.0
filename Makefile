@@ -129,18 +129,21 @@ check-course:
 
 # Proofs (docs/verification.md, DECISIONS.md #105-107): dump the hosted build's
 # dictionary as compiled, generate the Lean definitions of its words and their
-# stack-effect theorems, then check every proof.
+# stack-effect theorems and the system tasks' step counts, then check every proof.
 WORDS_DUMP := $(BUILD)/words.txt
 WORDS_LEAN := proofs/OS4/Words.lean
 SPECS_LEAN := proofs/OS4/Specs.lean
 FINDINGS := $(BUILD)/proof-findings.txt
+COSTS_LEAN := proofs/OS4/Costs.lean
+YIELDS := $(BUILD)/yields.txt
 
 # Nothing stale may survive a failure, or lake would re-prove the old code.
 proofs-extract: $(HOSTED) $(DATA_IMG) $(APP_IMG) FORCE
-	@rm -f $(WORDS_DUMP) $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS)
+	@rm -f $(WORDS_DUMP) $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS) $(COSTS_LEAN) $(YIELDS)
 	$(CONSOLE) $(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG)) < tools/dump-words.fs | grep '^@@ ' > $(WORDS_DUMP).tmp
 	mv $(WORDS_DUMP).tmp $(WORDS_DUMP)
-	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt --specs $(SPECS_LEAN) --findings $(FINDINGS)
+	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt --specs $(SPECS_LEAN) --findings $(FINDINGS) \
+	  --yields proofs/yields.txt $(COSTS_LEAN) $(YIELDS)
 
 proofs: proofs-extract
 	cd proofs && lake build
