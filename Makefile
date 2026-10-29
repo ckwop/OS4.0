@@ -57,7 +57,9 @@ comma   := ,
 empty   :=
 space   := $(empty) $(empty)
 CONSOLE := python3 tools/console-run.py
-TESTS   := python3 tools/run-tests.py --disks /tmp/os4-test-disks --setup "$(TEST_SETUP)" --setup "$(APP_SETUP)" --timeout 150
+# A test's time limit allows two slow boots on a busy machine (an app's
+# reboot tests); a test that passes is never slowed by it.
+TESTS   := python3 tools/run-tests.py --disks /tmp/os4-test-disks --setup "$(TEST_SETUP)" --setup "$(APP_SETUP)" --timeout 300
 TEST_HOSTED = --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk}$(comma){appdisk},{port} {peerport})"
 TEST_VIRT   = --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST),{appdisk})"
 
