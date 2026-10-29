@@ -2,8 +2,9 @@
 \ tools/forth2lean.py. Fed to the hosted build's console by make dump-words.
 \ Each word is one line, numbers in decimal: "@@ xt kind name cells...", where
 \ kind is 0 primitive, 1 colon, 2 constant, 3 variable, 4 other (a DOES> child).
-\ A colon word's cells are its whole thread; a constant's, its value. A body
-\ ends where the next newer header starts, so nothing here decodes threads.
+\ A colon word's cells are its whole thread; a constant's, its value; a DOES>
+\ child's, where its code field branches to. A body ends where the next newer
+\ header starts, so nothing here decodes threads.
 
 : bl-target  ( xt -- addr | 0 )  \ where the bl in a code field goes, 0 if none
   4 +  dup l@  dup $fc000000 and $94000000 <> if 2drop 0 exit then
@@ -18,6 +19,7 @@ variable limit                                    \ the end of the word being du
 : .word  ( nt -- )
   cr ." @@ "  dup name>xt  dup u.  dup kind dup .  rot name>string type space
   dup 1 = if drop cell+ .cells exit then
+  dup 4 = if drop bl-target u. exit then           \ where its DOES> code is
   2 = if cell+ @ u. else drop then ;
 : dump-words  ( -- )
   here limit !  latest @ begin ?dup while  dup .word  dup limit !  @ pause repeat

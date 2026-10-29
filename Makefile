@@ -134,7 +134,7 @@ proofs-extract: $(HOSTED) $(DATA_IMG) $(APP_IMG) FORCE
 	@rm -f $(WORDS_DUMP) $(WORDS_LEAN)
 	$(CONSOLE) $(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG)) < tools/dump-words.fs | grep '^@@ ' > $(WORDS_DUMP).tmp
 	mv $(WORDS_DUMP).tmp $(WORDS_DUMP)
-	python3 tools/forth2lean.py $(WORDS_DUMP) proofs/roots.txt $(WORDS_LEAN)
+	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)
