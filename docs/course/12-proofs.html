@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proofs · OS 4.0 course</title>
+<link rel="stylesheet" href="course.css">
+</head>
+<body data-tour="12-proofs">
+
+<header class="top">
+  <a href="index.html">OS 4.0 course</a> <span>›</span> <span class="lecture">12 · Proofs</span>
+  <span class="spacer"></span>
+  <span class="tour">Code tour: <code>.tours/12-proofs.tour</code></span>
+</header>
+
+<main class="stage">
+
+<!-- 1 -->
+<section class="slide" data-code="1">
+  <div class="kicker">Lecture 12 of 13 · about 16 minutes</div>
+  <h1>Proofs</h1>
+  <p class="lede">Lean 4 theorems about the dictionary as the system compiles it: how the words get into Lean, the three kinds of proof the generator writes for every word, the ones written by hand, and how to run and read them.</p>
+  <ul class="points" style="margin-top:28px">
+    <li data-step="2">From Forth to Lean: the dump, the generator, the model</li>
+    <li data-step="2">Certificates and bridges: stack effects, step counts, footprints</li>
+    <li data-step="3">Proofs by hand, running them, and what is still trusted</li>
+  </ul>
+  <div class="talk">
+    <p>The tests from the last lecture try some inputs, and check what comes back. This lecture is about the other half of being sure: proofs, which cover every input at once.</p>
+    <p>The proofs are written in Lean, a language for stating theorems and checking their proofs by machine. We'll see how the Forth words get into Lean, from the dictionary as compiled, and the model of the machine they run on. Then the three kinds of proof the generator writes for every word it can: stack effects, step counts between pauses, and footprints, which say what a word may write.</p>
+    <p>Then the proofs written by hand, how to run them all, what to do when one fails, and what is still taken on trust.</p>
+  </div>
+</section>
+
+<!-- 2 -->
+<section class="slide" data-code="2">
+  <h2>About the code as compiled</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 240" role="img" aria-label="The hosted build loads the boot files; dump-words.fs prints the dictionary; forth2lean.py turns it into generated Lean modules; lake build checks them with the hand-written model, bridges and theorems">
+      <defs><marker id="p1" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="box" x="10" y="20" width="170" height="60" rx="6"/><text x="95" y="46" text-anchor="middle">boot files</text><text x="95" y="66" text-anchor="middle" class="small">forth/, hal/</text>
+      <rect class="box blue" x="240" y="20" width="170" height="60" rx="6"/><text x="325" y="46" text-anchor="middle">hosted build</text><text x="325" y="66" text-anchor="middle" class="small">boots, loads them all</text>
+      <rect class="box blue" x="470" y="20" width="190" height="60" rx="6"/><text x="565" y="46" text-anchor="middle" class="mono">dump-words.fs</text><text x="565" y="66" text-anchor="middle" class="small">build/words.txt</text>
+      <rect class="box faint" x="720" y="20" width="170" height="60" rx="6"/><text x="805" y="46" text-anchor="middle" class="mono">forth2lean.py</text><text x="805" y="66" text-anchor="middle" class="small">not trusted to be right</text>
+      <path class="line" d="M 182 50 L 236 50" marker-end="url(#p1)"/>
+      <path class="line" d="M 412 50 L 466 50" marker-end="url(#p1)"/>
+      <path class="line" d="M 662 50 L 716 50" marker-end="url(#p1)"/>
+      <rect class="box green" x="720" y="130" width="170" height="70" rx="6"/><text x="805" y="158" text-anchor="middle">generated Lean</text><text x="805" y="180" text-anchor="middle" class="small">Words Specs Costs Foots</text>
+      <rect class="box accent" x="240" y="130" width="170" height="70" rx="6"/><text x="325" y="158" text-anchor="middle">written by hand</text><text x="325" y="180" text-anchor="middle" class="small">model, bridges, theorems</text>
+      <rect class="box blue" x="470" y="130" width="190" height="70" rx="6"/><text x="565" y="158" text-anchor="middle" class="mono">lake build</text><text x="565" y="180" text-anchor="middle" class="small">checks every proof</text>
+      <path class="line" d="M 805 82 L 805 126" marker-end="url(#p1)"/>
+      <path class="line" d="M 718 165 L 664 165" marker-end="url(#p1)"/>
+      <path class="line" d="M 412 165 L 466 165" marker-end="url(#p1)"/>
+      <text x="565" y="228" text-anchor="middle" class="small">reports: build/proof-findings.txt, build/yields.txt, build/footprints.txt</text>
+    </svg>
+  </div>
+  <pre class="code below" data-src="Makefile" data-step="2">proofs-extract: $(GENERATED)
+
+proofs: proofs-extract
+	cd proofs &amp;&amp; lake build</pre>
+  <div class="src"><a href="../../Makefile">Makefile › proofs</a></div>
+  <div class="talk">
+    <p>The proofs are about the system as it is compiled, never about a copy of it. Make proofs boots the hosted build, which loads every boot file. A small Forth program then prints the whole dictionary, word by word, as it ended up in memory. A Python generator turns that into Lean definitions, one per word, and the theorems about them. Lake, Lean's build tool, checks the lot, beside a model of the machine and the theorems written by hand.</p>
+    <p>Why the dictionary and not the source? A copy written by hand goes stale without anyone noticing. Proofs about what the compiler produced change when the Forth does, and fail the build when a property stops holding. And by the time a word is in the dictionary, the immediate words, if, do, and the rest, have done their work, so there is no second compiler to trust. When the spike that started this tried a bug on purpose, an unsigned comparison made signed, all thirty-six hosted tests passed. Its proof failed.</p>
+  </div>
+</section>
+
+<!-- 3 -->
+<section class="slide" data-code="3">
+  <h2>The dump</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="tools/dump-words.fs" data-step="1"><span class="c">\ Each word is one line, numbers in decimal: "@@ xt kind name cells...", where
+\ kind is 0 primitive, 1 colon, 2 constant, 3 variable, 4 other (a DOES&gt; child).</span>
+…
+  cr ." @@ top " dict-top u.                       <span class="c">\ where reserved memory ends</span>
+  here limit !  latest @ begin ?dup while  dup .word  dup limit !  @ pause repeat</pre>
+      <div class="src"><a href="../../tools/dump-words.fs" data-ref="tools/dump-words.fs:dump-words">tools/dump-words.fs › dump-words</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">One line per word: its xt, its kind, its name, its raw cells</li>
+      <li data-step="2">A body ends where the next newer header starts: the Forth decodes nothing</li>
+      <li data-step="3"><code>@@ top</code>: where reserved memory ends</li>
+      <li data-step="3">Kept until the hosted build changes</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>The dumper is forty lines of Forth, fed to the hosted build's console. It walks the dictionary from the newest word to the oldest, and prints one line for each: its execution token, its kind, its name, and then its cells as plain numbers. Kind zero is a primitive, one a colon word, then constants, variables, and children of defining words.</p>
+    <p>It doesn't decode anything. A word's body simply runs until the next header, so the dump is the raw memory, and all the interpretation happens in one place, in the generator.</p>
+    <p>The first line gives the top of the dictionary's space, since memory taken by reserve sits just below it. The dump only changes when the build does, so it's kept between runs.</p>
+  </div>
+</section>
+
+<!-- 4 -->
+<section class="slide" data-code="4">
+  <h2>Threads become instruction lists</h2>
+  <pre class="code" data-src="forth/core.fs" data-step="1">: <span class="w">+!</span>      ( n addr -- )  dup @ rot + swap ! ;</pre>
+  <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:+!">forth/core.fs › +!</a></div>
+  <pre class="code below" data-step="1">@[forth] noncomputable def «+!».code : List Ins := [.call Prim.dup, .call Prim.fetch, .call «rot»,
+  .call Prim.plus, .call Prim.swap, .call Prim.store, .exit]
+noncomputable def «+!» : Sem := thread «+!».code</pre>
+  <div class="src">proofs/OS4/Words/Core.lean, generated (wrapped here)</div>
+  <ul class="points below">
+    <li data-step="2">Each cell decoded: a call, a literal, a branch, a loop instruction, or exit</li>
+    <li data-step="3">Forward branches only: <code>thread</code>. Loops: <code>loopThread</code></li>
+    <li data-step="3">Callees are defined first; each word's Lean follows its Forth</li>
+  </ul>
+  <div class="talk">
+    <p>Here's a small word, <span data-say="plus store">+!</span>, which adds a number to the cell at an address. Below it is what the generator wrote for it. Each cell of the thread has become one instruction: a call to the duplicate primitive, a call to fetch, a call to the colon word rot, and so on, then exit. The word itself is that list, run by the model's thread interpreter.</p>
+    <p>The generator recognises the few cells that aren't calls: a literal and its value, the two branches with their targets, the instructions of do loops, and exit. Branch targets become positions in the list.</p>
+    <p>A word whose branches all go forwards runs each instruction at most once, so it's an ordinary thread. A word with a loop is a loop thread, whose meaning is its result if it ends. Callees are always defined before their callers, so every word in Lean is built from words already there.</p>
+  </div>
+</section>
+
+<!-- 5 -->
+<section class="slide" data-code="5">
+  <h2>Names, modules, and what is left out</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="tools/forth2lean.py" data-step="1">        if v &gt;= self.dict_end:
+            return f"(dictTop - {self.top - v})" if v &lt; self.top else "dictTop"
+…
+        return f'(wordAddr "{name}" + {k})' if k else f'(wordAddr "{name}")'</pre>
+      <div class="src"><a href="../../tools/forth2lean.py">tools/forth2lean.py › Generator.cell</a></div>
+      <pre class="code below" data-step="3">567 of 582 colon words (107 threads with loops)
+left out, by what blocks them first:
+     6  primitive cf,
+     4  defines with DOES>
+     3  primitive parse-find</pre>
+      <div class="src">what the generator reported when this lecture was written</div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Addresses are named, never their values: the same Lean every boot</li>
+      <li data-step="2">A module per boot file: <code>Words/Core.lean</code>, <code>Words/NetTcp.lean</code>; only what changed is re-proven</li>
+      <li data-step="3">Left out: words the model can't express, with the reason</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>The dictionary lands at a different address on every boot, so a literal address in the Lean would change every time, and every proof would be checked again. Instead the generator names addresses. One inside the dictionary is a word's address plus an offset. One in reserved memory is the top of the dictionary less an offset. Proofs can't see the real values, so they hold wherever the dictionary lands.</p>
+    <p>The output is split into a module per boot file, each importing only the modules it uses. Change the TCP file, and only what depends on it is proven again.</p>
+    <p>Some words can't be expressed yet. The generator leaves each out, and every word that calls one, and says why. When this lecture was written, that was fifteen colon words of five hundred and eighty-two. They compile code fields, or define words with does. The outer interpreter itself, with comma, parse and search list beneath it, is modelled. Run the generator and read its report for today's list.</p>
+  </div>
+</section>
+
+<!-- 6 -->
+<section class="slide" data-code="6">
+  <h2>The model</h2>
+  <div class="cols even">
+    <div>
+      <pre class="code" data-src="proofs/OS4/Machine.lean" data-step="1">structure S where
+  ds  : List Cell
+  rs  : List Cell
+  mem : Mem
+  up  : Cell                    <span class="c">-- the current task's user area (x23)</span>
+  ext : Nat                     <span class="c">-- outside events so far: pauses, clock reads, I/O</span></pre>
+      <pre class="code below" data-src="proofs/OS4/Machine.lean" data-step="2">@[forth] def plus   : Sem := bin (· + ·)
+@[forth] def pause : Sem := fun s =&gt; .ok { s with mem := worldMem s.ext s.mem, ext := s.ext + 1 }</pre>
+      <div class="src"><a href="../../proofs/OS4/Machine.lean" data-ref="proofs/OS4/Machine.lean">proofs/OS4/Machine.lean</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Stacks as lists, top first; memory as bytes, little endian</li>
+      <li data-step="2">Each primitive a function, written to mirror its assembly</li>
+      <li data-step="3">The outside world unknown: what other tasks, devices and the clock do</li>
+      <li data-step="4">CATCH and THROW specified; EXECUTE calls an unknown <code>dispatch</code></li>
+      <li data-step="4">Every assumption listed in the header</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Machine dot lean is the model the generated words run on. The machine's state is five things: the data stack, as a list with the top first; the return stack; memory, as bytes; the task's user area; and a count of outside events.</p>
+    <p>Each primitive is a function from state to state, or to a failure, written to mirror its assembly. Plus takes two items and pushes their sum, modulo two to the sixty-four. Fetch reads eight bytes, little endian.</p>
+    <p>The world outside the task is unknown. When a task pauses, other tasks and devices may change any memory, and the clock and the console give unknown answers. Each is an opaque function of the event count, so a theorem holds whatever the world does.</p>
+    <p>Catch and throw reach below their own frame on the return stack, which this model can't express, so they're replaced by specifications, and execute calls an unknown dispatch. The header of the file lists every such assumption. They're what we trust without proof.</p>
+  </div>
+</section>
+
+<!-- 7 -->
+<section class="slide" data-code="9">
+  <h2>Certificates and bridges</h2>
+  <div class="figure" data-step="1">
+    <svg viewBox="0 0 900 200" role="img" aria-label="The generator infers a certificate; Lean checks it by decide; a bridge theorem, proven once, turns the checked certificate and the callees' theorems into the word's theorem">
+      <defs><marker id="p2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="fill-muted" d="M0 0 L10 5 L0 10 z"/></marker></defs>
+      <rect class="box faint" x="10" y="20" width="190" height="70" rx="6"/><text x="105" y="48" text-anchor="middle">generator</text><text x="105" y="70" text-anchor="middle" class="small">infers a certificate</text>
+      <rect class="box blue" x="250" y="20" width="190" height="70" rx="6"/><text x="345" y="48" text-anchor="middle">Lean checks it</text><text x="345" y="70" text-anchor="middle" class="small mono">by decide</text>
+      <rect class="box accent" x="490" y="20" width="190" height="70" rx="6"/><text x="585" y="48" text-anchor="middle">bridge theorem</text><text x="585" y="70" text-anchor="middle" class="small">proven once, by hand</text>
+      <rect class="box green" x="730" y="20" width="160" height="70" rx="6"/><text x="810" y="48" text-anchor="middle">the word's</text><text x="810" y="70" text-anchor="middle">theorem</text>
+      <rect class="box green" x="490" y="120" width="190" height="50" rx="6"/><text x="585" y="150" text-anchor="middle">its callees' theorems</text>
+      <path class="line" d="M 202 55 L 246 55" marker-end="url(#p2)"/>
+      <path class="line" d="M 442 55 L 486 55" marker-end="url(#p2)"/>
+      <path class="line" d="M 682 55 L 726 55" marker-end="url(#p2)"/>
+      <path class="line" d="M 585 118 L 585 94" marker-end="url(#p2)"/>
+    </svg>
+  </div>
+  <pre class="code below" data-src="proofs/OS4/Spec.lean" data-step="2">theorem thread_spec {code : List Ins} {cert : List Cert} {inp out : Nat}
+    (hchk : check code cert inp out = true) (hcalls : CallsMeet code cert) :
+    Spec (thread code) inp out 0 0 := by</pre>
+  <div class="src"><a href="../../proofs/OS4/Spec.lean" data-ref="proofs/OS4/Spec.lean">proofs/OS4/Spec.lean › thread_spec</a></div>
+  <div class="talk">
+    <p>All three kinds of generated proof are built the same way. The generator works out a certificate for each word: a fact about the machine before each of its instructions. Lean checks the certificate by computation, with decide: each instruction must take its own fact to its successors'. Then a bridge theorem, proven once by hand, by induction over the thread interpreter, says that a checked certificate, and callees that meet their own theorems, give the word its theorem.</p>
+    <p>Two things make this work. A word's proof uses its callees' theorems and never unfolds their code, so the cost doesn't grow with how deep the calls go. And the generator doesn't need to be right. If it infers a wrong certificate, the check fails. Only the bridge has to be right, and Lean has checked that.</p>
+  </div>
+</section>
+
+<!-- 8 -->
+<section class="slide" data-code="11">
+  <h2>Stack effects</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="proofs/OS4/Spec.lean" data-step="1">def Spec (f : Sem) (k j rk rj : Nat) : Prop :=</pre>
+      <pre class="code below" data-src="forth/core.fs" data-step="2">: <span class="w">min</span>     ( n1 n2 -- n )  2dup &gt; if swap then drop ;</pre>
+      <pre class="code below" data-step="2"><span class="c">-- depths before: 2dup  &gt;  0branch  swap  drop  exit</span>
+noncomputable def «min».cert : List Cert := [⟨Bool.true, 2, 0, 2, 4, 0, 0⟩,
+  ⟨Bool.true, 4, 0, 2, 1, 0, 0⟩, ⟨Bool.true, 3, 0, 0, 0, 0, 0⟩,
+  ⟨Bool.true, 2, 0, 2, 2, 0, 0⟩, ⟨Bool.true, 2, 0, 1, 0, 0, 0⟩,
+  ⟨Bool.true, 1, 0, 0, 0, 0, 0⟩]
+theorem «min».spec : Spec «min» 2 1 0 0 :=
+  thread_spec (code := «min».code) (cert := «min».cert)
+    (by decide)
+    (And.intro «2dup».spec (And.intro «&gt;».spec …))
+theorem «min».comment : Spec «min» 2 1 0 0 :=
+  spec_frame «min».spec 0</pre>
+      <div class="src">proofs/OS4/Specs/Core.lean, generated (wrapped here)</div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Takes k items, leaves j; touches nothing below; the user area kept</li>
+      <li data-step="2">The certificate: both stacks' depths before each instruction</li>
+      <li data-step="3">Primitives' effects proven from their models (<code>PrimSpecs.lean</code>)</li>
+      <li data-step="4">Every plain stack comment checked against the code</li>
+      <li data-step="4"><code>build/proof-findings.txt</code>: words with no fixed effect, or a comment that disagrees</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>The first kind is the stack effect. Spec of a word, k, j, says: given k items, if the word returns, it leaves j items in their place, touches nothing below them, and leaves the user area alone. The other two numbers are the same for the return stack. Errors are allowed: this is about shape, not success.</p>
+    <p>Here's min, and what the generator wrote for it. The certificate lists the depth before each instruction. Two items before two-dup, which takes two and leaves four. Four before greater-than, which leaves three. Three before the branch, which pops its flag. Two before swap, two before drop, and one at exit. Each entry also names the effect its callee must meet, and the proof passes in the callees' own theorems, two-dup's, greater-than's, and so on.</p>
+    <p>The primitives' effects are proven straight from their models, case by case, in prim specs dot lean.</p>
+    <p>Then each word's stack comment is read, and if it says something plain, like two items in and one out, it's proven too. That's two hundred and sixty-four comments, and none disagree with their code. Some words can't have a fixed effect yet: those whose effect depends on their data, like question-dup, and those that call through a vector, like type. The findings file lists each word whose comment couldn't be proven, with the reason, and it would list any comment that disagrees. That's a bug, in the comment or the code.</p>
+  </div>
+</section>
+
+<!-- 9 -->
+<section class="slide" data-code="12">
+  <h2>Steps between pauses</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="proofs/OS4/Yield.lean" data-step="1">def Cost (f : SemT) (n m : Nat) (p : Bool) : Prop :=
+  m ≤ allowance → ∀ s b, b ≤ allowance → n ≤ b → Post n m p b (f s b)</pre>
+      <div class="src"><a href="../../proofs/OS4/Yield.lean" data-ref="proofs/OS4/Yield.lean">proofs/OS4/Yield.lean › Cost</a></div>
+      <pre class="code below" data-step="3">theorem «net-loop».cost : Cost «net-loop».t 3389 3389 Bool.true :=
+  threadT_cost (code := «net-loop».tcode) (cert := «net-loop».tcert) (by decide)
+theorem «serve-door».cost : Cost «serve-door».t 1010 1010 Bool.true :=</pre>
+      <div class="src">proofs/OS4/Costs/NetNet.lean and NetRepl.lean, generated</div>
+    </div>
+    <ul class="points">
+      <li data-step="1">The watchdog stops a task that runs too long without pausing</li>
+      <li data-step="2">Counted in Forth instructions: each cell a step, <code>pause</code> refills</li>
+      <li data-step="2">Cost: at most n steps before the first pause, m between pauses</li>
+      <li data-step="3">The network task: at most 3389 between pauses, however many connections</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>The second kind is about the watchdog from lecture five. A task that runs too long without pausing is stopped. For a session that's an error. For the network task, it would stop the network.</p>
+    <p>Yield dot lean runs the same threads a second way, counting steps. Each cell of a thread is one step, a primitive included, and pause gives the task its whole allowance back. Cost of a word, n, m, says it takes at most n steps before it first pauses, and at most m between pauses or after the last one. The certificate gives the steps spent before each instruction, and a bridge theorem, built like the one for stack effects, turns it into the word's cost.</p>
+    <p>The system tasks' loops are the roots. The network loop is proven to run at most three thousand three hundred and eighty-nine Forth instructions between pauses, and each door's listener at most one thousand and ten, however many connections there are, whatever arrives.</p>
+  </div>
+</section>
+
+<!-- 10 -->
+<section class="slide" data-code="13">
+  <h2>What the step counts found</h2>
+  <div class="cols even">
+    <div>
+      <pre class="code" data-src="forth/net/tcp.fs" data-step="1">  conns @ begin ?dup while
+…
+    pause
+  repeat ;</pre>
+      <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:(tcp-timers)">forth/net/tcp.fs › (tcp-timers)</a></div>
+      <pre class="code below" data-src="forth/net/repl.fs" data-step="1">  begin  dup door.port @ accept-connection  over admit  pause  again ;</pre>
+      <div class="src"><a href="../../forth/net/repl.fs" data-ref="forth/net/repl.fs:serve-door">forth/net/repl.fs › serve-door</a></div>
+    </div>
+    <div>
+      <pre class="code" data-src="proofs/yields.txt" data-step="2">root net-loop
+root serve-door
+…
+uncounted count-list        <span class="c">\ a round per connection: up to max-conns (256)</span>
+uncounted half-open         <span class="c">\ a round per connection: up to max-conns (256)</span></pre>
+      <div class="src"><a href="../../proofs/yields.txt" data-ref="proofs/yields.txt">proofs/yields.txt</a></div>
+      <ul class="points below">
+        <li data-step="2">Roots, tables of xts, and loops that never pause, each with its bound</li>
+        <li data-step="3">A new loop without a pause fails <code>make proofs</code></li>
+      </ul>
+    </div>
+  </div>
+  <div class="talk">
+    <p>Proving these found two real problems. The TCP timer sweep walked every connection, up to two hundred and fifty-six, each perhaps retransmitting, without pausing once. And a door's listener accepted every waiting connection in one go. Both pass every test, because tests don't open hundreds of connections. Both now pause after each connection, and the sweep holds a lock so the connection it goes to next can't be freed while it waits.</p>
+    <p>The yields file says what the proofs start from: the roots, the tables of execution tokens that some words execute from, and the loops that never pause. Those are left out of the count, each with a comment saying what bounds it: a frame's length, the size of a pool. Those bounds are argued, not yet proven.</p>
+    <p>And any other loop without a pause, on the path of a system task, fails the build. So a new one has to pause, or be listed with its reason.</p>
+  </div>
+</section>
+
+<!-- 11 -->
+<section class="slide" data-code="15">
+  <h2>Footprints: what a word may write</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="proofs/OS4/Footprint.lean" data-step="1">inductive Val where
+  | any                         <span class="c">-- unknown</span>
+  | arg (i : Nat) (k : Cell)    <span class="c">-- data input i (0 the top) plus k</span>
+  | user (k : Cell)             <span class="c">-- the user area plus k</span>
+  | kaddr (n : String) (k : Cell) <span class="c">-- a kernel variable's address plus k</span></pre>
+      <div class="src"><a href="../../proofs/OS4/Footprint.lean" data-ref="proofs/OS4/Footprint.lean">proofs/OS4/Footprint.lean › Val</a></div>
+      <pre class="code below" data-src="forth/core.fs" data-step="2">: <span class="w">claim</span>    ( -- )
+  begin dict-owner @ dup up@ &lt;&gt; and while pause repeat  up@ dict-owner ! ;</pre>
+      <pre class="code below" data-step="2">theorem «claim».foot : Foot «claim» 0 0 0 0
+    [⟨(.kaddr "dict-owner" 0), (.num 8)⟩] [] [] :=</pre>
+      <div class="src">proofs/OS4/Foots/Core.lean, generated</div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Symbolic values: an input plus k, the user area plus k, a word's address</li>
+      <li data-step="2">Regions: bytes from a base, for a length</li>
+      <li data-step="3"><code>build/footprints.txt</code>: 544 words write nothing, 80 "anywhere"</li>
+      <li data-step="4">The task's own writes: not what others change across a pause</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>The third kind says what a word may write. A footprint is a list of regions, each some bytes from a base address, and the theorem says every byte outside them keeps its value. It also says where the word's outputs came from. Both are written in symbolic values, relative to the word's entry: an input plus an offset, the user area plus an offset, a word's address, a kernel variable's, a number, or unknown.</p>
+    <p>Claim, from the lecture on tasks, waits until no other task owns the dictionary, then takes it. Its proven footprint is one region: the eight bytes of dict-owner. Nothing else, though it loops and pauses. <span data-say="plus store">+!</span> writes only the cell at its address input. Ms writes only its own task's status and wake time.</p>
+    <p>The footprints file lists every word's. Most write nothing. Sixty-three may write anywhere. That's safe, not wrong: it means the address was read from memory or computed in a loop, and the generator can't follow it. Those are where a proof by hand is needed.</p>
+    <p>The writes counted are the task's own. While it pauses, other tasks and devices change what they like, so the theorem is about addresses the outside world leaves alone. In the Lean, that's called quiet.</p>
+  </div>
+</section>
+
+<!-- 12 -->
+<section class="slide" data-code="18">
+  <h2>Proofs by hand: what a word computes</h2>
+  <pre class="code" data-src="proofs/OS4/Core.lean" data-step="1">theorem min (a b : Cell) :
+    Words.«min» ⟨b :: a :: s, r, m, u, e⟩ = .ok ⟨(if a.slt b then a else b) :: s, r, m, u, e⟩ := by
+  forth_auto</pre>
+  <div class="src"><a href="../../proofs/OS4/Core.lean" data-ref="proofs/OS4/Core.lean">proofs/OS4/Core.lean › min</a></div>
+  <ul class="points below">
+    <li data-step="1">For all 2<sup>128</sup> pairs of inputs, not a sample</li>
+    <li data-step="2"><code>forth_auto</code>: run symbolically, split each branch, settle each case with <code>bv_decide</code></li>
+    <li data-step="3"><code>within</code> is the one-comparison trick; <code>/</code> by zero fails; the standard's ambiguous division, pinned</li>
+  </ul>
+  <div class="talk">
+    <p>The generated proofs are about shape: depth, steps, places written. What a word actually computes needs a theorem written by hand. Core dot lean has them for the stack and arithmetic words. This one says that min, on any two cells, leaves the smaller as a signed number, and nothing else changes.</p>
+    <p>The proof is one tactic. It runs the word symbolically, splits each branch it takes, and hands each case to a bit-vector solver, which settles it for every possible input. That's every pair of sixty-four-bit numbers, not a sample.</p>
+    <p>The same file proves that within, the usual trick with one unsigned comparison, means low at most n, less than high, whenever low is at most high. That dividing by zero fails. And what the one ambiguous case of division gives: the most negative number divided by minus one.</p>
+  </div>
+</section>
+
+<!-- 13 -->
+<section class="slide" data-code="19">
+  <h2>Reference words, proven equal</h2>
+  <div class="cols">
+    <div>
+      <pre class="code" data-src="forth/core.fs" data-step="1">: <span class="w">fill-ref</span>    ( addr u c -- )  swap 0 ?do  2dup swap i + c!  loop 2drop ;</pre>
+      <div class="src"><a href="../../forth/core.fs" data-ref="forth/core.fs:fill-ref">forth/core.fs › fill-ref</a></div>
+      <pre class="code below" data-src="proofs/OS4/Refs.lean" data-step="2">theorem fill_ref (c u a : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    Words.«fill-ref» ⟨c :: u :: a :: s, r, m, p, e⟩ = Prim.fill ⟨c :: u :: a :: s, r, m, p, e⟩ := by
+…
+theorem fill_ref_foot : Foot Words.«fill-ref» 3 0 0 0 [⟨.arg 2 0, .arg 1 0⟩] [] [] := by</pre>
+      <div class="src"><a href="../../proofs/OS4/Refs.lean" data-ref="proofs/OS4/Refs.lean">proofs/OS4/Refs.lean</a></div>
+    </div>
+    <ul class="points">
+      <li data-step="1">Hot spots in assembly keep their Forth as the reference</li>
+      <li data-step="2"><code>fill-ref</code> does exactly what the <code>fill</code> primitive's model does</li>
+      <li data-step="3">So it writes only its u bytes at addr, where the generator said "anywhere"</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>From lecture two: when a word moves to assembly for speed, its Forth definition stays as the reference. Fill ref is the Forth version of fill. A test checks they agree on some inputs. This theorem says they agree on all of them.</p>
+    <p>It says that fill ref, run on any address, count and character, gives exactly the state the fill primitive's model gives. The proof follows the loop by induction, one pass at a time.</p>
+    <p>And it pays off at once. The generated footprint for fill ref is anywhere, because it stores through an address computed in a loop. From the equality, a second theorem gets the exact footprint: the u bytes from the address, and nothing else. That's the pattern for every word that writes through a computed address.</p>
+  </div>
+</section>
+
+<!-- 14 -->
+<section class="slide" data-code="20">
+  <h2>Running the proofs</h2>
+  <pre class="code" data-step="1">docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs           <span class="c"># everything</span>
+docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-extract   <span class="c"># just generate</span></pre>
+  <div class="cols even below">
+    <ul class="points">
+      <li data-step="2">Nothing changed: seconds</li>
+      <li data-step="2">A late boot file changed: about a minute</li>
+      <li data-step="2"><code>core.fs</code> or the model changed: several minutes</li>
+      <li data-step="2">Not yet in <code>make test</code> (TD-30): run it at each milestone and before a merge</li>
+    </ul>
+    <ul class="points">
+      <li data-step="3"><code>build/proof-findings.txt</code>: stack comments that disagree; words with no fixed effect</li>
+      <li data-step="3"><code>build/yields.txt</code>: each root's bound, and what is not counted</li>
+      <li data-step="3"><code>build/footprints.txt</code>: what each word may write</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>One command runs it all, in the same Docker image as everything else. The second volume keeps Lake's build directory, thousands of small files, off the slow bind mount, and between runs, so only what changed is proven again. Make proofs extract just generates the Lean, if you want to read it.</p>
+    <p>With nothing changed, a run takes seconds. A change to a late boot file, say the REPL, re-proves its own module and those after it, in about a minute. A change to core dot fs, or to the model, which everything imports, re-proves everything and takes several minutes. That's why the proofs are not yet part of make test. They're run at each milestone and before merging a change to the base.</p>
+    <p>After a run, read the three reports. The findings first: a stack comment that disagrees with its code is a bug in one or the other. Then the step bounds, and the footprints.</p>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide" data-code="21">
+  <h2>When a proof fails</h2>
+  <ul class="points">
+    <li data-step="1"><b>A new primitive:</b> a model in <code>Machine.lean</code>, its effect in <code>PrimSpecs.lean</code>, its footprint in <code>FootPrims.lean</code>, entries in <code>forth2lean.py</code>'s <code>PRIMS</code> and <code>EFFECTS</code> (and <code>PRIM_FOOTS</code> if it writes or moves values). Until then, every word that uses it is left out</li>
+    <li data-step="2"><b>A loop that never pauses</b> on a system task's path: make it pause, or list it in <code>proofs/yields.txt</code> with what bounds it</li>
+    <li data-step="3"><b>A theorem stops holding:</b> the code's behaviour changed. Fix the code, or restate the theorem if the change was meant</li>
+    <li data-step="4"><b>Never <code>sorry</code>.</b> An unproven theorem is a missing theorem, not a placeholder</li>
+  </ul>
+  <div class="talk">
+    <p>A few failures come up again and again. A new assembly primitive has no meaning in Lean until it's given one: a model in the machine file, its stack effect proven, its footprint proven, and entries in the generator's tables. Until then, the generator leaves out every word that uses it, and says so.</p>
+    <p>A new loop that never pauses, somewhere the network task or a listener can reach, fails the step counts. Either it pauses, or it goes in the yields file, with a comment saying what bounds it.</p>
+    <p>A hand-written theorem that stops holding means the word now does something else. That's the point. If the change was a mistake, fix the code. If it was meant, state the new behaviour.</p>
+    <p>And never write sorry, Lean's way of skipping a proof. A theorem with sorry in it proves nothing, and the build must say so.</p>
+  </div>
+</section>
+
+<!-- 16 -->
+<section class="slide" data-code="22">
+  <h2>What is trusted, and what comes next</h2>
+  <div class="cols even">
+    <ul class="points">
+      <li data-step="1"><b>Trusted</b> (TD-31): the primitives' models, CATCH and THROW's specifications, the dumper and the generator's decoding, Lean's kernel</li>
+      <li data-step="1">And one abstraction: the world outside the task is unknown</li>
+      <li data-step="2">A wrong certificate only fails; a wrong decoding would prove the wrong word</li>
+    </ul>
+    <ul class="points">
+      <li data-step="3"><b>Next:</b> proofs fast enough for <code>make test</code>; what words read</li>
+      <li data-step="3"><b>Before players:</b> sandbox isolation; a stopped task leaves nothing broken; crash-safe records; the MUD's own proofs</li>
+      <li data-step="4"><b>Before the internet:</b> the network survives any input</li>
+      <li data-step="4"><b>Depth:</b> TCP's state machine, primitives against the assembly, cryptography</li>
+    </ul>
+  </div>
+  <div class="talk">
+    <p>Every proof rests on something unproven, and here it's written down. The models of the primitives, written to mirror the assembly but not proven against it. The specifications of catch and throw. The dumper, and the generator's decoding of threads. And Lean's own kernel. Plus one deliberate abstraction: whatever is outside the task is unknown, so theorems hold whatever it does.</p>
+    <p>Notice the difference between the generator's two jobs. If it infers a wrong certificate, the check fails, so that part needn't be trusted. If it decoded a thread wrongly, Lean would prove things about the wrong word. That's why the decoding is kept small, and listed as trusted.</p>
+    <p>The verification plan sets the order of what's next. First, proofs fast enough to run on every change, and footprints for what words read. Before players arrive: that the sandbox really is isolated, that a task stopped at any point leaves nothing broken, that records survive a crash, and proofs for the MUD itself.</p>
+    <p>Before the system faces the internet: that the network survives any input. And later, for depth: the TCP state machine, the primitives against their assembly, and the cryptography.</p>
+  </div>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <h2>Questions to think about…</h2>
+  <ol class="questions">
+    <li>The generator is not trusted to infer certificates, but is trusted to decode threads. Why the difference, and how could the decoding be checked?</li>
+    <li>A word's footprint says "anywhere". Is that a bug? What would you need to prove to narrow it?</li>
+    <li>The step counts found two loops that passed every test. What would a test that finds them look like, and why is the proof cheaper?</li>
+  </ol>
+  <div class="talk">
+    <p>That's the proofs, and the end of the course. Theorems about the dictionary as compiled, generated for every word the model can express: stack effects, steps between pauses, and footprints, each from a certificate and a bridge. Proofs by hand for what words compute. And a written list of what is still trusted.</p>
+    <p>Three questions to think about: why the generator is trusted for one job and not the other, what anywhere really means, and why a proof found what the tests missed. Thank you for listening. The code tours are there whenever you want to read the real thing.</p>
+  </div>
+</section>
+
+</main>
+
+<script src="course.js"></script>
+</body>
+</html>

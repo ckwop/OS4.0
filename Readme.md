@@ -5,7 +5,7 @@ A tiny bare-metal Forth operating system for 64-bit ARM, built to run a MUD: a t
 - Full specification: [docs/brief.md](docs/brief.md)
 - Choices made along the way: [DECISIONS.md](DECISIONS.md)
 - Known shortcuts and gaps: [docs/tech-debt.md](docs/tech-debt.md)
-- How it is put together, as twelve short narrated lectures with code tours for VS Code's CodeTour extension: [docs/course](docs/course/index.html) (open `index.html` in a browser; Edge's "Natural" voices sound best)
+- How it is put together, as thirteen short narrated lectures with code tours for VS Code's CodeTour extension: [docs/course](docs/course/index.html) (open `index.html` in a browser; Edge's "Natural" voices sound best)
 - Notes for AI coding agents: [CLAUDE.md](CLAUDE.md)
 
 ### Prerequisites

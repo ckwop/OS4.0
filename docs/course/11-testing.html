@@ -18,7 +18,7 @@
 
 <!-- 1 -->
 <section class="slide" data-code="1">
-  <div class="kicker">Lecture 11 of 12 · about 12 minutes</div>
+  <div class="kicker">Lecture 11 of 13 · about 12 minutes</div>
   <h1>Testing</h1>
   <p class="lede">How every feature is proved, on both builds, on every change: transcripts, isolated runs, scripted network peers that misbehave on purpose, and soak.</p>
   <ul class="points" style="margin-top:28px">
@@ -27,7 +27,7 @@
     <li data-step="3">Soak, reference definitions, and a course that is tested too</li>
   </ul>
   <div class="talk">
-    <p>The last lecture is about how all of this is tested. The rule is simple: every feature adds tests, and the whole suite runs on every change, on both builds. The interesting part is how a small set of tools makes that cheap enough to keep doing.</p>
+    <p>This lecture is about how all of this is tested. The rule is simple: every feature adds tests, and the whole suite runs on every change, on both builds. The interesting part is how a small set of tools makes that cheap enough to keep doing.</p>
     <p>We'll look at the transcript format again, and the two tools that run transcripts: one that runs many tests side by side, each in isolation, and one that drives a single system through its console, rebooting where asked.</p>
     <p>Then the network peer, a scripted machine on each test's private network, which can be polite, clumsy, or downright hostile. And finally soak tests, reference definitions, and the check that keeps this course honest.</p>
   </div>
@@ -284,8 +284,8 @@ docker run --rm -v "${PWD}:/src" os4 make test            <span class="c"># ever
     <li>Choose a feature from any lecture and design its hostile cases: what input would you send, and what must still be true afterwards?</li>
   </ol>
   <div class="talk">
-    <p>That's testing, and the end of the course. Transcripts checked by hand, run on both builds, each test in its own world; peers that misbehave on purpose; soak for leaks; real tools for a second opinion; and a check that keeps the course true to the code.</p>
-    <p>Three questions to think about: what a home-made peer can't catch, what soak's first round might hide, and how to attack a feature of your choice. Thank you for listening. The code tours are there whenever you want to read the real thing.</p>
+    <p>That's testing. Transcripts checked by hand, run on both builds, each test in its own world; peers that misbehave on purpose; soak for leaks; real tools for a second opinion; and a check that keeps the course true to the code.</p>
+    <p>Three questions to think about: what a home-made peer can't catch, what soak's first round might hide, and how to attack a feature of your choice. Next, the last lecture: proofs, which cover every input rather than some.</p>
   </div>
 </section>
 

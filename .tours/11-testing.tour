@@ -65,7 +65,7 @@
       "file": "tools/check-course.py",
       "pattern": "^def check_lecture",
       "title": "The course check",
-      "description": "Excerpts must be real lines, named words must be defined, `data-code` steps must exist, and tour patterns must match (multiline, as CodeTour matches). Run first by `make test`.\n\nThat's the course. Thank you for following it."
+      "description": "Excerpts must be real lines, named words must be defined, `data-code` steps must exist, and tour patterns must match (multiline, as CodeTour matches). Run first by `make test`.\n\nNext: lecture 12, proofs."
     }
   ]
 }

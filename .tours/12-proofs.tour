@@ -1,0 +1,137 @@
+{
+  "$schema": "https://aka.ms/codetour-schema",
+  "title": "12 · Proofs",
+  "description": "The code behind lecture 12 (docs/course/12-proofs.html): the dump and the generator, the model, certificates and bridges for stack effects, step counts and footprints, the proofs written by hand, and how to run them. About sixteen minutes.",
+  "steps": [
+    {
+      "title": "Start here",
+      "description": "This tour follows **lecture 12, Proofs**. The plan and the current numbers are in `docs/verification.md`; the decisions are DECISIONS.md #105-111.\n\nThe generated Lean (`proofs/OS4/Words/`, `Specs/`, `Costs/`, `Foots/`) is not committed. To read it, generate it first:\n\n`docker run --rm -v \"${PWD}:/src\" -v os4-lake:/src/proofs/.lake os4 make proofs-extract`"
+    },
+    {
+      "file": "Makefile",
+      "pattern": "^proofs: proofs-extract",
+      "title": "The pipeline",
+      "description": "`$(WORDS_DUMP)` boots the hosted build and feeds it `tools/dump-words.fs`; `$(GENERATED)` runs `tools/forth2lean.py` over the dump; `proofs` runs `lake build` in `proofs/`. Each step runs only when its inputs change, and a failure leaves nothing stale behind (#110)."
+    },
+    {
+      "file": "tools/dump-words.fs",
+      "pattern": "^: dump-words",
+      "title": "The dump",
+      "description": "Newest word first, one line each: `@@ xt kind name cells...`, numbers in decimal. A body ends where the next newer header starts, so the Forth decodes nothing. First comes `@@ top`, the end of the dictionary's space. Output is collected and written in blocks, since a system call per character is slow under emulation."
+    },
+    {
+      "file": "tools/forth2lean.py",
+      "pattern": "^def decode",
+      "title": "Decoding a thread",
+      "description": "Each cell becomes a call, a literal, a branch (`branch`, `0branch`, `(?do)`, `(loop)`, `(+loop)`) or an exit; `(s\")` becomes the two literals it pushes. It stops at an EXIT that no branch jumps past, since what follows is data. Anything it cannot read is `Blocked`, with the reason, and so is every word that calls it."
+    },
+    {
+      "file": "tools/forth2lean.py",
+      "pattern": "^    def cell\\(self, v\\):",
+      "title": "Naming addresses",
+      "description": "An address in the dictionary is `wordAddr \"name\" + k`; one in reserved memory is `dictTop - k`. The Lean is then the same on every boot, and Lake re-proves nothing that has not changed (#110). `assign_files` and `write_modules`, further down, split the output into a module per boot file."
+    },
+    {
+      "file": "proofs/OS4/Machine.lean",
+      "pattern": "^structure S where",
+      "title": "The machine's state",
+      "description": "Data stack (a list, TOS first), return stack, byte memory, the user area, and a count of outside events. Below: `run` interprets a thread for some fuel, `thread` and `loopThread` make a word of it, and `Prim` models each primitive."
+    },
+    {
+      "file": "proofs/OS4/Machine.lean",
+      "pattern": "^Abstractions, which the proofs inherit:",
+      "title": "What the model assumes",
+      "description": "Every simplification the proofs inherit: stacks as lists, colon calls pushing no return address, named addresses, the outside world as opaque functions of an event count, CATCH and THROW replaced by specifications. This list is what is trusted (TD-31)."
+    },
+    {
+      "file": "proofs/OS4/Spec.lean",
+      "pattern": "^def Spec ",
+      "title": "Stack effects",
+      "description": "`Spec f k j rk rj`: given k data and rk return-stack items, f leaves j and rj in their place, touching nothing below and not the user area. `Cert` is the certificate: both depths before each instruction, and for a call, the Spec its callee meets. `check` is what `decide` evaluates."
+    },
+    {
+      "file": "proofs/OS4/Spec.lean",
+      "pattern": "^theorem thread_spec",
+      "title": "The bridge",
+      "description": "Proven once, by induction over `run` (`run_sound` above): a checked certificate, and calls that meet their callees' Specs, give the word its Spec. `loopThread_spec` does the same for words with loops, and `spec_frame` proves a stack comment from a word's Spec."
+    },
+    {
+      "file": "proofs/OS4/PrimSpecs.lean",
+      "pattern": "^theorem dup_spec",
+      "title": "The primitives' effects",
+      "description": "Each primitive's Spec, proven from its model by cases on its inputs. A new primitive needs one here, and the same numbers in `forth2lean.py`'s `EFFECTS`."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": "^: min ",
+      "title": "A worked example",
+      "description": "After `make proofs-extract`, find `«min».cert` in `proofs/OS4/Specs/Core.lean`: the depths before each instruction are 2, 4, 3, 2, 2, 1. Its theorem passes `thread_spec` the certificate, `by decide`, and the callees' theorems; `«min».comment` proves its stack comment. `build/proof-findings.txt` lists every comment that could not be proven, and why."
+    },
+    {
+      "file": "proofs/OS4/Yield.lean",
+      "pattern": "^def Cost ",
+      "title": "Steps between pauses",
+      "description": "A second semantics of the same threads (`runT`): each cell spends a step of the task's allowance and `pause` refills it. `Cost f n m p`: at most n steps before the first pause, m between or after pauses, and with p a pause surely happens. `threadT_cost` is the bridge; `Cost.never_stopped` says the watchdog never fires."
+    },
+    {
+      "file": "proofs/yields.txt",
+      "pattern": "^root net-loop",
+      "title": "Roots, tables and uncounted loops",
+      "description": "The roots whose bounds are proven; the tables of xts that `ip-in` and `udp-in` execute from (trusted to hold only these words); and the loops that never pause, each with what bounds it (TD-32). A loop without a pause that is not listed fails `make proofs`. After a run, `build/yields.txt` gives each root's bound."
+    },
+    {
+      "file": "forth/net/tcp.fs",
+      "pattern": "^: \\(tcp-timers\\)",
+      "title": "What the counts found",
+      "description": "The timer sweep used to walk all the connections without pausing (#109); now it pauses after each, holding `conns-lock` so the next connection cannot be freed meanwhile. `serve-door` in `forth/net/repl.fs` pauses after each connection for the same reason (#108)."
+    },
+    {
+      "file": "proofs/OS4/Footprint.lean",
+      "pattern": "^inductive Val where",
+      "title": "Footprints",
+      "description": "Symbolic values relative to a word's entry; `Reg`, bytes from a base for a length; `Quiet`, addresses the outside world leaves alone; and `Foot`, below: outside its regions memory is kept, and its outputs are as stated. `thread_foot` and `loopThread_foot` are the bridges (#111)."
+    },
+    {
+      "file": "proofs/OS4/FootPrims.lean",
+      "pattern": "^theorem fill_foot",
+      "title": "The primitives' footprints",
+      "description": "Stores write their cell, `fill` and `cmove` their range, a system call or SHA-256 anywhere, and the rest nothing. Stack primitives also say where their outputs came from, so an address can be followed through `swap` and `>r`."
+    },
+    {
+      "file": "forth/core.fs",
+      "pattern": "^: claim ",
+      "title": "A footprint",
+      "description": "In `proofs/OS4/Foots/Core.lean` (generated), `«claim».foot` says it writes only the 8 bytes at `dict-owner`, though it loops and pauses. `build/footprints.txt` lists every word's: `+!` writes its input's cell, `ms` its task's status and wake time, and 63 words \"anywhere\"."
+    },
+    {
+      "file": "proofs/OS4/Core.lean",
+      "pattern": "^theorem min ",
+      "title": "Proofs by hand",
+      "description": "What the stack and arithmetic words compute, for every input. `forth_run` runs a word symbolically; `forth_auto` (in `Machine.lean`) also splits each branch and settles the cases with `bv_decide`. Also here: `within`, division by zero, and the ambiguous division."
+    },
+    {
+      "file": "proofs/OS4/Refs.lean",
+      "pattern": "^theorem fill_ref ",
+      "title": "Reference words",
+      "description": "`fill-ref` equals the `fill` primitive's model, by induction over its loop (`fill_loop`); `fill_ref_foot` then narrows its generated footprint, \"anywhere\", to its n bytes."
+    },
+    {
+      "file": "Makefile",
+      "pattern": "^\\$\\(GENERATED\\):",
+      "title": "Running them",
+      "description": "`docker run --rm -v \"${PWD}:/src\" -v os4-lake:/src/proofs/.lake os4 make proofs`. Seconds with nothing changed, about a minute after a late boot file, several minutes after `core.fs` or the model (TD-30). Then read `build/proof-findings.txt`, `build/yields.txt` and `build/footprints.txt`."
+    },
+    {
+      "file": "tools/forth2lean.py",
+      "pattern": "^PRIMS = \\{",
+      "title": "A new primitive",
+      "description": "Until a primitive is here, every word that uses it is left out. It also needs a model in `Machine.lean`, its Spec in `PrimSpecs.lean` and `EFFECTS`, and its Foot in `FootPrims.lean` (and `PRIM_FOOTS` if it writes or moves values). Never `sorry`."
+    },
+    {
+      "file": "docs/verification.md",
+      "pattern": "^## Roadmap",
+      "title": "What comes next",
+      "description": "Foundations first (proofs in `make test`, footprints for reads), then what players reach (sandbox isolation, a stopped task leaves nothing broken, records, the MUD's proofs), then the network before the internet, then depth (TCP, the primitives against the assembly, cryptography).\n\nThat's the course. Thank you for following it."
+    }
+  ]
+}

@@ -18,7 +18,7 @@
 
 <!-- 1 -->
 <section class="slide" data-code="1">
-  <div class="kicker">Lecture 0 of 12 · about 10 minutes</div>
+  <div class="kicker">Lecture 0 of 13 · about 10 minutes</div>
   <h1>The map</h1>
   <p class="lede">What OS 4.0 is, how the repository is laid out, and how it is built and tested. The rest of the course fills in each area.</p>
   <ul class="points" style="margin-top:28px">
@@ -280,7 +280,7 @@ swap .s &lt;3&gt; 1 3 2  ok</pre>
   <div class="talk">
     <p>Every test is a transcript. The dot <span data-say="in">in</span> file is typed at the console, line by line, exactly as a person would.</p>
     <p>The dot <span data-say="out">out</span> file is what must come back: the banner, then each line as the system echoes it, its output, and <span data-say="okay">ok</span>. The values are checked by hand, and against gforth for standard words, before a transcript is committed.</p>
-    <p>The output must match byte for byte, on both builds. It's a blunt instrument, and that's its strength: any change in behaviour, however small, shows up as a difference. Every feature adds tests, and the whole suite runs on every change. The last lecture shows the test tools in detail.</p>
+    <p>The output must match byte for byte, on both builds. It's a blunt instrument, and that's its strength: any change in behaviour, however small, shows up as a difference. Every feature adds tests, and the whole suite runs on every change. Lecture eleven shows the test tools in detail.</p>
   </div>
 </section>
 
@@ -322,12 +322,13 @@ swap .s &lt;3&gt; 1 3 2  ok</pre>
       <li data-step="3"><b>9</b> The REPL and security</li>
       <li data-step="3"><b>10</b> Applications</li>
       <li data-step="3"><b>11</b> Testing</li>
+      <li data-step="3"><b>12</b> Proofs</li>
     </ol>
   </div>
   <div class="talk">
     <p>Here's the rest of the course. The first four lectures are the foundations: enough Forth to read the code, then the kernel, how the machine boots, and how errors are handled.</p>
     <p>The middle four are the services the system offers: tasks, storage, and the network in two parts, first up to UDP, then TCP.</p>
-    <p>The last three bring it together: the REPL and security, applications, and finally how all of it is tested. Each lecture is about ten to twelve minutes, and stands on its own, though they build in this order.</p>
+    <p>The last four bring it together: the REPL and security, applications, how all of it is tested, and finally what is proven about it. Each lecture is about ten to sixteen minutes, and stands on its own, though they build in this order.</p>
   </div>
 </section>
 

@@ -18,7 +18,7 @@
 
 <!-- 1 -->
 <section class="slide" data-code="1">
-  <div class="kicker">Lecture 10 of 12 · about 13 minutes</div>
+  <div class="kicker">Lecture 10 of 13 · about 13 minutes</div>
   <h1>Applications</h1>
   <p class="lede">How an app lives on its own disk, in its own repository: a read-only FAT file system in Forth, <code>include</code>, start-up, and the <code>os4-app</code> tool.</p>
   <ul class="points" style="margin-top:28px">
@@ -333,7 +333,7 @@ include greeting.fs                    <span class="c">\ load a file again</span
   </ol>
   <div class="talk">
     <p>That's applications. An app is files on a read-only FAT disk, in its own repository, tested against a tagged image of the base. The base finds the disk by its label, reads FAT in a few hundred lines of Forth, includes app dot fs into the app's own wordlist, and runs main.</p>
-    <p>Three questions to think about: why the app gets its own wordlist, where a MUD's world should live, and what a main that never returns would do. Next, the last lecture: testing.</p>
+    <p>Three questions to think about: why the app gets its own wordlist, where a MUD's world should live, and what a main that never returns would do. Next, lecture eleven: testing.</p>
   </div>
 </section>
 
