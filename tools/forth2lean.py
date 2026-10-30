@@ -22,6 +22,8 @@ Usage: forth2lean.py words.txt Words.lean [--require roots.txt]
          [--specs Specs.lean --findings findings.txt] [--yields yields.txt Costs.lean report.txt]
 """
 
+import bisect
+import os
 import re
 import sys
 from collections import Counter
@@ -92,25 +94,27 @@ class Blocked(Exception):
 
 
 def load(path):
-    """The dump, oldest word first, with unique ids."""
-    words, complete = [], False
+    """The dump, oldest word first, with unique ids; and the dictionary's top."""
+    words, complete, top = [], False, None
     for line in open(path):
         f = line.split()
         if f == ["@@", "end"]:
             complete = True
+        elif f[:2] == ["@@", "top"] and len(f) == 3:
+            top = int(f[2])
         elif len(f) >= 4 and f[0] == "@@":
             if f[2] not in ("0", "1", "2", "3", "4"):
                 sys.exit(f"{path}: {f[3]}: bad kind {f[2]}: is the dump garbled?")
             words.append(Word(int(f[1]), int(f[2]), f[3], [int(c) for c in f[4:]]))
-    if not complete:
-        sys.exit(f"{path}: the dump stops before its end line")
+    if not complete or top is None:
+        sys.exit(f"{path}: the dump stops before its end line, or has no top line")
     words.reverse()
     seen = {}
     for w in words:
         seen[w.name] = seen.get(w.name, 0) + 1
         if seen[w.name] > 1:
             w.id = f"{w.name}#{seen[w.name]}"
-    return words
+    return words, top
 
 
 def decode(cells, base, label, by_xt):
@@ -156,8 +160,8 @@ def lean_name(ident):
 
 
 class Generator:
-    def __init__(self, words):
-        self.words = words
+    def __init__(self, words, top):
+        self.words, self.top = words, top
         self.by_xt = {w.xt: w for w in words}
         self.colon = [w for w in words if w.kind == 1]
         self.memo = {}                              # xt -> Lean reference, or Blocked
@@ -176,6 +180,27 @@ class Generator:
         self.uncounted, self.uncounted_used = set(), set()
         self.vectors = {}                           # Lean ref -> the words its EXECUTE may run
         self.collect, self.unlisted = True, set()   # loops without a pause, not listed
+        # The boot files' words, by address: the kernel defines no colon words,
+        # so the dictionary starts at the oldest one.
+        first = next((n for n, w in enumerate(words) if w.kind == 1), len(words))
+        placed = sorted(words[first:], key=lambda w: w.xt)
+        self.placed_xts = [w.xt for w in placed]
+        self.placed_ids = [w.id for w in placed]
+        self.dict_end = max((w.xt + 8 * (len(w.cells) + 1) for w in placed), default=0)
+
+    def cell(self, v):
+        """A cell as a Lean term. An address in the dictionary is its word's
+        address (opaque) plus an offset, and one in reserved memory is an
+        offset below the top of its space, so the Lean is the same wherever
+        the dictionary lands (DECISIONS.md #110); anything else is a number."""
+        if not self.placed_xts or not self.placed_xts[0] <= v <= self.top:
+            return str(v)
+        if v >= self.dict_end:
+            return f"(dictTop - {self.top - v})" if v < self.top else "dictTop"
+        n = bisect.bisect_right(self.placed_xts, v) - 1
+        name = self.placed_ids[n].replace("\\", "\\\\").replace('"', '\\"')
+        k = v - self.placed_xts[n]
+        return f'(wordAddr "{name}" + {k})' if k else f'(wordAddr "{name}")'
 
     def ref(self, w):
         """The Lean term for a word, defining it (and its callees) first."""
@@ -208,13 +233,13 @@ class Generator:
             raise Blocked(f"primitive {w.name}")
         if w.kind in (2, 3):
             value = w.cells[0] if w.kind == 2 else w.xt + 8
-            name = self.emit(w.id, KINDS[w.kind], f"pushConst {value}")
+            name = self.emit(w.id, KINDS[w.kind], f"pushConst {self.cell(value)}")
             self.prove(name, (0, 1, 0, 0), "pushConst_spec _")
             return name
         if w.kind == 4:
             code = self.does_code(w)
             self.deep = code in self.loopy
-            name = self.emit(w.id, "DOES> child", f"doesChild {w.xt + 8} {code}")
+            name = self.emit(w.id, "DOES> child", f"doesChild {self.cell(w.xt + 8)} {code}")
             self.children[name] = (w.xt + 8, code)
             if code in self.specs:                  # push the body, then run the code
                 k, j, rk, rj, proof = self.specs[code]
@@ -280,7 +305,7 @@ class Generator:
             if op[0] == "exit":
                 parts.append(".exit")
             elif op[0] == "lit":
-                parts.append(f".lit {op[1]}")
+                parts.append(f".lit {self.cell(op[1])}")
             elif op[0] == "call":
                 parts.append(f".call {op[1]}")
             else:
@@ -411,6 +436,7 @@ class Generator:
         if ref in self.children:
             body, code = self.children[ref]
             t, (n, m, p, proof) = self.tref(code)
+            body = self.cell(body)
             return f"(doesChildT {body} {t})", (n, m, p, f"(doesChildT_cost {body} {proof})")
         if ref in self.threads:
             return self.tthread(ref)
@@ -574,7 +600,7 @@ class Generator:
             if op[0] == "exit":
                 parts.append(".exit")
             elif op[0] == "lit":
-                parts.append(f".lit {op[1]}")
+                parts.append(f".lit {self.cell(op[1])}")
             elif op[0] == "call":
                 parts.append(f".call {calls[pc][0]}")
             else:
@@ -616,7 +642,7 @@ def yields(gen, config, out_path, report_path):
         for r in [ref] + refs:
             if r not in gen.threads and r not in gen.memo.values():
                 problems.append(f"{r}: named in {config} but not modelled")
-    lines, report = [], []
+    report = []
     for root in roots:
         ref = gen.memo.get(by_id[root].xt) if root in by_id else None
         if not isinstance(ref, str):
@@ -627,7 +653,7 @@ def yields(gen, config, out_path, report_path):
         except Blocked as e:
             problems.append(f"{root}: {e}")
             continue
-        lines.append(f"/-- `{root}` is never stopped by the watchdog if the allowance is at least {max(n, m)}\n"
+        gen.tdefs.append(f"/-- `{root}` is never stopped by the watchdog if the allowance is at least {max(n, m)}\n"
                      f"steps: at most {n} before it first pauses, {m} between pauses. -/\n"
                      f"theorem {ref}.yields : {n} ≤ allowance → {m} ≤ allowance → ∀ s, {ref}.t s allowance ≠ .watchdog :=\n"
                      f"  Cost.never_stopped {proof}\n")
@@ -637,20 +663,14 @@ def yields(gen, config, out_path, report_path):
     for ref in sorted(gen.uncounted - gen.uncounted_used) if not problems else []:
         problems.append(f"{ref}: listed as uncounted but not reached, or not modelled")
     report += [f"not counted: {r}" for r in sorted(gen.uncounted_used)]
-    head = [
-        "-- Generated by tools/forth2lean.py: each word the system tasks run, counted",
-        "-- (OS4.Yield), with its Cost; then each root's theorem. Do not edit.",
-        "import OS4.Words",
-        "import OS4.Yield",
-        "",
-        "namespace OS4.Words",
-        "open OS4",
-        "set_option maxRecDepth 16384             -- `decide` over the longest threads' certificates",
-        "",
-    ]
-    open(out_path, "w", newline="\n").write("\n".join(head + gen.tdefs + lines + ["end OS4.Words"]) + "\n")
+    count = sum(".tcode :" in t for t in gen.tdefs)
+    write_modules(out_path, gen.tdefs, gen,
+                  "each word the system tasks run, counted (OS4.Yield),\n-- with its Cost; then each root's theorem",
+                  ["OS4.Yield"], lambda m: [f"OS4.Words.{m}"],
+                  lambda m, has: [f"OS4.Words.{m}"] + ([f"OS4.Costs.{m}"] if has else []),
+                  ["set_option maxRecDepth 16384             -- `decide` over the longest threads' certificates"])
     open(report_path, "w", newline="\n").write("".join(r + "\n" for r in report + problems))
-    print(f"{out_path}: {len(gen.tdefs)} words counted")
+    print(f"{out_path}: {count} words counted")
     for r in report + problems:
         print(f"  {r}")
     if problems:
@@ -658,6 +678,79 @@ def yields(gen, config, out_path, report_path):
 
 
 COLON =re.compile(r"(?:^|\s):\s+(\S+)(?:\s+\(\s([^)]*)\))?")
+COMMENT = re.compile(r"(?:^|\s)\\(?:\s.*)?$|(?:^|\s)\(\s[^)]*\)")
+NAME = re.compile(r"«[^»]*»(?:\.«[^»]*»)*")         # a Lean name, «locked».«with x» whole
+DEFINES = re.compile(r"(?:def|theorem) («[^»]*»(?:\.«[^»]*»)*)")
+
+
+def module_name(path):
+    """forth/net/tcp.fs is NetTcp, hal/linux-blk.fs HalLinuxBlk."""
+    stem = path.removeprefix("forth/").rsplit(".", 1)[0]
+    return "".join(p[:1].upper() + p[1:] for p in re.split(r"[/_-]", stem) if p)
+
+
+def assign_files(gen, kernel):
+    """Which module each word's Lean goes in: one for the kernel's words, then
+    one per boot file in loading order (DECISIONS.md #110), so a change to a
+    file re-checks only what depends on it. A word belongs to the first file,
+    from the previous word's on, whose code names it (a word named nowhere
+    stays with the previous one). Any such choice is sound: callees are older."""
+    files = boot_files(kernel) + ["tools/dump-words.fs"]
+    names = []
+    for path in files:
+        seen = set()
+        for line in open(path):
+            seen.update(COMMENT.sub(" ", line).split())
+        names.append(seen)
+    gen.files = ["the kernel"] + files
+    gen.modules = ["Kernel"] + [module_name(f) for f in files]
+    gen.owners, at = {}, 0
+    for w in gen.words:
+        if w.kind == 1 and not at:                  # the kernel defines no colon words
+            at = 1
+        if at:
+            at = next((n for n in range(at, len(gen.modules)) if w.name in names[n - 1]), at)
+        gen.owners[lean_name(w.id)] = at
+        gen.owners[lean_name(f"does:{w.id}")] = at
+
+
+def write_modules(path, chunks, gen, what, base, own, uses, opening=(), closing=()):
+    """Each chunk of Lean goes in the module of the newest boot file it names,
+    which imports only the modules it uses: own(module) for its own file's,
+    uses(module, has one of this kind) for an older file's. The module at path
+    imports them all."""
+    homes, needs = {}, {}
+    for text in chunks:
+        refs = set()
+        for name in NAME.findall(text):
+            m = gen.owners.get(name, gen.owners.get(name.split(".«")[0]))
+            if m is not None:
+                refs.add(m)
+        home = max(refs, default=0)
+        for name in DEFINES.findall(text):          # a specialised word lives here too
+            gen.owners.setdefault(name, home)
+        homes.setdefault(home, []).append(text)
+        needs.setdefault(home, set()).update(refs - {home})
+    kind = path[:-len(".lean")]
+    os.makedirs(kind, exist_ok=True)
+    prefix = "OS4." + os.path.basename(kind)
+    for home, texts in sorted(homes.items()):
+        m = gen.modules[home]
+        imports = base + own(m) + [i for g in sorted(needs[home]) for i in uses(gen.modules[g], g in homes)]
+        lines = [
+            f"-- Generated by tools/forth2lean.py (make proofs-extract) from {gen.files[home]}:",
+            f"-- {what}. Do not edit; change the Forth and regenerate.",
+        ] + [f"import {i}" for i in dict.fromkeys(imports)] + [
+            "",
+            "namespace OS4.Words",
+            "open OS4",
+            *opening,
+            "",
+        ] + texts + [*closing, "end OS4.Words"]
+        open(f"{kind}/{m}.lean", "w", newline="\n").write("\n".join(lines) + "\n")
+    lines = [f"-- Generated by tools/forth2lean.py: {what}, from every boot file."]
+    lines += [f"import {prefix}.{gen.modules[h]}" for h in sorted(homes)]
+    open(path, "w", newline="\n").write("\n".join(lines) + "\n")
 
 
 def boot_files(kernel):
@@ -746,7 +839,7 @@ def main():
     if "--require" in args:                         # a file of words the proofs use
         for line in open(args[args.index("--require") + 1]):
             check += line.split("\\")[0].split()
-    gen = Generator(load(words_path))
+    gen = Generator(*load(words_path))
     reasons = Counter()
     for w in gen.words:
         try:
@@ -755,17 +848,11 @@ def main():
             if w.kind == 1:
                 reasons[str(e)] += 1
 
-    lines = [
-        "-- Generated by tools/forth2lean.py from the hosted build's dictionary",
-        "-- (make proofs-extract). Do not edit; change the Forth and regenerate.",
-        "import OS4.Machine",
-        "",
-        "namespace OS4.Words",
-        "open OS4",
-        "noncomputable section",
-        "",
-    ] + gen.defs + ["end", "end OS4.Words"]
-    open(out_path, "w", newline="\n").write("\n".join(lines) + "\n")
+    kernel = "arch/aarch64/kernel.s"
+    assign_files(gen, kernel)
+    write_modules(out_path, gen.defs, gen, "the words of the hosted build's dictionary",
+                  ["OS4.Machine"], lambda m: [], lambda m, has: [f"OS4.Words.{m}"],
+                  ["noncomputable section"], ["end"])
 
     done = sum(1 for w in gen.colon if not isinstance(gen.memo.get(w.xt), Blocked))
     print(f"{out_path}: {done} of {len(gen.colon)} colon words ({gen.loops} threads with loops)")
@@ -775,19 +862,12 @@ def main():
     if "--specs" in args:                           # stack-effect theorems
         path = args[args.index("--specs") + 1]
         report = args[args.index("--findings") + 1]
-        thms, findings, counts = comments(gen, "arch/aarch64/kernel.s")
-        lines = [
-            "-- Generated by tools/forth2lean.py: each word's stack effect, proven from",
-            "-- a certificate and its callees' effects; then each agreeing stack comment.",
-            "-- Do not edit; change the Forth and regenerate.",
-            "import OS4.Words",
-            "import OS4.PrimSpecs",
-            "",
-            "namespace OS4.Words",
-            "open OS4",
-            "",
-        ] + gen.thms + thms + ["end OS4.Words"]
-        open(path, "w", newline="\n").write("\n".join(lines) + "\n")
+        thms, findings, counts = comments(gen, kernel)
+        write_modules(path, gen.thms + thms, gen,
+                      "each word's stack effect, proven from a certificate and its\n"
+                      "-- callees' effects; then each agreeing stack comment",
+                      ["OS4.PrimSpecs"], lambda m: [f"OS4.Words.{m}"],
+                      lambda m, has: [f"OS4.Specs.{m}" if has else f"OS4.Words.{m}"])
         open(report, "w", newline="\n").write("".join(f + "\n" for f in findings))
         print(f"{path}: {sum(t.startswith("theorem") for t in gen.thms)} stack effects proven; stack comments:")
         for r, n in counts.most_common():

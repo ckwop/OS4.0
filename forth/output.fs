@@ -29,7 +29,8 @@ user emitted                          \ EMIT's character
 128 constant /numbuf
 /pad /tib + /sbuf + /numbuf + constant /buffers
 user task-buffers
-here /buffers allot task-buffers !         \ the console's; NEW-TASK (tasks.fs) makes others
+/buffers reserve task-buffers !            \ the console's; NEW-TASK (tasks.fs) makes others
+\ Reserved, not allotted: emulators slow every store to a page that holds code.
 : pad     ( -- addr )  task-buffers @ ;
 : tib     ( -- addr )  pad /pad + ;
 : sbuf    ( -- addr )  tib /tib + ;

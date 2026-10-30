@@ -58,8 +58,8 @@ $ffffffff constant broadcast-ip
 $0800 constant type-ipv4
 $0806 constant type-arp
 
-create rx-frame 2048 allot             \ the frame being handled
-create tx-frame 2048 allot             \ the frame being built
+2048 reserve constant rx-frame         \ the frame being handled (reserved: TD-33)
+2048 reserve constant tx-frame         \ the frame being built
 \ A task that builds and sends a packet holds TX-LOCK from start to finish, as
 \ every sending word below does: building in the shared frames (tx-frame and
 \ ARP's) and sending, which may pause while the device works.

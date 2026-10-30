@@ -36,7 +36,7 @@ variable cluster-bytes
 variable root-cluster               \ FAT32's root directory
 variable #clusters
 
-create fat-buf 1024 allot           \ one block of the app disk
+1024 reserve constant fat-buf       \ one block of the app disk (reserved: TD-33)
 variable fat-blk   -1 fat-blk !     \ which, or -1
 
 : fat-byte  ( pos -- addr )  \ the byte at offset pos on the app disk, in the cache

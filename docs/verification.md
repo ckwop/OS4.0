@@ -88,7 +88,7 @@ Effort is relative: S is a session or two, XL is many.
 
 | Phase | Milestone | Size | Why then |
 | --- | --- | --- | --- |
-| 1. Foundations | V1: proofs fast enough for `make test` (TD-30) | M | Every later phase adds proofs. At fifteen minutes or more a run, they cannot gate each change. |
+| 1. Foundations | V1: proofs fast enough for `make test` (TD-30) | M | Every later phase adds proofs. Incremental now (#110), but at eight minutes after a change to `core.fs`, they cannot yet gate each change. |
 | | V9: footprints, what a word may read and write | M | V2, V4 and V6 all need it. |
 | | V1: models of the interpreter primitives, and `search-list-ref` | S | V2 needs `interpret` modelled. |
 | | Course: a lecture and tour on the proofs | S | Explains the approach once, while it has three kinds of proof: the model, certificates and bridges, stack effects, step counts, and what they found. |
@@ -118,7 +118,9 @@ debt marked **must fix before public**.
   loops. The work left:
   - teach the checker the `?dup if` idiom and branches that end in a THROW;
   - state effects for vectored words (`type`, `key`, `emit`) as hypotheses about their vectors;
-  - get the proof build fast enough for every `make test`.
+  - get the proof build fast enough for every `make test`. It is now
+    incremental (#110): seconds unchanged, about a minute for a late boot
+    file, eight minutes for `core.fs`; the certificates are the cost left.
 - **Reference definitions:** each one proven equal to its primitive's model.
   These are `fill-ref`, `cmove-ref`, `cmove>-ref`, `pick-ref`, `um/mod-ref` and
   `search-list-ref`. Together they give the brief's "keep the Forth definition

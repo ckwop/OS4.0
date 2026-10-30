@@ -4,7 +4,8 @@
 \ kind is 0 primitive, 1 colon, 2 constant, 3 variable, 4 other (a DOES> child).
 \ A colon word's cells are its whole thread; a constant's, its value; a DOES>
 \ child's, where its code field branches to. A body ends where the next newer
-\ header starts, so nothing here decodes threads.
+\ header starts, so nothing here decodes threads. First comes "@@ top addr",
+\ the end of the dictionary's space, below which RESERVE takes memory.
 
 : bl-target  ( xt -- addr | 0 )  \ where the bl in a code field goes, 0 if none
   4 +  dup l@  dup $fc000000 and $94000000 <> if 2drop 0 exit then
@@ -21,7 +22,20 @@ variable limit                                    \ the end of the word being du
   dup 1 = if drop cell+ .cells exit then
   dup 4 = if drop bl-target u. exit then           \ where its DOES> code is
   2 = if cell+ @ u. else drop then ;
+\ The console writes a character at a time, a system call each, which is slow
+\ under emulation: collect the output and write it to stdout in blocks. The
+\ buffer and its count are reserved, away from code (see output.fs).
+4096 constant /out
+/out cell+ reserve constant #out
+: out  ( -- addr )  #out cell+ ;
+: flush-out  ( -- )  1 out #out @ 0 sys-write syscall drop  0 #out ! ;
+: out-type  ( addr u -- )
+  dup #out @ + /out > if flush-out then
+  tuck out #out @ + swap cmove  #out +! ;
+
 : dump-words  ( -- )
+  0 #out !  ['] out-type 'type !
+  cr ." @@ top " dict-top u.                       \ where reserved memory ends
   here limit !  latest @ begin ?dup while  dup .word  dup limit !  @ pause repeat
-  cr ." @@ end" cr ;                               \ the dump is complete
+  cr ." @@ end" cr  flush-out  ['] console-type 'type ! ;  \ the dump is complete
 dump-words

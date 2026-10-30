@@ -130,6 +130,7 @@
 : allot   ( n -- )  claim  dup unused > if -8 throw then  allot ;
 : c,      ( c -- )  claim  here c! 1 allot ;
 : align   ( -- )  claim  here aligned dp ! ;
+dict-end constant dict-top  \ where the dictionary's space ends, before anything is reserved
 : reserve ( n -- addr )  \ memory from the top of the dictionary's space, for pools
   aligned  dup unused > if -8 throw then  'dict-end @ swap -  dup 'dict-end ! ;
 

@@ -1,4 +1,4 @@
-import OS4.Words
+import OS4.Words.Core
 import OS4.Loops
 import OS4.Memory
 

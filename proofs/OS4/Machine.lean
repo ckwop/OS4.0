@@ -22,6 +22,11 @@ Abstractions, which the proofs inherit:
 * Memory is bytes, little endian, at 64-bit addresses, all of it readable and
   writable. The data and return stacks are not in it, so `sp@` and `rp@`
   are not modelled.
+* Addresses in the dictionary are unknowns: `wordAddr name`, the address of
+  the word with that name, plus an offset, or for reserved memory `dictTop`
+  less an offset. Nothing proven depends on where
+  the dictionary lands, so the generated Lean is the same on every boot.
+  Different words' addresses are not known to differ.
 * Kernel words that push an address or value (`dp`, `base`, `handler`,
   `docol` ...) push `kval name s`, an unknown that may depend on the state.
 * The world outside the task is unknown. While a task pauses, other tasks and
@@ -156,6 +161,12 @@ noncomputable def loopThread (code : List Ins) : Sem := fun s =>
 @[forth] def doesChild (body : Cell) (code : Sem) : Sem := fun s => code { s with ds := body :: s.ds }
 
 @[forth] def pushConst (v : Cell) : Sem := fun s => .ok { s with ds := v :: s.ds }
+
+/-- Where the boot files put a word (its xt), by its generated name. -/
+opaque wordAddr : String → Cell
+
+/-- The end of the dictionary's space: `reserve` takes memory below it. -/
+opaque dictTop : Cell
 
 /-- What a kernel constant or user variable pushes: unknown here. -/
 opaque kval : String → S → Cell

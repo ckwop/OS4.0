@@ -136,14 +136,24 @@ SPECS_LEAN := proofs/OS4/Specs.lean
 FINDINGS := $(BUILD)/proof-findings.txt
 COSTS_LEAN := proofs/OS4/Costs.lean
 YIELDS := $(BUILD)/yields.txt
+GENERATED := $(BUILD)/proofs-generated
 
+# Each step runs only when its inputs change (#110). The dump changes only
+# with the build, and the Lean names addresses rather than their values, so
+# the same build always generates the same Lean, which lake does not re-check.
 # Nothing stale may survive a failure, or lake would re-prove the old code.
-proofs-extract: $(HOSTED) $(DATA_IMG) $(APP_IMG) FORCE
-	@rm -f $(WORDS_DUMP) $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS) $(COSTS_LEAN) $(YIELDS)
-	$(CONSOLE) $(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG)) < tools/dump-words.fs | grep '^@@ ' > $(WORDS_DUMP).tmp
-	mv $(WORDS_DUMP).tmp $(WORDS_DUMP)
+$(WORDS_DUMP): $(HOSTED) tools/dump-words.fs | $(DATA_IMG)
+	@rm -f $@
+	$(CONSOLE) $(call HOSTED_CMD,$(DATA_IMG)) < tools/dump-words.fs | grep '^@@ ' > $@.tmp
+	mv $@.tmp $@
+
+$(GENERATED): $(WORDS_DUMP) tools/forth2lean.py proofs/roots.txt proofs/yields.txt
+	@rm -rf $@ $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS) $(COSTS_LEAN) $(YIELDS) $(basename $(WORDS_LEAN) $(SPECS_LEAN) $(COSTS_LEAN))
 	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt --specs $(SPECS_LEAN) --findings $(FINDINGS) \
 	  --yields proofs/yields.txt $(COSTS_LEAN) $(YIELDS)
+	@touch $@
+
+proofs-extract: $(GENERATED)
 
 proofs: proofs-extract
 	cd proofs && lake build

@@ -23,7 +23,7 @@ semaphore blocks-lock       \ one task at a time in the buffers and on the disk
 \ ---- The disk header
 
 1 constant disk-version
-create disk-header b/buf allot
+b/buf reserve constant disk-header   \ reserved: see "Buffers" below
 variable mounted        \ the header has been read
 variable disk-ok        \ ... and is valid
 variable #blocks        \ blocks usable on this disk
@@ -59,8 +59,10 @@ variable data-disk
 \ An address from BLOCK stays valid only until the task next pauses, unless
 \ its buffer is pinned (as LOAD does).
 
+\ Buffers the disk reads into are reserved, never allotted: under QEMU, a read
+\ into a page that also holds code stops short at it (TD-33).
 8 constant #buffers
-create buffers  #buffers b/buf * allot
+#buffers b/buf * reserve constant buffers
 create buf-blocks  #buffers cells allot   \ the block in each buffer, or -1
 create buf-dirty   #buffers cells allot   \ true once UPDATEd
 create buf-pins    #buffers cells allot   \ LOADs reading from it

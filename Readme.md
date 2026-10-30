@@ -131,10 +131,10 @@ docker run --rm -it -p 127.0.0.1:5000:5000 -v "${PWD}:/app" -w /app os4:0.10 os4
 
 ### Proofs
 
-The base is certified as it goes, with Lean 4 proofs about the words as the system actually compiles them ([docs/verification.md](docs/verification.md)). `make proofs` boots the hosted build, dumps its dictionary, turns every word it can into a Lean definition, and checks every theorem. Run it at each milestone and before merging a change to the base: a change that breaks a property fails it like a failing test. It takes about twenty minutes under emulation, so it is not yet part of `make test` (TD-30).
+The base is certified as it goes, with Lean 4 proofs about the words as the system actually compiles them ([docs/verification.md](docs/verification.md)). `make proofs` boots the hosted build, dumps its dictionary, turns every word it can into a Lean definition, and checks every theorem. Run it at each milestone and before merging a change to the base: a change that breaks a property fails it like a failing test. Only what changed is re-proven: with nothing changed it takes seconds, after a change to a late boot file about a minute, and after a change to `core.fs` about eight, so it is not yet part of `make test` (TD-30). Keep Lake's build on the Docker volume, as below, rather than in your working copy.
 
 ```powershell
-docker run --rm -v "${PWD}:/src" os4 make proofs   # extract, generate and check
+docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs   # extract, generate and check
 ```
 
 Every word with a fixed stack effect has it proven, layered through its callees' proofs, and every plain stack comment is checked against what the code does. A comment that disagrees, or a word whose effect depends on its data, is listed in `build/proof-findings.txt`. Hand-written theorems (`proofs/OS4/*.lean`) prove deeper properties: arithmetic words for all inputs, the Forth reference definitions against the assembly primitives' models, and memory. What is trusted rather than proven is listed in `proofs/OS4/Machine.lean`.

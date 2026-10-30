@@ -1,4 +1,4 @@
-import OS4.Words
+import OS4.Words.Core
 
 /-!
 # core.fs
