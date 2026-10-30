@@ -27,8 +27,13 @@ Abstractions, which the proofs inherit:
   less an offset. Nothing proven depends on where
   the dictionary lands, so the generated Lean is the same on every boot.
   Different words' addresses are not known to differ.
-* Kernel words that push an address or value (`dp`, `base`, `handler`,
-  `docol` ...) push `kval name s`, an unknown that may depend on the state.
+* Kernel words that push an address or value: a kernel variable's address
+  (`dp`, `latest`) is `kernelAddr name`, a user variable's (`base`,
+  `handler`) is the user area plus its offset in kernel.s, a number is
+  itself, and anything else (`dict-end`, `docol`) is `kval name s`, an
+  unknown that may depend on the state.
+* A constant's value, and the offset in the body of a word made by `user`
+  or `field`, are taken as compiled: nothing changes them after definition.
 * The world outside the task is unknown. While a task pauses, other tasks and
   devices may change any memory; the clock, the console and system calls give
   unknown answers. Each such event counts in `ext`, and its outcome is an
@@ -168,9 +173,17 @@ opaque wordAddr : String → Cell
 /-- The end of the dictionary's space: `reserve` takes memory below it. -/
 opaque dictTop : Cell
 
-/-- What a kernel constant or user variable pushes: unknown here. -/
+/-- Where the kernel keeps a variable of its own (`dp`, `latest` ...): fixed, unknown here. -/
+opaque kernelAddr : String → Cell
+
+/-- What another kernel word pushes (`dict-end`, `docol` ...): unknown here. -/
 opaque kval : String → S → Cell
 @[forth] def kconst (name : String) : Sem := fun s => .ok { s with ds := kval name s :: s.ds }
+
+/-- A user variable: its address in the current task's user area. The
+kernel's (`defuser`: `base`, `handler` ...) and those `user` defines, whose
+offset is the one cell of their body. -/
+@[forth] def userAt (off : Cell) : Sem := fun s => .ok { s with ds := (s.up + off) :: s.ds }
 
 /-- A Forth flag: all bits set for true. -/
 @[forth] def flag (b : Bool) : Cell := if b then -1 else 0

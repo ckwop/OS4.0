@@ -3,7 +3,7 @@
 \ Each word is one line, numbers in decimal: "@@ xt kind name cells...", where
 \ kind is 0 primitive, 1 colon, 2 constant, 3 variable, 4 other (a DOES> child).
 \ A colon word's cells are its whole thread; a constant's, its value; a DOES>
-\ child's, where its code field branches to. A body ends where the next newer
+\ child's, where its code field branches to, then its body. A body ends where the next newer
 \ header starts, so nothing here decodes threads. First comes "@@ top addr",
 \ the end of the dictionary's space, below which RESERVE takes memory.
 
@@ -20,7 +20,7 @@ variable limit                                    \ the end of the word being du
 : .word  ( nt -- )
   cr ." @@ "  dup name>xt  dup u.  dup kind dup .  rot name>string type space
   dup 1 = if drop cell+ .cells exit then
-  dup 4 = if drop bl-target u. exit then           \ where its DOES> code is
+  dup 4 = if drop dup bl-target u. cell+ .cells exit then  \ where its DOES> code is, then its body
   2 = if cell+ @ u. else drop then ;
 \ The console writes a character at a time, a system call each, which is slow
 \ under emulation: collect the output and write it to stdout in blocks. The

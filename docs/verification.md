@@ -39,7 +39,23 @@ the word's own theorem:
 
 - **Stack effects** (`Spec.lean`, #107);
 - **step counts between pauses** (`Yield.lean`, #108);
-- **footprints**, next: what a word may read and write (V9).
+- **footprints:** what a word may write, and where its outputs came from
+  (`Footprint.lean`, #111). Reads are next (V9).
+
+Footprints in detail (DECISIONS.md #111):
+
+- **659 footprints proven,** one for every word with a stack effect. 542
+  write nothing, 52 write named places (`claim` only `dict-owner`; `ms` only
+  its own task's `task-status` and `task-wake`; `+!` only the cell at its
+  address), and 63 may write anywhere. `build/footprints.txt` lists each.
+- **Values are symbolic:** an input plus an offset, the user area plus an
+  offset, a word's address, a number, or unknown. They follow the stacks
+  through `swap`, `>r`, `+` of a literal and every proven callee.
+- **"Anywhere"** means an address read from memory or computed in a loop.
+  For those, a hand-written proof gives the exact footprint: `fill-ref`
+  writes only its n bytes (`Refs.lean`).
+- **The task's own writes:** what other tasks or devices change across a
+  pause is not counted (`Quiet`).
 
 Stack effects in detail (DECISIONS.md #107):
 
@@ -89,7 +105,7 @@ Effort is relative: S is a session or two, XL is many.
 | Phase | Milestone | Size | Why then |
 | --- | --- | --- | --- |
 | 1. Foundations | V1: proofs fast enough for `make test` (TD-30) | M | Every later phase adds proofs. Incremental now (#110), but at eight minutes after a change to `core.fs`, they cannot yet gate each change. |
-| | V9: footprints, what a word may read and write | M | V2, V4 and V6 all need it. |
+| | V9: footprints, what a word may read and write (writes done, #111) | M | V2, V4 and V6 all need it. |
 | | V1: models of the interpreter primitives, and `search-list-ref` | S | V2 needs `interpret` modelled. |
 | | Course: a lecture and tour on the proofs | S | Explains the approach once, while it has three kinds of proof: the model, certificates and bridges, stack effects, step counts, and what they found. |
 | 2. Before players | V2: sandbox isolation | M | The brief's hard rule, and what every player reaches. |
@@ -297,6 +313,12 @@ step counts. V2, V4 and V6 all depend on it.
   (`cmove-ref`, `fill-ref`) are the pattern.
 - **Done when:** `fill`, `cmove` and the stack and arithmetic words have footprints,
   and the bridge proves them for colon words. Then V2 and V4 build on it.
+- **Status:** writes done (#111): every primitive's footprint, `thread_foot`
+  and `loopThread_foot`, and 659 words' footprints generated and proven.
+  Still to do: reads (noninterference); letting callers use a hand-written
+  footprint such as `fill-ref`'s in place of the generated one; and
+  addresses read from memory, such as a connection's buffer, which need an
+  invariant about what that memory holds.
 
 ### V10: Proofs for an app — M
 

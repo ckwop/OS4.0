@@ -129,13 +129,16 @@ check-course:
 
 # Proofs (docs/verification.md, DECISIONS.md #105-107): dump the hosted build's
 # dictionary as compiled, generate the Lean definitions of its words and their
-# stack-effect theorems and the system tasks' step counts, then check every proof.
+# stack-effect and footprint theorems and the system tasks' step counts, then
+# check every proof.
 WORDS_DUMP := $(BUILD)/words.txt
 WORDS_LEAN := proofs/OS4/Words.lean
 SPECS_LEAN := proofs/OS4/Specs.lean
 FINDINGS := $(BUILD)/proof-findings.txt
 COSTS_LEAN := proofs/OS4/Costs.lean
 YIELDS := $(BUILD)/yields.txt
+FOOTS_LEAN := proofs/OS4/Foots.lean
+FOOTPRINTS := $(BUILD)/footprints.txt
 GENERATED := $(BUILD)/proofs-generated
 
 # Each step runs only when its inputs change (#110). The dump changes only
@@ -148,9 +151,10 @@ $(WORDS_DUMP): $(HOSTED) tools/dump-words.fs | $(DATA_IMG)
 	mv $@.tmp $@
 
 $(GENERATED): $(WORDS_DUMP) tools/forth2lean.py proofs/roots.txt proofs/yields.txt
-	@rm -rf $@ $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS) $(COSTS_LEAN) $(YIELDS) $(basename $(WORDS_LEAN) $(SPECS_LEAN) $(COSTS_LEAN))
+	@rm -rf $@ $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS) $(COSTS_LEAN) $(YIELDS) $(FOOTS_LEAN) $(FOOTPRINTS) \
+	  $(basename $(WORDS_LEAN) $(SPECS_LEAN) $(COSTS_LEAN) $(FOOTS_LEAN))
 	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt --specs $(SPECS_LEAN) --findings $(FINDINGS) \
-	  --yields proofs/yields.txt $(COSTS_LEAN) $(YIELDS)
+	  --foots $(FOOTS_LEAN) $(FOOTPRINTS) --yields proofs/yields.txt $(COSTS_LEAN) $(YIELDS)
 	@touch $@
 
 proofs-extract: $(GENERATED)

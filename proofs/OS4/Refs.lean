@@ -1,6 +1,7 @@
 import OS4.Words.Core
 import OS4.Loops
 import OS4.Memory
+import OS4.FootPrims
 
 /-!
 # Reference definitions
@@ -73,5 +74,17 @@ theorem fill_ref (c u a : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat)
     apply loopThread_eq _ _ ((2 + 6 * ((u.toNat - 1) + 1)) + 1 + 1 + 1) _ _ (by simp [forth, outOfFuel])
     rw [start, fill_loop c a u s r m p e (u.toNat - 1) 0 2 (by omega)]
     simp [forth]
+
+/-- FILL-REF writes only the n bytes at addr. Its generated footprint is
+"anywhere", as its address is computed in a loop; this one follows from
+`fill_ref`, and is what a write through a computed address needs. -/
+theorem fill_ref_foot : Foot Words.«fill-ref» 3 0 0 0 [⟨.arg 2 0, .arg 1 0⟩] [] [] := by
+  intro xs zs s r m u e hx hz
+  match xs, hx with
+  | [c, n, a], _ =>
+    have h := Prim.fill_foot [c, n, a] zs s r m u e rfl hz
+    simp only [List.cons_append, List.nil_append] at h ⊢
+    rw [fill_ref]
+    exact h
 
 end OS4.Refs

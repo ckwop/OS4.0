@@ -141,6 +141,8 @@ Every word with a fixed stack effect has it proven, layered through its callees'
 
 The system tasks' loops (the network task and the REPL listeners) are proven to pause within a bounded number of Forth instructions, so the watchdog never stops them (`proofs/OS4/Yield.lean`). Inner loops that never pause are listed in `proofs/yields.txt`, each with what bounds it; a new one that is not listed fails `make proofs`, and the bounds are reported in `build/yields.txt`.
 
+Every word with a proven stack effect also has a proven footprint: what memory it may write, such as "the cell at its address argument" or "this task's `base`" (`proofs/OS4/Footprint.lean`). `build/footprints.txt` lists them.
+
 ### Milestones
 
 Each milestone is done when its acceptance test passes in the Docker image.
@@ -170,7 +172,7 @@ The verification track ([docs/verification.md](docs/verification.md)) runs besid
 | --- | --- | --- | --- |
 | | V0 | Spike: Lean definitions generated from the compiled dictionary | Done |
 | 1 | V1 | Proofs in the suite: every fixed stack effect proven compositionally (done); proofs fast enough for `make test`; interpreter primitives modelled; reference definitions | In progress |
-| 1 | V9 | Footprints: what each word may read and write, proven compositionally | Not started |
+| 1 | V9 | Footprints: what each word may read and write, proven compositionally (writes done) | In progress |
 | 2 | V2 | Sandbox isolation: a sandboxed task can run only the exposed words | Not started |
 | 2 | V6 | Tasks: the system tasks pause within bounded steps (done); a stopped task leaves nothing broken; mutual exclusion, lock discipline | In progress |
 | 2 | V10 | Proofs for an app: the MUD's tasks yield and its commands stay isolated | Not started |

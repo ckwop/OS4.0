@@ -94,6 +94,8 @@ theorem sha256out_spec : Spec sha256out 2 0 0 0 := by prim_spec
 
 end Prim
 
+theorem userAt_spec (off : Cell) : Spec (userAt off) 0 1 0 0 := by prim_spec
+
 theorem throwM_spec : Spec throwM 1 0 0 0 := by
   intro xs zs s r m u e hx hz
   match xs, zs, hx, hz with

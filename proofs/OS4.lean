@@ -9,3 +9,6 @@ import OS4.Core
 import OS4.Refs
 import OS4.Yield
 import OS4.Costs
+import OS4.Footprint
+import OS4.FootPrims
+import OS4.Foots

@@ -76,6 +76,170 @@ EFFECTS = {
 }
 PRIM_SPECS = {f"Prim.{p}": e + (f"Prim.{p}_spec",) for p, e in EFFECTS.items()}
 PRIM_SPECS["throwM"] = (1, 0, 0, 0, "throwM_spec")
+
+# Footprints (proofs/OS4/Footprint.lean): symbolic values as tuples, mirroring
+# `Val`, and the same arithmetic on them, so the certificates check.
+M64 = 1 << 64
+ANY = ("any",)
+ALL = (ANY, ANY)                                    # a region: anywhere
+
+
+def A(i, k=0):
+    return ("arg", i, k)
+
+
+def R(i, k=0):
+    return ("rarg", i, k)
+
+
+def v_shift(v, c):
+    if v[0] in ("arg", "rarg", "word", "kaddr"):
+        return v[:2] + ((v[2] + c) % M64,)
+    if v[0] in ("user", "num"):
+        return (v[0], (v[1] + c) % M64)
+    if v[0] == "top":
+        return ("top", (v[1] - c) % M64)
+    return ANY
+
+
+def v_add(a, b):
+    if a[0] == "num":
+        return v_shift(b, a[1])
+    if b[0] == "num":
+        return v_shift(a, b[1])
+    return ANY
+
+
+def v_subst(v, DS, RS):
+    """A callee's value in its caller's terms (`Val.subst`)."""
+    if v[0] == "arg":
+        return v_shift(DS[v[1]] if v[1] < len(DS) else ANY, v[2])
+    if v[0] == "rarg":
+        return v_shift(RS[v[1]] if v[1] < len(RS) else ANY, v[2])
+    if v[0] == "sum":
+        return v_add(v_subst(v[1], DS, RS), v_subst(v[2], DS, RS))
+    return v
+
+
+def r_subst(r, DS, RS):
+    return (v_subst(r[0], DS, RS), v_subst(r[1], DS, RS))
+
+
+def v_join(a, b):
+    return [x if x == y else ANY for x, y in zip(a, b)]
+
+
+def v_lean(v):
+    if v == ANY:
+        return ".any"
+    if v[0] == "sum":
+        return f"(.sum {v_lean(v[1])} {v_lean(v[2])})"
+    args = " ".join('"' + a.replace("\\", "\\\\").replace('"', '\\"') + '"' if isinstance(a, str) else str(a)
+                    for a in v[1:])
+    return f"(.{v[0]} {args})"
+
+
+def vs_lean(vs):
+    return "[" + ", ".join(v_lean(v) for v in vs) + "]"
+
+
+def rs_lean(regs):
+    return "[" + ", ".join(f"⟨{v_lean(b)}, {v_lean(n)}⟩" for b, n in regs) + "]"
+
+
+def lit_proof(v):
+    """A proof that a literal is the value v says (`∀ ρ, v.holds ρ x`)."""
+    if v == ("top", 0):
+        return "holds_top0"
+    if v[0] in ("word", "kaddr") and v[-1] == 0:
+        return f"(holds_{v[0]}0 _)"
+    return f"(holds_{v[0]} _ _)" if v[0] == "word" else f"(holds_{v[0]} _)"
+
+
+def v_text(v, names):
+    """A value for the footprint report: in0 is the top input; a user
+    variable or a word's body by its name (names: the user offsets' and the
+    words whose body starts after their code field)."""
+    def plus(base, k):
+        k = k if k < M64 // 2 else k - M64
+        return base if not k else f"{base}{k:+d}"
+    if v == ANY:
+        return "?"
+    if v[0] == "arg":
+        return plus(f"in{v[1]}", v[2])
+    if v[0] == "rarg":
+        return plus(f"r{v[1]}", v[2])
+    if v[0] == "user":
+        return names["user"].get(v[1], plus("user", v[1]))
+    if v[0] == "word" and v[1] in names["body"] and v[2] >= 8:
+        return plus(v[1], v[2] - 8)
+    if v[0] in ("word", "kaddr"):
+        return plus(v[1] + (" xt" if v[0] == "word" else ""), v[2])
+    if v[0] == "top":
+        return plus("top", -v[1] % M64)
+    if v[0] == "num":
+        return str(v[1] if v[1] < M64 // 2 else v[1] - M64)
+    return f"({v_text(v[1], names)} + {v_text(v[2], names)})"
+
+
+def r_text(r, names):
+    if ANY in r:
+        return "anywhere"
+    n = v_text(r[1], names)
+    return f"{v_text(r[0], names)} ({'a cell' if n == '8' else 'a byte' if n == '1' else n + ' bytes'})"
+
+
+# Footprints of the primitives, as proven in proofs/OS4/FootPrims.lean:
+# (regions written, data outputs, return outputs). The rest write nothing,
+# and their outputs are unknown.
+PRIM_FOOTS = {
+    "dup": ([], [A(0), A(0)], []), "swap": ([], [A(1), A(0)], []),
+    "over": ([], [A(1), A(0), A(1)], []), "tor": ([], [], [A(0)]),
+    "rfrom": ([], [R(0)], []), "rfetch": ([], [R(0)], [R(0)]),
+    "plus": ([], [("sum", A(1), A(0))], []),
+    "store": ([(A(0), ("num", 8))], [], []), "cstore": ([(A(0), ("num", 1))], [], []),
+    "wstore": ([(A(0), ("num", 2))], [], []), "lstore": ([(A(0), ("num", 4))], [], []),
+    "cmove": ([(A(1), A(0))], [], []), "cmoveUp": ([(A(1), A(0))], [], []),
+    "fill": ([(A(2), A(1))], [], []), "upfetch": ([], [("user", 0)], []),
+    "pdo": ([], [], [A(0), A(1)]), "i": ([], [R(0)], [R(0)]),
+    "j": ([], [R(2)], [R(0), R(1), R(2)]),
+    "syscall": ([ALL], [ANY], []), "sha256block": ([ALL], [], []), "sha256out": ([ALL], [], []),
+}
+FOOTS = {f"Prim.{p}": PRIM_FOOTS.get(p, ([], [ANY] * e[1], [])) + (f"Prim.{p}_foot",)
+         for p, e in EFFECTS.items()}
+FOOTS["throwM"] = ([], [], [], "throwM_foot")
+# The defining words whose children's DOES> code starts by fetching an offset
+# from the body, which nothing changes afterwards (Machine.lean's header).
+FIXED_BODY = {"user-cells", "field"}
+
+
+def kernel_words(arch):
+    """The kernel's constants and user variables, from its assembly:
+    name -> ("user", offset) | ("addr",) | ("num", value)."""
+    equ, found = {}, {}
+    defs = re.compile(r'^\s*(defuser|defconst)\s+"([^"]+)",\s*\w+,\s*(\w+)')
+    for path in sorted(os.listdir(arch)):
+        if not path.endswith(".s"):
+            continue
+        for line in open(os.path.join(arch, path)):
+            f = line.split("//")[0].replace(",", " ").split()
+            if f[:1] == [".equ"] and len(f) == 3:
+                try:
+                    equ[f[1]] = int(f[2], 0)
+                except ValueError:
+                    pass
+            m = defs.match(line)
+            if m:
+                found[m.group(2)] = (m.group(1), m.group(3))
+    out = {}
+    for name, (how, value) in found.items():
+        if how == "defuser" and value in equ:
+            out[name] = ("user", equ[value])
+        elif how == "defconst" and value in equ:
+            out[name] = ("num", equ[value])
+        elif how == "defconst" and (value.startswith("var_") or value == "user0"):
+            out[name] = ("addr",)
+    return out
 # Forth words replaced by a trusted specification in Machine.lean.
 OVERRIDES = {"throw": "throwM", "catch": "catchM"}
 # Thread cells followed by an operand.
@@ -180,6 +344,11 @@ class Generator:
         self.uncounted, self.uncounted_used = set(), set()
         self.vectors = {}                           # Lean ref -> the words its EXECUTE may run
         self.collect, self.unlisted = True, set()   # loops without a pause, not listed
+        self.foots = dict(FOOTS)                    # Lean ref -> (regions, outputs, return outputs, proof)
+        self.fthms = []                             # Foot theorems, callees first
+        self.no_foot = {}                           # Lean ref -> why it has none
+        self.kernel = kernel_words("arch/aarch64")
+        self.does_owner = None
         # The boot files' words, by address: the kernel defines no colon words,
         # so the dictionary starts at the oldest one.
         first = next((n for n, w in enumerate(words) if w.kind == 1), len(words))
@@ -201,6 +370,15 @@ class Generator:
         name = self.placed_ids[n].replace("\\", "\\\\").replace('"', '\\"')
         k = v - self.placed_xts[n]
         return f'(wordAddr "{name}" + {k})' if k else f'(wordAddr "{name}")'
+
+    def val(self, v):
+        """A cell as `cell` writes it, as a symbolic value."""
+        if not self.placed_xts or not self.placed_xts[0] <= v <= self.top:
+            return ("num", v % M64)
+        if v >= self.dict_end:
+            return ("top", self.top - v)
+        n = bisect.bisect_right(self.placed_xts, v) - 1
+        return ("word", self.placed_ids[n], v - self.placed_xts[n])
 
     def ref(self, w):
         """The Lean term for a word, defining it (and its callees) first."""
@@ -226,19 +404,40 @@ class Generator:
         if w.kind == 0:
             if w.name in PRIMS:
                 return PRIMS[w.name]
+            kind = self.kernel.get(w.name)
+            if w.name in KCONST and kind:
+                if kind[0] == "user":
+                    ref = f"(userAt {kind[1]})"
+                    self.specs[ref] = (0, 1, 0, 0, f"(userAt_spec {kind[1]})")
+                    self.foots[ref] = ([], [("user", kind[1])], [], f"(userAt_foot {kind[1]})")
+                    return ref
+                v = ("kaddr", w.name, 0) if kind[0] == "addr" else ("num", kind[1])
+                ref = f'(pushConst (kernelAddr "{w.name}"))' if kind[0] == "addr" else f"(pushConst {kind[1]})"
+                self.specs[ref] = (0, 1, 0, 0, "(pushConst_spec _)")
+                self.foots[ref] = ([], [v], [], f"(pushConst_foot _ {v_lean(v)} {lit_proof(v)})")
+                return ref
             if w.name in KCONST:
                 ref = f'(kconst "{w.name}")'
                 self.specs[ref] = (0, 1, 0, 0, f'(kconst_spec "{w.name}")')
+                self.foots[ref] = ([], [ANY], [], f'(kconst_foot "{w.name}")')
                 return ref
             raise Blocked(f"primitive {w.name}")
         if w.kind in (2, 3):
             value = w.cells[0] if w.kind == 2 else w.xt + 8
             name = self.emit(w.id, KINDS[w.kind], f"pushConst {self.cell(value)}")
             self.prove(name, (0, 1, 0, 0), "pushConst_spec _")
+            v = self.val(value)
+            self.prove_foot(name, [], [v], [], f"pushConst_foot _ {v_lean(v)} {lit_proof(v)}")
             return name
         if w.kind == 4:
             code = self.does_code(w)
             self.deep = code in self.loopy
+            insns = self.threads.get(code, [])
+            if self.does_owner in FIXED_BODY and len(w.cells) > 1 and insns[:1] == [("call", "Prim.fetch")]:
+                # `user` and `field`: the offset its body holds, as a literal
+                loops = any(op[0] in ("qdo", "loop", "ploop") or (op[0] in ("branch", "zbranch") and op[1] <= n)
+                            for n, op in enumerate(insns))
+                return self.emit_thread(w.id, f"made by {self.does_owner}", loops, [("lit", w.cells[1])] + insns[1:])
             name = self.emit(w.id, "DOES> child", f"doesChild {self.cell(w.xt + 8)} {code}")
             self.children[name] = (w.xt + 8, code)
             if code in self.specs:                  # push the body, then run the code
@@ -247,6 +446,17 @@ class Generator:
                     self.prove(name, (k - 1, j, rk, rj), f"doesChild_spec _ {proof}")
                 else:
                     self.prove(name, (0, j + 1, rk, rj), f"doesChild_spec _ (spec_frame {proof} 1)")
+            if code in self.foots and self.specs[code][0]:
+                k, rk = self.specs[code][0] - 1, self.specs[code][2]
+                regs, dout, rout, proof = self.foots[code]
+                bv = self.val(w.xt + 8)
+                DS, RS = [bv] + [A(i) for i in range(k)], [R(i) for i in range(rk)]
+                self.prove_foot(name, [r_subst(r, DS, RS) for r in regs], [v_subst(v, DS, RS) for v in dout],
+                                [v_subst(v, DS, RS) for v in rout],
+                                f"doesChild_foot _ {v_lean(bv)} {lit_proof(bv)} {proof}\n"
+                                f"    (by decide) (by decide) (by decide)")
+            elif code in self.specs:
+                self.no_foot[name] = "its DOES> code has no footprint, or takes no input"
             return name
         return self.emit_thread(w.id, "colon", *self.thread(w.cells, w.xt + 8, w.id))
 
@@ -260,6 +470,7 @@ class Generator:
                 does = self.by_xt.get(p.cells[j - 1]) if j else None
                 if not does or does.name != "(does>)":
                     break
+                self.does_owner = p.name
                 key = ("does", p.xt)
                 if key not in self.memo:
                     try:
@@ -329,7 +540,91 @@ class Generator:
             self.prove(name, (k, j, 0, 0),
                        f"{runner}_spec (code := {name}.code) (cert := {name}.cert)\n"
                        f"    (by decide)\n    ({calls})")
+            found = self.infer_foot(name, insns)
+            if isinstance(found, str):
+                self.no_foot[name] = found
+            else:
+                regs, dout, certs, proofs = found
+                hyps = "True.intro"
+                for p in reversed(proofs):
+                    hyps = f"And.intro {p} ({hyps})"
+                self.fthms.append(f"noncomputable def {name}.fcert : List FCert := [{', '.join(certs)}]\n")
+                self.prove_foot(name, regs, dout, [],
+                                f"{runner}_foot (code := {name}.code) (cert := {name}.fcert)\n"
+                                f"    (by decide)\n    ({hyps})")
         return name
+
+    def prove_foot(self, name, regs, dout, rout, proof):
+        """State and prove a word's Foot; later words' proofs use it."""
+        k, j, rk, rj = self.specs[name][:4]
+        self.foots[name] = (regs, dout, rout, f"{name}.foot")
+        self.fthms.append(f"theorem {name}.foot : Foot {name} {k} {j} {rk} {rj}\n"
+                          f"    {rs_lean(regs)} {vs_lean(dout)} {vs_lean(rout)} :=\n  {proof}\n")
+
+    def infer_foot(self, name, insns):
+        """The symbolic stacks before each instruction, from the word's inputs
+        (`arg i`), joined where paths meet; the regions its calls write, in
+        its own terms; and what it leaves. Or why not."""
+        k, j = self.specs[name][:2]
+        for op in insns:
+            if op[0] == "call" and op[1] not in self.foots:
+                return "calls a word with no footprint"
+        state, work, exits = {0: ([A(i) for i in range(k)], [])}, [0], []
+        while work:
+            pc = work.pop()
+            ds, rs = state[pc]
+            op = insns[pc]
+            if op[0] == "exit":
+                exits.append(ds)
+                continue
+            if op[0] == "call":
+                ck, cj, crk, crj = self.specs[op[1]][:4]
+                _, dout, rout, _ = self.foots[op[1]]
+                DS, RS = ds[:ck], rs[:crk]
+                succ = [(pc + 1, [v_subst(v, DS, RS) for v in dout] + ds[ck:],
+                         [v_subst(v, DS, RS) for v in rout] + rs[crk:])]
+            elif op[0] == "lit":
+                succ = [(pc + 1, [self.val(op[1])] + ds, rs)]
+            elif op[0] == "branch":
+                succ = [(op[1], ds, rs)]
+            elif op[0] == "zbranch":
+                succ = [(op[1], ds[1:], rs), (pc + 1, ds[1:], rs)]
+            elif op[0] == "qdo":
+                succ = [(op[1], ds[2:], rs), (pc + 1, ds[2:], ds[:2] + rs)]
+            elif op[0] == "loop":
+                succ = [(op[1], ds, [ANY] + rs[1:]), (pc + 1, ds, rs[2:])]
+            else:                                   # ploop
+                succ = [(op[1], ds[1:], [ANY] + rs[1:]), (pc + 1, ds[1:], rs[2:])]
+            for t, nds, nrs in succ:
+                old = state.get(t)
+                new = (nds, nrs) if old is None else (v_join(old[0], nds), v_join(old[1], nrs))
+                if new != old:
+                    state[t] = new
+                    work.append(t)
+        dout = exits[0]
+        for ds in exits[1:]:
+            dout = v_join(dout, ds)
+        regs, certs, proofs = [], [], []
+        for pc, op in enumerate(insns):             # a dead call still names its callee's Foot
+            live = pc in state
+            ds, rs = state.get(pc, ([], []))
+            ck = cj = crk = crj = 0
+            cregs, cdout, crout, lv = [], [], [], ANY
+            if op[0] == "call":
+                ck, cj, crk, crj = self.specs[op[1]][:4]
+                cregs, cdout, crout, proof = self.foots[op[1]]
+                if live:
+                    regs += [r_subst(r, ds[:ck], rs[:crk]) for r in cregs]
+                proofs.append(proof)
+            elif op[0] == "lit":
+                lv = self.val(op[1])
+                proofs.append(lit_proof(lv))
+            else:
+                proofs.append("True.intro")
+            certs.append(f"⟨{self.bool(live)}, {vs_lean(ds)}, {vs_lean(rs)}, {ck}, {cj}, {crk}, {crj}, "
+                         f"{rs_lean(cregs)}, {vs_lean(cdout)}, {vs_lean(crout)}, {v_lean(lv)}⟩")
+        regs = [ALL] if any(ANY in r for r in regs) else list(dict.fromkeys(regs))
+        return regs, dout, certs, proofs
 
     def emit(self, ident, what, body):
         self.defs.append(f"/-- {what} -/\n@[forth] noncomputable def {lean_name(ident)} : Sem := {body}\n")
@@ -832,6 +1127,42 @@ def comments(gen, kernel):
     return thms, findings, counts
 
 
+def footprints(gen, path, report_path):
+    """Each word's Foot theorem, and a report of what each word may write:
+    in0 is its top input, user its task's user area, top the end of the
+    dictionary's space."""
+    write_modules(path, gen.fthms, gen,
+                  "each word's footprint (OS4.Footprint): what it may write, proven\n"
+                  "-- from a certificate and its callees' footprints",
+                  ["OS4.FootPrims"], lambda m: [f"OS4.Words.{m}"],
+                  lambda m, has: [f"OS4.Foots.{m}" if has else f"OS4.Words.{m}"],
+                  ["set_option maxRecDepth 16384             -- `decide` over the longest threads' certificates"])
+    names = {"user": {off: name for name, (how, *rest) in gen.kernel.items() if how == "user" for off in rest},
+             "body": {w.id for w in gen.words if w.kind in (3, 4)}}
+    for w in gen.words:                             # those `user` made: their offset, from the body
+        ref = gen.memo.get(w.xt)
+        if w.kind == 4 and ref in gen.threads and gen.threads[ref][1:2] == [("call", "Prim.upfetch")]:
+            names["user"].setdefault(w.cells[1], w.id)
+    lines, counts = [], Counter()
+    for w in gen.words:
+        ref = gen.memo.get(w.xt)
+        if not isinstance(ref, str) or w.kind == 0:
+            continue
+        if ref in gen.foots:
+            regs = gen.foots[ref][0]
+            counts["anywhere" if ALL in regs else "somewhere" if regs else "nothing"] += 1
+            lines.append(f"{w.id}: writes {', '.join(r_text(r, names) for r in regs) or 'nothing'}")
+        elif ref in gen.specs:
+            counts["no footprint"] += 1
+            lines.append(f"{w.id}: no footprint: {gen.no_foot.get(ref, 'unknown')}")
+    open(report_path, "w", newline="\n").write("".join(l + "\n" for l in lines))
+    print(f"{path}: {sum(t.startswith('theorem') for t in gen.fthms)} footprints proven; words with a Spec write:")
+    for r, n in counts.most_common():
+        print(f"  {n:4}  {r}")
+    for why, n in Counter(gen.no_foot.values()).most_common():
+        print(f"  no footprint: {n:4}  {why}")
+
+
 def main():
     args = sys.argv[1:]
     words_path, out_path = args[:2]
@@ -875,6 +1206,9 @@ def main():
         print(f"{report}: {len(findings)} findings")
         for why, n in Counter(gen.no_spec.values()).most_common():
             print(f"  no Spec: {n:4}  {why}")
+    if "--foots" in args:                           # what each word may write
+        i = args.index("--foots")
+        footprints(gen, *args[i + 1:i + 3])
     if "--yields" in args:                          # steps between pauses
         i = args.index("--yields")
         yields(gen, *args[i + 1:i + 4])
