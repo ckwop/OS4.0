@@ -218,6 +218,50 @@ theorem sha256out_foot : Foot sha256out 2 0 0 0 [Reg.all] [] [] := by
   match xs, zs, hx, hz with
   | [_, _], [], _, _ => exact ⟨kept_all, by simp [sha256out, FOut, agree_nil]⟩
 
+/-- `,` writes at the dictionary pointer, an address it reads from memory. -/
+theorem comma_foot : Foot comma 1 0 0 0 [Reg.all] [] [] := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [x], [], _, _ =>
+    refine ⟨kept_all, ?_⟩
+    simp only [List.cons_append, List.nil_append, comma]
+    split <;> simp [FOut, agree_nil]
+theorem header_foot : Foot header 2 0 0 0 [Reg.all] [] [] := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [n, a], [], _, _ =>
+    refine ⟨kept_all, ?_⟩
+    simp only [List.cons_append, List.nil_append, header]
+    repeat' split
+    all_goals simp [FOut, agree_nil]
+theorem searchList_foot : Foot searchList 3 1 0 0 [] [.any] [] := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [nt, n, a], [], _, _ =>
+    simp only [List.cons_append, List.nil_append, searchList]
+    split <;> simp [FOut, Kept, resMem, agree_cons, agree_nil, holds_any] <;> omega
+/-- The parsing words write only `>in`. -/
+theorem parseName_foot : Foot parseName 0 2 0 0 [⟨.user 16, .num 8⟩] [.any, .any] [] := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [], [], _, _ =>
+    have keep : ∀ v b, ¬ Writes [⟨.user 16, .num 8⟩] ⟨[], [], u⟩ b → wr m (u + 16) 8 v b = m b := by
+      intro v b hw
+      apply wr_apply_other
+      exact outside_one (ρ := ⟨[], [], u⟩) (b := u + 16) (l := 8) (by simp [Val.eval]) (by simp [Val.eval]) hw
+    simp only [List.nil_append, parseName]
+    split
+    · exact ⟨fun b _ hw => keep _ b hw, by simp [FOut, agree_cons, agree_nil, holds_any]; omega⟩
+    · exact ⟨fun b _ hw => keep _ b hw, by simp [FOut, agree_cons, agree_nil, holds_any]; omega⟩
+theorem parse_foot : Foot parse 1 2 0 0 [⟨.user 16, .num 8⟩] [.any, .any] [] := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [c], [], _, _ =>
+    simp only [List.cons_append, List.nil_append, parse]
+    refine ⟨fun b _ hw => ?_, by simp [FOut, agree_cons, agree_nil, holds_any]; omega⟩
+    apply wr_apply_other
+    exact outside_one (ρ := ⟨[c], [], u⟩) (b := u + 16) (l := 8) (by simp [Val.eval]) (by simp [Val.eval]) hw
+
 end Prim
 
 theorem throwM_foot : Foot throwM 1 0 0 0 [] [] [] := by

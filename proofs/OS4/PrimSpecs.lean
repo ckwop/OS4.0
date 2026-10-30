@@ -91,6 +91,35 @@ theorem bye_spec : Spec bye 0 0 0 0 := by prim_spec
 theorem barrier_spec : Spec barrier 0 0 0 0 := by prim_spec
 theorem sha256block_spec : Spec sha256block 4 0 0 0 := by prim_spec
 theorem sha256out_spec : Spec sha256out 2 0 0 0 := by prim_spec
+theorem comma_spec : Spec comma 1 0 0 0 := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [x], [], _, _ =>
+    simp only [List.cons_append, List.nil_append, comma]
+    split <;> simp [Out, exists_prefix] <;> omega
+theorem searchList_spec : Spec searchList 3 1 0 0 := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [nt, n, a], [], _, _ =>
+    simp only [List.cons_append, List.nil_append, searchList]
+    split <;> simp [Out, exists_prefix] <;> omega
+theorem parseName_spec : Spec parseName 0 2 0 0 := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [], [], _, _ =>
+    simp only [List.nil_append, parseName]
+    split <;> simp [Out, exists_prefix] <;> omega
+theorem parse_spec : Spec parse 1 2 0 0 := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [c], [], _, _ => simp [parse, Out, exists_prefix]; omega
+theorem header_spec : Spec header 2 0 0 0 := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [n, a], [], _, _ =>
+    simp only [List.cons_append, List.nil_append, header]
+    repeat' split
+    all_goals simp [Out, exists_prefix]
 
 end Prim
 
@@ -101,6 +130,6 @@ theorem throwM_spec : Spec throwM 1 0 0 0 := by
   match xs, zs, hx, hz with
   | [n], [], _, _ =>
     simp only [List.cons_append, List.nil_append, throwM]
-    split <;> simp [Out, exists_prefix]
+    split <;> simp [Out, exists_prefix] <;> omega
 
 end OS4

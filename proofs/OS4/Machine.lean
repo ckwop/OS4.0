@@ -21,7 +21,7 @@ Abstractions, which the proofs inherit:
   `(s")` is decoded by the generator into the two literals it pushes.
 * Memory is bytes, little endian, at 64-bit addresses, all of it readable and
   writable. The data and return stacks are not in it, so `sp@` and `rp@`
-  are not modelled.
+  push unknowns (`kval`).
 * Addresses in the dictionary are unknowns: `wordAddr name`, the address of
   the word with that name, plus an offset, or for reserved memory `dictTop`
   less an offset. Nothing proven depends on where
@@ -382,6 +382,107 @@ opaque sha256Out : Mem → Cell → Cell → Mem
   | s => s.fail .underflow
 @[forth] def sha256out : Sem
   | ⟨a :: st :: s, r, m, u, e⟩ => .ok ⟨s, r, sha256Out m st a, u, e⟩
+  | s => s.fail .underflow
+
+/-! ### The compiler and the interpreter (compiler.s, text.s) -/
+
+/-- The kernel variables the compiler keeps: the dictionary pointer, the
+newest header, and the end of the dictionary's space. -/
+abbrev dpA : Cell := kernelAddr "dp"
+abbrev latestA : Cell := kernelAddr "latest"
+abbrev dictEndA : Cell := kernelAddr "'dict-end"
+
+/-- `,` ( x -- ): store x at the dictionary pointer and step it, or throw
+-8 if fewer than 8 bytes are left (`comma_sub`). -/
+@[forth] def comma : Sem
+  | ⟨x :: s, r, m, u, e⟩ =>
+    let dp := rd m dpA 8
+    if (rd m dictEndA 8 - 8).ult dp then .error ⟨.throw (-8), m, e⟩
+    else .ok ⟨s, r, wr (wr m dp 8 x) dpA 8 (dp + 8), u, e⟩
+  | s => s.fail .underflow
+
+/-- TOLOWER: A to Z become a to z. -/
+def lowerB (c : BitVec 8) : BitVec 8 := if c.toNat - 65 ≤ 25 ∧ 65 ≤ c.toNat then c + 32 else c
+
+/-- The n bytes at a and at b are equal, ignoring case. -/
+def nameEq (m : Mem) : Nat → Cell → Cell → Bool
+  | 0, _, _ => true
+  | n + 1, a, b => lowerB (m a) == lowerB (m b) && nameEq m n (a + 1) (b + 1)
+
+/-- The header at nt is not hidden, and is named by the u bytes at a. A
+header is its link (8 bytes), a flags and length byte, then the name. -/
+def nameMatch (m : Mem) (a u nt : Cell) : Bool :=
+  let fl := m (nt + 8)
+  (fl &&& 0x40) == 0 && (fl &&& 0x1f).setWidth 64 == u && nameEq m u.toNat a (nt + 9)
+
+/-- `search_sub`, walking at most n headers: some result, or none if it
+needs more. -/
+def walk (m : Mem) (a u : Cell) : Nat → Cell → Option Cell
+  | 0, _ => none
+  | n + 1, nt => if nt = 0 then some 0 else if nameMatch m a u nt then some nt
+                 else walk m a u n (rd m nt 8)
+
+/-- SEARCH-LIST ( addr u nt -- nt' | 0 ): from nt back along the links, the
+first header named addr u. On a list that never ends it never returns
+(`fuel`). -/
+noncomputable def searchList : Sem
+  | ⟨nt :: u :: a :: s, r, m, p, e⟩ =>
+    open Classical in
+    if h : ∃ n, (walk m a u n nt).isSome then
+      .ok ⟨(walk m a u (Classical.choose h) nt).get (Classical.choose_spec h) :: s, r, m, p, e⟩
+    else .error ⟨.fuel, m, e⟩
+  | s => s.fail .underflow
+
+/-- From index i, step on while i < n and the byte at tib + i passes p. -/
+def scan (m : Mem) (tib n : Cell) (p : BitVec 8 → Bool) : Nat → Cell → Cell
+  | 0, i => i
+  | k + 1, i => if n.ule i then i else if p (m (tib + i)) then scan m tib n p k (i + 1) else i
+
+/-- The user area's line: 'tib, #tib and >in (kernel.s's U_TIB, U_NTIB, U_TOIN). -/
+abbrev uTib : Cell := 32
+abbrev uNtib : Cell := 24
+abbrev uToin : Cell := 16
+
+/-- PARSE-NAME ( "name" -- addr u ), the kernel's (`parse_name_sub`): skip
+bytes up to a space, take bytes above it, and step past one delimiter. -/
+@[forth] def parseName : Sem := fun ⟨s, r, m, p, e⟩ =>
+  let tib := rd m (p + uTib) 8
+  let n := rd m (p + uNtib) 8
+  let i := scan m tib n (fun c => c.ule 32) n.toNat (rd m (p + uToin) 8)
+  if n.ule i then .ok ⟨0 :: (tib + i) :: s, r, wr m (p + uToin) 8 i, p, e⟩
+  else
+    let j := scan m tib n (fun c => 32 < c.toNat) n.toNat (i + 1)
+    let toin := if n.ule j then j else j + 1
+    .ok ⟨(j - i) :: (tib + i) :: s, r, wr m (p + uToin) 8 toin, p, e⟩
+
+/-- PARSE ( char "ccc<char>" -- addr u ), the kernel's (`parse_sub`): the
+bytes up to the delimiter (its low 32 bits) or the end of the line. -/
+@[forth] def parse : Sem
+  | ⟨c :: s, r, m, p, e⟩ =>
+    let tib := rd m (p + uTib) 8
+    let n := rd m (p + uNtib) 8
+    let i := rd m (p + uToin) 8
+    let j := scan m tib n (fun b => b.setWidth 32 != c.setWidth 32) n.toNat i
+    let toin := if n.ule j then j else j + 1
+    .ok ⟨(j - i) :: (tib + i) :: s, r, wr m (p + uToin) 8 toin, p, e⟩
+  | s => s.fail .underflow
+
+/-- HEADER ( addr u -- ): lay down a header named addr u at the dictionary
+pointer, aligned, and link it in as the newest (`header_sub`). -/
+@[forth] def header : Sem
+  | ⟨u :: a :: s, r, m, p, e⟩ =>
+    if u = 0 then .error ⟨.throw (-16), m, e⟩
+    else if (31 : Cell).ult u then .error ⟨.throw (-19), m, e⟩
+    else
+      let dp := rd m dpA 8
+      if (rd m dictEndA 8 - 64).ult dp then .error ⟨.throw (-8), m, e⟩
+      else
+        let h := (dp + 7) &&& ~~~7
+        let m1 := wr m h 8 (rd m latestA 8)
+        let m2 := wr m1 latestA 8 h
+        let m3 := wr m2 (h + 8) 1 u
+        let m4 := cmoveM u.toNat m3 a (h + 9)
+        .ok ⟨s, r, wr m4 dpA 8 ((h + 9 + u + 7) &&& ~~~7), p, e⟩
   | s => s.fail .underflow
 
 end Prim

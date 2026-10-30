@@ -18,8 +18,12 @@ With --yields CONFIG COSTS REPORT, also writes counted words for the roots
 CONFIG names, with their Costs (proofs/OS4/Yield.lean), and fails on a loop
 without a pause that CONFIG does not list as uncounted.
 
+With --foots FOOTS REPORT, also writes each word's footprint (what it may
+write; proofs/OS4/Footprint.lean) and a report of them.
+
 Usage: forth2lean.py words.txt Words.lean [--require roots.txt]
-         [--specs Specs.lean --findings findings.txt] [--yields yields.txt Costs.lean report.txt]
+         [--specs Specs.lean --findings findings.txt] [--foots Foots.lean footprints.txt]
+         [--yields yields.txt Costs.lean report.txt]
 """
 
 import bisect
@@ -48,6 +52,9 @@ PRIMS = {
     "emit": "Prim.emit", "syscall": "Prim.syscall", "bye": "Prim.bye",
     "dmb": "Prim.barrier", "dsb": "Prim.barrier", "execute": "executeM",
     "sha256-block": "Prim.sha256block", "sha256-out": "Prim.sha256out",
+    # The compiler and the interpreter.
+    ",": "Prim.comma", "search-list": "Prim.searchList", "parse-name": "Prim.parseName",
+    "parse": "Prim.parse", "header": "Prim.header",
 }
 # Kernel words that only push an address or value (defconst, defuser, deftramp).
 KCONST = {
@@ -56,6 +63,7 @@ KCONST = {
     "dict-end", "task-rlimit", "task-slimit", "task-name", "task-r0", "task-s0", "task-rp",
     "task-sp", "task-wake", "task-status", "task-link", "blk", "handler", "errname", "'throw",
     "'quit", "latest", "dp", "docon", "dovar", "docol", "counter-hz", "args",
+    "sp@", "rp@",                                   # the stacks are not in memory here: unknown
 }
 # Stack effects of the primitives, as proven in proofs/OS4/PrimSpecs.lean:
 # (data in, data out, return in, return out).
@@ -73,6 +81,8 @@ EFFECTS = {
     "pdo": (2, 0, 0, 2), "i": (0, 1, 1, 1), "j": (0, 1, 3, 3), "unloop": (0, 0, 2, 0),
     "pause": (0, 0, 0, 0), "ask": (0, 1, 0, 0), "emit": (1, 0, 0, 0), "syscall": (5, 1, 0, 0),
     "bye": (0, 0, 0, 0), "barrier": (0, 0, 0, 0), "sha256block": (4, 0, 0, 0), "sha256out": (2, 0, 0, 0),
+    "comma": (1, 0, 0, 0), "searchList": (3, 1, 0, 0), "parseName": (0, 2, 0, 0), "parse": (1, 2, 0, 0),
+    "header": (2, 0, 0, 0),
 }
 PRIM_SPECS = {f"Prim.{p}": e + (f"Prim.{p}_spec",) for p, e in EFFECTS.items()}
 PRIM_SPECS["throwM"] = (1, 0, 0, 0, "throwM_spec")
@@ -204,6 +214,9 @@ PRIM_FOOTS = {
     "pdo": ([], [], [A(0), A(1)]), "i": ([], [R(0)], [R(0)]),
     "j": ([], [R(2)], [R(0), R(1), R(2)]),
     "syscall": ([ALL], [ANY], []), "sha256block": ([ALL], [], []), "sha256out": ([ALL], [], []),
+    "comma": ([ALL], [], []), "header": ([ALL], [], []),
+    "parseName": ([(("user", 16), ("num", 8))], [ANY, ANY], []),
+    "parse": ([(("user", 16), ("num", 8))], [ANY, ANY], []),
 }
 FOOTS = {f"Prim.{p}": PRIM_FOOTS.get(p, ([], [ANY] * e[1], [])) + (f"Prim.{p}_foot",)
          for p, e in EFFECTS.items()}
@@ -1100,6 +1113,8 @@ def comments(gen, kernel):
         defs = source.get(name, [])
         if len(defs) != len(ws):
             counts["source and dictionary disagree"] += len(ws)
+            findings.append(f"{name}: compiled {len(ws)} times, but {len(defs)} colon definitions found "
+                            f"in the boot files: its stack comments are not checked")
             continue
         for w, (where, comment) in zip(ws, defs):
             ref = gen.memo.get(w.xt)

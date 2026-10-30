@@ -127,7 +127,7 @@ test: check-course test-hosted test-virt
 check-course:
 	python3 tools/check-course.py
 
-# Proofs (docs/verification.md, DECISIONS.md #105-107): dump the hosted build's
+# Proofs (docs/verification.md, DECISIONS.md #105-111): dump the hosted build's
 # dictionary as compiled, generate the Lean definitions of its words and their
 # stack-effect and footprint theorems and the system tasks' step counts, then
 # check every proof.

@@ -25,10 +25,10 @@ that no longer holds fails the build, as a test would.
 
 | | |
 | --- | --- |
-| Colon words modelled | 525 of 577 |
-| Not modelled | The compiler and interpreter primitives (`,`, `parse`, `parse-name`, `search-list` ...) and the words that use them |
-| Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown |
-| Proven | 651 stack effects and 264 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses |
+| Colon words modelled | 567 of 582, `interpret` and `find-name` included |
+| Not modelled | Code fields (`cf,`, `does-cf,`), the kernel's `parse-find`, defining words with DOES>, and the words that use them |
+| Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown; the compiler and interpreter primitives (`,`, `header`, `parse`, `parse-name`, `search-list`) |
+| Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses |
 | Found | A listener and the TCP timer sweep that could run without pausing, both fixed (#108, #109) |
 | Shown to catch | A signed `u>` that passes all 36 hosted tests fails its proof |
 
@@ -44,10 +44,10 @@ the word's own theorem:
 
 Footprints in detail (DECISIONS.md #111):
 
-- **659 footprints proven,** one for every word with a stack effect. 542
-  write nothing, 52 write named places (`claim` only `dict-owner`; `ms` only
+- **679 footprints proven,** one for every word with a stack effect. 544
+  write nothing, 53 write named places (`claim` only `dict-owner`; `ms` only
   its own task's `task-status` and `task-wake`; `+!` only the cell at its
-  address), and 63 may write anywhere. `build/footprints.txt` lists each.
+  address), and 80 may write anywhere. `build/footprints.txt` lists each.
 - **Values are symbolic:** an input plus an offset, the user area plus an
   offset, a word's address, a number, or unknown. They follow the stacks
   through `swap`, `>r`, `+` of a literal and every proven callee.
@@ -59,7 +59,7 @@ Footprints in detail (DECISIONS.md #111):
 
 Stack effects in detail (DECISIONS.md #107):
 
-- **651 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems. 525 of 577 colon words are modelled, since the generator decodes `(s")` (now a colon word) and stops at the data a `message:` leaves after a word.
+- **679 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems. 567 of 582 colon words are modelled, since the generator decodes `(s")` (now a colon word) and stops at the data a `message:` leaves after a word, and the compiler and interpreter primitives are modelled.
 - **264 stack comments proven in their own terms:** none disagree with their code.
 - **What is still missing a proven effect:**
   - words whose effect depends on their data (`?dup`, `digit?`, `get-order`);
@@ -314,7 +314,7 @@ step counts. V2, V4 and V6 all depend on it.
 - **Done when:** `fill`, `cmove` and the stack and arithmetic words have footprints,
   and the bridge proves them for colon words. Then V2 and V4 build on it.
 - **Status:** writes done (#111): every primitive's footprint, `thread_foot`
-  and `loopThread_foot`, and 659 words' footprints generated and proven.
+  and `loopThread_foot`, and 679 words' footprints generated and proven.
   Still to do: reads (noninterference); letting callers use a hand-written
   footprint such as `fill-ref`'s in place of the generated one; and
   addresses read from memory, such as a connection's buffer, which need an
@@ -352,10 +352,10 @@ An app is verified as the base is, in its own repository, against a tagged
   its callees' theorems, not their code).
 - **Lean versions:** pin the toolchain, and upgrade deliberately, as a change
   of its own.
-- **Build time:** about fifteen minutes under emulation, and nearly as long
-  after a Forth change (TD-30). Until a typical change re-proves in a minute or
-  two, the proofs are a gate of their own: `make proofs`, run at each
-  milestone. Phase 1 fixes this first.
+- **Build time:** seconds with nothing changed, about a minute after a change
+  to a late boot file, but eight or nine minutes after a change to `core.fs`
+  or the model (TD-30). Until a typical change re-proves in a minute or two,
+  the proofs are a gate of their own: `make proofs`, run at each milestone.
 - **Model drift:** each new kind of proof adds generated semantics beside the
-  plain one (step counts now, footprints next). Proving them equal is cheaper
+  plain one (step counts now). Footprints are proven over the plain one (#111). Proving them equal is cheaper
   while there are few, so do it as part of V9.
