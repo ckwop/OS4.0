@@ -31,6 +31,10 @@ Keep Lake's build on the `os4-lake` volume: the working copy is under OneDrive.
   checker and bridge, and the primitives' effects (DECISIONS.md #107).
 - `OS4/Footprint.lean`, `OS4/FootPrims.lean`: what a word may write (#111).
 - `OS4/Yield.lean`: steps between pauses (#108); `yields.txt` configures it.
+- `OS4/Steps.lean`: invariants of a thread, checked one instruction at a
+  time; `run_congr` compares two threads under one; `Frame`, what a word may
+  write whatever its stack does.
+- `OS4/Search.lean`, `OS4/Isolation.lean`: sandbox isolation (V2, #113).
 - `OS4/Core.lean`, `OS4/Refs.lean`, `OS4/Memory.lean`, `OS4/Loops.lean`,
   `OS4/Semaphores.lean`: hand-written theorems.
 - `roots.txt`: words the proofs need, which must stay modelled.

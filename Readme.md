@@ -173,7 +173,7 @@ The verification track ([docs/verification.md](docs/verification.md)) runs besid
 | | V0 | Spike: Lean definitions generated from the compiled dictionary | Done |
 | 1 | V1 | Proofs in the suite: every fixed stack effect proven compositionally (done); proofs fast enough for `make test`; interpreter primitives modelled; reference definitions | In progress |
 | 1 | V9 | Footprints: what each word may read and write, proven compositionally (writes done) | In progress |
-| 2 | V2 | Sandbox isolation: a sandboxed task can run only the exposed words | Not started |
+| 2 | V2 | Sandbox isolation: a sandboxed task can run only the exposed words (INTERPRET proven; the exposed words next) | In progress |
 | 2 | V6 | Tasks: the system tasks pause within bounded steps (done); a stopped task leaves nothing broken; mutual exclusion, lock discipline | In progress |
 | 2 | V10 | Proofs for an app: the MUD's tasks yield and its commands stay isolated | Not started |
 | 2 | V3 | Crash-safe records: after a crash, `record@` gives the old record or the new one | Not started |

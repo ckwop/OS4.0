@@ -116,6 +116,12 @@
       "description": "`fill-ref` equals the `fill` primitive's model, by induction over its loop (`fill_loop`); `fill_ref_foot` then narrows its generated footprint, \"anywhere\", to its n bytes."
     },
     {
+      "file": "proofs/OS4/Isolation.lean",
+      "pattern": "^theorem interpret_isolated",
+      "title": "Sandbox isolation",
+      "description": "A task whose search order is the sandbox alone executes only the sandbox's words: replace EXECUTE in INTERPRET by anything that agrees on their xts, and the result is the same for any line. `R` above says what each point of INTERPRET's thread knows; `Steps.lean` has `run_congr`, which compares two threads under an invariant, and the frames that show what each word INTERPRET calls may write. Still assumed (`hkeep`): that the sandbox's own words keep the setting."
+    },
+    {
       "file": "Makefile",
       "pattern": "^\\$\\(GENERATED\\):",
       "title": "Running them",

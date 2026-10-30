@@ -376,6 +376,29 @@ theorem fill_ref_foot : Foot Words.«fill-ref» 3 0 0 0 [⟨.arg 2 0, .arg 1 0�
 
 <!-- 14 -->
 <section class="slide" data-code="20">
+  <h2>Sandbox isolation</h2>
+  <pre class="code" data-src="proofs/OS4/Isolation.lean" data-step="1">theorem interpret_isolated (B : Box) (hB : B.Ok)
+…
+    (d : Cell → Sem) (hd : ∀ xt, B.Allowed xt → d xt = dispatch xt)
+    (s : S) (hu : s.up = B.p) (hm : s.mem = B.m0) :
+    loopThread (Words.«interpret».code.set 29 (.call (execWith d))) s = Words.«interpret» s := by</pre>
+  <div class="src"><a href="../../proofs/OS4/Isolation.lean" data-ref="proofs/OS4/Isolation.lean">proofs/OS4/Isolation.lean › interpret_isolated</a></div>
+  <ul class="points below">
+    <li data-step="1">EXECUTE replaced by anything that agrees on the sandbox's xts: the same result, for any line</li>
+    <li data-step="2">An invariant at each of INTERPRET's 49 instructions, checked one instruction at a time</li>
+    <li data-step="3">Frames: <code>parse-name</code> writes only <code>&gt;in</code>, <code>number?</code> only <code>base</code></li>
+    <li data-step="4">Still assumed: the sandbox's own words keep the setting</li>
+  </ul>
+  <div class="talk">
+    <p>The brief's hard rule says a player-facing wordlist must never reach the full dictionary. Here it is as a theorem about interpret, as compiled. In the model, execute is an unknown function. So the theorem says: take interpret, and replace its execute with anything at all that agrees with the real one on the sandbox's words. The result is the same, whatever the line holds. So nothing outside the sandbox can make a difference, which means nothing outside it runs.</p>
+    <p>The proof is an invariant: a statement at each of interpret's forty-nine instructions about what the stack holds. After find name, the top is zero or one of the sandbox's headers. That header is followed to name to x t and execute. And state is zero, so the compiling branches are never reached. Each instruction is checked on its own.</p>
+    <p>For that, the invariant must survive every word interpret calls. Frames show what each may write: parse name only the to in cell, number only base, the rest nothing. None of those touch the search order, state, or the sandbox's headers.</p>
+    <p>One thing is still assumed: that the sandbox's own words, when they run, keep that setting. That's the next theorem, word by word, from their footprints.</p>
+  </div>
+</section>
+
+<!-- 15 -->
+<section class="slide" data-code="21">
   <h2>Running the proofs</h2>
   <pre class="code" data-step="1">docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs           <span class="c"># everything</span>
 docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-extract   <span class="c"># just generate</span></pre>
@@ -399,8 +422,8 @@ docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-e
   </div>
 </section>
 
-<!-- 15 -->
-<section class="slide" data-code="21">
+<!-- 16 -->
+<section class="slide" data-code="22">
   <h2>When a proof fails</h2>
   <ul class="points">
     <li data-step="1"><b>A new primitive:</b> a model in <code>Machine.lean</code>, its effect in <code>PrimSpecs.lean</code>, its footprint in <code>FootPrims.lean</code>, entries in <code>forth2lean.py</code>'s <code>PRIMS</code> and <code>EFFECTS</code> (and <code>PRIM_FOOTS</code> if it writes or moves values). Until then, every word that uses it is left out</li>
@@ -416,8 +439,8 @@ docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-e
   </div>
 </section>
 
-<!-- 16 -->
-<section class="slide" data-code="22">
+<!-- 17 -->
+<section class="slide" data-code="23">
   <h2>What is trusted, and what comes next</h2>
   <div class="cols even">
     <ul class="points">
@@ -427,7 +450,7 @@ docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-e
     </ul>
     <ul class="points">
       <li data-step="3"><b>Next:</b> proofs fast enough for <code>make test</code>; what words read</li>
-      <li data-step="3"><b>Before players:</b> sandbox isolation; a stopped task leaves nothing broken; crash-safe records; the MUD's own proofs</li>
+      <li data-step="3"><b>Before players:</b> the sandbox's own words keep it isolated; a stopped task leaves nothing broken; crash-safe records; the MUD's own proofs</li>
       <li data-step="4"><b>Before the internet:</b> the network survives any input</li>
       <li data-step="4"><b>Depth:</b> TCP's state machine, primitives against the assembly, cryptography</li>
     </ul>
@@ -435,12 +458,12 @@ docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-e
   <div class="talk">
     <p>Every proof rests on something unproven, and here it's written down. The models of the primitives, written to mirror the assembly but not proven against it. The specifications of catch and throw. The dumper, and the generator's decoding of threads. And Lean's own kernel. Plus one deliberate abstraction: whatever is outside the task is unknown, so theorems hold whatever it does.</p>
     <p>Notice the difference between the generator's two jobs. If it infers a wrong certificate, the check fails, so that part needn't be trusted. If it decoded a thread wrongly, Lean would prove things about the wrong word. That's why the decoding is kept small, and listed as trusted.</p>
-    <p>The verification plan sets the order of what's next. First, proofs fast enough to run on every change, and footprints for what words read. Before players arrive: that the sandbox really is isolated, that a task stopped at any point leaves nothing broken, that records survive a crash, and proofs for the MUD itself.</p>
+    <p>The verification plan sets the order of what's next. First, proofs fast enough to run on every change, and footprints for what words read. Before players arrive: that the sandbox's own words keep it isolated, that a task stopped at any point leaves nothing broken, that records survive a crash, and proofs for the MUD itself.</p>
     <p>Before the system faces the internet: that the network survives any input. And later, for depth: the TCP state machine, the primitives against their assembly, and the cryptography.</p>
   </div>
 </section>
 
-<!-- 17 -->
+<!-- 18 -->
 <section class="slide">
   <h2>Questions to think about…</h2>
   <ol class="questions">
@@ -449,7 +472,7 @@ docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-e
     <li>The step counts found two loops that passed every test. What would a test that finds them look like, and why is the proof cheaper?</li>
   </ol>
   <div class="talk">
-    <p>That's the proofs, and the end of the course. Theorems about the dictionary as compiled, generated for every word the model can express: stack effects, steps between pauses, and footprints, each from a certificate and a bridge. Proofs by hand for what words compute. And a written list of what is still trusted.</p>
+    <p>That's the proofs, and the end of the course. Theorems about the dictionary as compiled, generated for every word the model can express: stack effects, steps between pauses, and footprints, each from a certificate and a bridge. Proofs by hand for what words compute, and for what the sandbox can reach. And a written list of what is still trusted.</p>
     <p>Three questions to think about: why the generator is trusted for one job and not the other, what anywhere really means, and why a proof found what the tests missed. Thank you for listening. The code tours are there whenever you want to read the real thing.</p>
   </div>
 </section>
