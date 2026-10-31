@@ -6,3 +6,5 @@ hex -1 . -1 u. decimal
 2 base ! 1010 . decimal
 36 base ! z . decimal
 hex 1A2B decimal .
+2 base ! 101 1 base ! .
+decimal 7 .

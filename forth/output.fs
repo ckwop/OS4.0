@@ -43,7 +43,8 @@ user task-buffers
 
 user hld
 : <#     ( -- )  numbuf /numbuf + hld ! ;
-: hold   ( c -- )  -1 hld +!  hld @ c! ;
+: hold   ( c -- )  \ -17 once numbuf is full, whatever base is
+  hld @ numbuf - 1- /numbuf u< 0= if -17 throw then  -1 hld +!  hld @ c! ;
 : digit  ( u -- c )  dup 9 > if 7 + then 48 + ;
 : #      ( ud -- ud' )  0 base @ um/mod >r  base @ um/mod  r> rot digit hold ;
 : #s     ( ud -- 0 0 )  begin # 2dup or 0= until ;
@@ -96,6 +97,7 @@ variable messages
 -10 message: division by zero
 -11 message: result out of range
 -16 message: missing name
+-17 message: pictured numeric output string overflow
 -19 message: name too long
 -24 message: invalid numeric argument
 -267 message: no room for another user variable

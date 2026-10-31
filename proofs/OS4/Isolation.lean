@@ -14,10 +14,12 @@ What it assumes, besides the model:
 
 * the setting (`Box.Ok`): the search order is the sandbox alone, which is not
   the compilation wordlist; STATE is 0; the sandbox's headers form a chain
-  that ends; and the dictionary bytes this rests on are not in the first 24
-  bytes of the task's user area (where `base` and `>in` are);
+  that ends; the dictionary bytes this rests on lie outside the task's
+  512-byte user area; and its pictured-output buffer (`numbuf`) lies apart
+  from all of them;
 * that the sandbox's own words keep this setting when they run (`hkeep`).
-  That is the next theorem to prove, word by word, from their footprints.
+  Those that compute are proven to here (`sandbox_keeps`), and those that
+  print in `Printing.lean`, given the task's own `type` and `bye`.
 -/
 
 namespace OS4.Isolation
@@ -36,8 +38,10 @@ structure Box where
 namespace Box
 variable (B : Box)
 
-/-- The user-area bytes isolation rests on: STATE, `#order` and `context`. -/
-def userSupp (a : Cell) : Prop := (a - (B.p + 8)).toNat < 8 ∨ (a - (B.p + 352)).toNat < 16
+/-- The user-area bytes isolation rests on: STATE, `#order` and `context`, and
+`task-buffers`, which says where the task's buffers are. -/
+def userSupp (a : Cell) : Prop :=
+  ((a - (B.p + 8)).toNat < 8 ∨ (a - (B.p + 352)).toNat < 16) ∨ (a - (B.p + 176)).toNat < 8
 /-- The dictionary bytes it rests on: `current`, the wordlist's cell, and
 each header's link and length byte. -/
 def dictSupp (a : Cell) : Prop :=
@@ -59,7 +63,8 @@ structure Ok : Prop where
   state : rd B.m0 (B.p + 8) 8 = 0
   notCurrent : B.wid ≠ rd B.m0 currentA 8
   chain : Chain B.m0 (rd B.m0 B.wid 8) B.hs
-  apart : ∀ a, B.dictSupp a → 24 ≤ (a - B.p).toNat
+  apart : ∀ a, B.dictSupp a → 512 ≤ (a - B.p).toNat
+  bufs : ∀ a, B.supp a → 128 ≤ (a - (rd B.m0 (B.p + 176) 8 + 768)).toNat
 
 end Box
 
@@ -88,9 +93,9 @@ theorem Box.facts (hB : B.Ok) (hI : B.Inv m) :
     B.wid ≠ rd m currentA 8 ∧ Chain m (rd m B.wid 8) B.hs ∧
     ∀ h ∈ B.hs, rd m (h + 8) 1 = rd B.m0 (h + 8) 1 := by
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-  · rw [B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by simp [uOrder]; bv_omega)), hB.order]
-  · rw [B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by simp [uContext]; bv_omega)), hB.context]
-  · rw [B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inl (by bv_omega)), hB.state]
+  · rw [B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inl (Or.inr (by simp [uOrder]; bv_omega))), hB.order]
+  · rw [B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inl (Or.inr (by simp [uContext]; bv_omega))), hB.context]
+  · rw [B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inl (Or.inl (by bv_omega))), hB.state]
   · rw [B.rd_eq hI _ 8 fun i hi => Or.inr (Or.inl (by bv_omega))]
     exact hB.notCurrent
   · rw [B.rd_eq hI _ 8 fun i hi => Or.inr (Or.inr (Or.inl (by bv_omega)))]

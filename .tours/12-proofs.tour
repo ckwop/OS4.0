@@ -119,7 +119,7 @@
       "file": "proofs/OS4/Isolation.lean",
       "pattern": "^theorem interpret_isolated",
       "title": "Sandbox isolation",
-      "description": "A task whose search order is the sandbox alone executes only the sandbox's words: replace EXECUTE in INTERPRET by anything that agrees on their xts, and the result is the same for any line. `R` above says what each point of INTERPRET's thread knows; `Steps.lean` has `run_congr`, which compares two threads under an invariant, and the frames that show what each word INTERPRET calls may write. Still assumed (`hkeep`): that the sandbox's own words keep the setting."
+      "description": "A task whose search order is the sandbox alone executes only the sandbox's words: replace EXECUTE in INTERPRET by anything that agrees on their xts, and the result is the same for any line. `R` above says what each point of INTERPRET's thread knows; `Steps.lean` has `run_congr`, which compares two threads under an invariant, and the frames that show what each word INTERPRET calls may write. That the sandbox's own words keep the setting is proven in `sandbox_keeps` (those that compute) and `Printing.lean` (those that print, given the task's own `type` and `bye`; `isolated_given_terminal`)."
     },
     {
       "file": "Makefile",

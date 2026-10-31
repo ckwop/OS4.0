@@ -7,3 +7,5 @@ hex -1 . -1 u. decimal -1 FFFFFFFFFFFFFFFF  ok
 2 base ! 1010 . decimal 1010  ok
 36 base ! z . decimal Z  ok
 hex 1A2B decimal . 6699  ok
+2 base ! 101 1 base ! . pictured numeric output string overflow
+decimal 7 . 7  ok

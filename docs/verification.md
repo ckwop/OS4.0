@@ -28,8 +28,8 @@ that no longer holds fails the build, as a test would.
 | Colon words modelled | 567 of 582, `interpret` and `find-name` included |
 | Not modelled | Code fields (`cf,`, `does-cf,`), the kernel's `parse-find`, defining words with DOES>, and the words that use them |
 | Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown; the compiler and interpreter primitives (`,`, `header`, `parse`, `parse-name`, `search-list`) |
-| Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, given that its 11 output words keep the setting |
-| Found | A listener and the TCP timer sweep that could run without pausing, both fixed (#108, #109) |
+| Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, given only the task's own `type` and `bye` |
+| Found | A listener and the TCP timer sweep that could run without pausing (#108, #109); HOLD writing past `numbuf` in base 1 (#114). All fixed |
 | Shown to catch | A signed `u>` that passes all 36 hosted tests fails its proof |
 
 Three kinds of compositional proof now exist, all built the same way. The
@@ -108,7 +108,7 @@ Effort is relative: S is a session or two, XL is many.
 | | V9: footprints, what a word may read and write (writes done, #111) | M | V2, V4 and V6 all need it. |
 | | V1: models of the interpreter primitives, and `search-list-ref` | S | V2 needs `interpret` modelled. |
 | | Course: a lecture and tour on the proofs | S | Explains the approach once, while it has three kinds of proof: the model, certificates and bridges, stack effects, step counts, and what they found. |
-| 2. Before players | V2: sandbox isolation (INTERPRET done, #113) | M | The brief's hard rule, and what every player reaches. |
+| 2. Before players | V2: sandbox isolation (done but for the terminal's own words, #113, #114) | M | The brief's hard rule, and what every player reaches. |
 | | V6: a stopped task leaves nothing broken | M | A player can make the watchdog fire, or drop the connection, at any point. |
 | | V10: proofs for an app (the MUD first) | M | The MUD's own tasks and commands, on the base's results. |
 | | V3: crash-safe records | M | Player data survives a crash at any point. |
@@ -163,7 +163,7 @@ dictionary", becomes a theorem.
     buffers. This is a footprint theorem: everything else is unchanged.
 - **Done when:** these hold for the sandbox as `sandbox.fs` builds it. Adding
   a word to `expose` must keep them true or fail the build.
-- **Status:** isolation proven for INTERPRET (#113, `Isolation.lean`).
+- **Status:** isolation proven for INTERPRET (#113, `Isolation.lean`), and for the sandbox as built (#114).
   - **The theorem:** EXECUTE replaced by anything that agrees on the
     sandbox's xts gives the same result, for any line.
   - **Its setting:** the search order is the sandbox alone, which is not the
@@ -175,12 +175,23 @@ dictionary", becomes a theorem.
     isolation for them. The 40 that compute (arithmetic, stack words, `hex`,
     `decimal`, `(`, `\`) are proven to keep the setting from their frames
     (`sandbox_keeps`).
+  - **The words that print** (`Printing.lean`, #114): all 11 keep the
+    setting, given that the task's own `type` and `bye` do.
+    `isolated_given_terminal` is the theorem with only those two left.
+    - most are threads whose every call keeps it (`thread_keeps`);
+    - EMIT and `<#` store to their own user variables, `emitted` and `hld`;
+    - `."` never reaches its compiling branch, as STATE is 0;
+    - HOLD writes through `hld`. Its range check, added for this (#114),
+      keeps the byte inside the task's `numbuf`.
   - **Still assumed:**
-    - **`hout`:** the 11 words that print (`emit`, `type`'s callers, `.s`,
-      `words`, `bye`) keep the setting. They go through the task's `'type`
-      and `'bye` vectors, and number output writes through `hld`;
+    - **`htype`, `hbye`:** the task's `type` and `bye` keep the setting.
+      They run its terminal's vectors: the console's, or its connection's
+      `telnet-type` and `end-session`, which are the network's (V4, V6);
     - **`hdump`:** each header on the sandbox's chain runs one of the words
       the dump found there (the dumper is trusted).
+  - **Not yet stated:** that the exposed words write only their task's own
+    buffers and user variables. Their frames show it word by word; one
+    theorem over the list would give the brief's "bounded writes".
   - **The tools it added** (`Steps.lean`):
     - `run_congr`: two threads that agree wherever an invariant holds give
       the same result;

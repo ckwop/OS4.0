@@ -387,13 +387,14 @@ theorem fill_ref_foot : Foot Words.«fill-ref» 3 0 0 0 [⟨.arg 2 0, .arg 1 0�
     <li data-step="1">EXECUTE replaced by anything that agrees on the sandbox's xts: the same result, for any line</li>
     <li data-step="2">An invariant at each of INTERPRET's 49 instructions, checked one instruction at a time</li>
     <li data-step="3">Frames: <code>parse-name</code> writes only <code>&gt;in</code>, <code>number?</code> only <code>base</code></li>
-    <li data-step="4">Still assumed: the sandbox's own words keep the setting</li>
+    <li data-step="4">Its own words keep the setting: proven, given the terminal's <code>type</code> and <code>bye</code></li>
   </ul>
   <div class="talk">
     <p>The brief's hard rule says a player-facing wordlist must never reach the full dictionary. Here it is as a theorem about interpret, as compiled. In the model, execute is an unknown function. So the theorem says: take interpret, and replace its execute with anything at all that agrees with the real one on the sandbox's words. The result is the same, whatever the line holds. So nothing outside the sandbox can make a difference, which means nothing outside it runs.</p>
     <p>The proof is an invariant: a statement at each of interpret's forty-nine instructions about what the stack holds. After find name, the top is zero or one of the sandbox's headers. That header is followed to name to x t and execute. And state is zero, so the compiling branches are never reached. Each instruction is checked on its own.</p>
     <p>For that, the invariant must survive every word interpret calls. Frames show what each may write: parse name only the to in cell, number only base, the rest nothing. None of those touch the search order, state, or the sandbox's headers.</p>
-    <p>One thing is still assumed: that the sandbox's own words, when they run, keep that setting. That's the next theorem, word by word, from their footprints.</p>
+    <p>The sandbox's own words must keep that setting too, and they do. The ones that compute write nothing that matters. The ones that print are proven word by word, in printing dot lean. Only two things are left as assumptions: the task's own type and bye, which run its terminal, the console or its connection.</p>
+    <p>Those proofs found a real bug. Hold, which builds a number's digits backwards, never checked the edge of its buffer. In base one, a number never runs out of digits, so it wrote on past the buffer into the task's other memory. Now hold throws minus seventeen, the standard error for that, and the proof shows it writes only inside the buffer.</p>
   </div>
 </section>
 
@@ -450,7 +451,7 @@ docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-e
     </ul>
     <ul class="points">
       <li data-step="3"><b>Next:</b> proofs fast enough for <code>make test</code>; what words read</li>
-      <li data-step="3"><b>Before players:</b> the sandbox's own words keep it isolated; a stopped task leaves nothing broken; crash-safe records; the MUD's own proofs</li>
+      <li data-step="3"><b>Before players:</b> a stopped task leaves nothing broken; crash-safe records; the MUD's own proofs</li>
       <li data-step="4"><b>Before the internet:</b> the network survives any input</li>
       <li data-step="4"><b>Depth:</b> TCP's state machine, primitives against the assembly, cryptography</li>
     </ul>
@@ -458,7 +459,7 @@ docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-e
   <div class="talk">
     <p>Every proof rests on something unproven, and here it's written down. The models of the primitives, written to mirror the assembly but not proven against it. The specifications of catch and throw. The dumper, and the generator's decoding of threads. And Lean's own kernel. Plus one deliberate abstraction: whatever is outside the task is unknown, so theorems hold whatever it does.</p>
     <p>Notice the difference between the generator's two jobs. If it infers a wrong certificate, the check fails, so that part needn't be trusted. If it decoded a thread wrongly, Lean would prove things about the wrong word. That's why the decoding is kept small, and listed as trusted.</p>
-    <p>The verification plan sets the order of what's next. First, proofs fast enough to run on every change, and footprints for what words read. Before players arrive: that the sandbox's own words keep it isolated, that a task stopped at any point leaves nothing broken, that records survive a crash, and proofs for the MUD itself.</p>
+    <p>The verification plan sets the order of what's next. First, proofs fast enough to run on every change, and footprints for what words read. Before players arrive: that a task stopped at any point leaves nothing broken, that records survive a crash, and proofs for the MUD itself.</p>
     <p>Before the system faces the internet: that the network survives any input. And later, for depth: the TCP state machine, the primitives against their assembly, and the cryptography.</p>
   </div>
 </section>

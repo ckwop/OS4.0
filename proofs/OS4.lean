@@ -15,3 +15,4 @@ import OS4.Foots
 import OS4.Steps
 import OS4.Search
 import OS4.Isolation
+import OS4.Printing
