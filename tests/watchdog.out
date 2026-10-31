@@ -13,4 +13,11 @@ hog-task stopped
 : spin ( -- ) begin again ;  ok
 spin stopped by the watchdog: it ran too long without pausing
 .( the console carries on) the console carries on ok
+: burn ( -- ) counter counter-hz 5 / + begin dup counter u< until drop ;  ok
+: twice ( -- ) burn ['] abort catch drop burn ." survived" ;  ok
+twice survived ok
+: orphan ( -- ) 0 handler ! -1 throw ;  ok
+task orphan-task  ok
+' orphan orphan-task start  pause  orphan-task .task orphan-task stopped ok
+.( the console carries on) the console carries on ok
 0 watchdog  ok

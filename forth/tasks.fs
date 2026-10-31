@@ -53,11 +53,13 @@ user next-free                                    \ the next task in the pool's 
 variable free-tasks                                \ pooled tasks with nothing to do
 
 : report  ( n -- )  task-name 2@ type ." : " .error ;
-: run-task  ( i*x xt -- )  \ a task's whole life: run xt, report how it ended, sleep
-  catch ?dup if  ['] report catch if drop then  then   \ its terminal may be gone
-  unclaim  0 state !
+: retire  ( -- )  \ give up what this task holds and sleep for good
+  unclaim  release-all  0 state !
   pooled @ if  free-tasks @ next-free !  up@ free-tasks !  then   \ back to the pool
   begin stop again ;
+: run-task  ( i*x xt -- )  \ a task's whole life: run xt, report how it ended, sleep
+  catch ?dup if  ['] report catch if drop then  then   \ its terminal may be gone
+  retire ;
 create task-thread  ' run-task ,                 \ where a started task begins
 
 : (start)  ( x xt task cells -- )  \ the task's stack: x if cells is 3, then xt on top
@@ -96,7 +98,7 @@ variable max-workers  64 max-workers !
 variable restarts                                 \ how often a system task has been restarted
 : restarting  ( xt -- )  \ run xt for ever
   begin
-    dup catch ?dup if  ['] report catch if drop then  then
+    dup catch ?dup if  ['] report catch if drop then  release-all  then
     1 restarts +!  1000 ms
   again ;
 

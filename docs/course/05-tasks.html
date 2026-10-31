@@ -243,11 +243,13 @@
 <section class="slide" data-code="6">
   <h2>Giving a task work</h2>
   <div data-step="1">
-    <pre class="code" data-src="forth/tasks.fs">: <span class="w">run-task</span>  ( i*x xt -- )  <span class="c">\ a task's whole life: run xt, report how it ended, sleep</span>
-  catch ?dup if  ['] report catch if drop then  then   <span class="c">\ its terminal may be gone</span>
-  unclaim  0 state !
+    <pre class="code" data-src="forth/tasks.fs">: <span class="w">retire</span>  ( -- )  <span class="c">\ give up what this task holds and sleep for good</span>
+  unclaim  release-all  0 state !
   pooled @ if  free-tasks @ next-free !  up@ free-tasks !  then   <span class="c">\ back to the pool</span>
-  begin stop again ;</pre>
+  begin stop again ;
+: <span class="w">run-task</span>  ( i*x xt -- )  <span class="c">\ a task's whole life: run xt, report how it ended, sleep</span>
+  catch ?dup if  ['] report catch if drop then  then   <span class="c">\ its terminal may be gone</span>
+  retire ;</pre>
     <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:run-task">forth/tasks.fs › run-task</a></div>
   </div>
   <div class="cols below">
@@ -271,7 +273,7 @@
     </ul>
   </div>
   <div class="talk">
-    <p>Every task spends its whole life in this one word, run-task. It runs the work it was given under catch. If the work throws an error, it reports it, carefully, because a session's terminal may already be gone. Then it tidies up, returns itself to the pool if it came from one, and stops for good.</p>
+    <p>Every task spends its whole life in this one word, run-task. It runs the work it was given under catch. If the work throws an error, it reports it, carefully, because a session's terminal may already be gone. Then it retires: it gives up the dictionary and any semaphore it still holds, returns itself to the pool if it came from one, and stops for good. Retire is also where a worker goes if an error escapes every catch, so it never ends up running a REPL of its own.</p>
     <p>The neat part is how a task gets into run-task in the first place. Start doesn't call anything. It lays out the new task's stacks exactly as if the task had paused: the work's execution token on the data stack, and on the return stack the address of a cell that holds run-task. The next time pause comes round to that task, it restores those stacks and carries on, and carrying on means running run-task. There's no special first-run path at all: a new task is simply a task that hasn't run yet.</p>
     <p>To use it, give start an execution token and a task. Start-with also passes one value, such as the connection a session should serve.</p>
   </div>
@@ -333,6 +335,7 @@
   <div class="talk">
     <p>Earlier I said that between two pauses a task is alone, so it needs no locks. The flip side is the rule on this slide: if a task uses something shared across a pause, it does need one. Reading a disk block is the classic case. The task asks the device for the block, then pauses while it waits, and another task must not grab that buffer in the meantime.</p>
     <p>A semaphore here is two cells: which task holds it, and how many times. Get waits, pausing politely, until nobody holds it, then takes it. If the task already holds it, get just counts up, so a word that holds a lock can call another word that takes the same lock. Locked is the way to use one: it runs a word holding the semaphore, and releases it however that word ends, even if it throws an error.</p>
+    <p>There's one gap locked can't close. If the watchdog stops a task inside get, after it has taken the semaphore but before locked's catch is in place, nothing would ever release it. So every semaphore is on a chain, and whatever ends a task's work also runs release-all, which frees each one that task still holds. The proofs check that it frees exactly those, and touches nothing else.</p>
     <p>The base has a few of these. Blocks-lock guards the block buffers, tx-lock the network's send buffer, and files-lock the app disk. And the dictionary itself is claimed by whichever task is compiling, so two telnet sessions can't build definitions into each other.</p>
   </div>
 </section>
@@ -344,7 +347,7 @@
     <div>
       <pre class="code" data-src="forth/tasks.fs" data-step="1">: <span class="w">restarting</span>  ( xt -- )  <span class="c">\ run xt for ever</span>
   begin
-    dup catch ?dup if  ['] report catch if drop then  then
+    dup catch ?dup if  ['] report catch if drop then  release-all  then
     1 restarts +!  1000 ms
   again ;</pre>
       <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:restarting">forth/tasks.fs › restarting</a></div>
@@ -363,7 +366,7 @@
   <div class="callout" data-step="3">Two layers: <b>catch per item</b> inside the loop, and <b>restarting</b> around the loop.</div>
   <div class="talk">
     <p>Errors in Forth are thrown and caught, and tasks use that in two layers.</p>
-    <p>The outer layer is restarting. System tasks, like the network task and the REPL listeners, don't run their loop directly. They run it under restarting, which catches whatever ended the loop, reports it, waits a second so a persistent fault can't spin, and starts the loop again. A service can stumble, but it can't stop for good.</p>
+    <p>The outer layer is restarting. System tasks, like the network task and the REPL listeners, don't run their loop directly. They run it under restarting, which catches whatever ended the loop, reports it, lets go of any semaphore the loop still held, waits a second so a persistent fault can't spin, and starts the loop again. A service can stumble, but it can't stop for good.</p>
     <p>The inner layer is inside the loop itself. Here's the network task's loop. Every received frame is handled under its own catch, and so are the TCP timers. A malformed packet that trips an error costs exactly one packet, counted in net-errors, and the next frame is handled as normal. The same pattern runs through the base: catch per item, a frame or a connection, so one fault costs one item.</p>
   </div>
 </section>
@@ -407,7 +410,7 @@
   </div>
   <div class="talk">
     <p>Now the safety net for cooperative multitasking. The timer interrupts every ten milliseconds, and each tick adds one to a count for the running task. Every time a task pauses, the count goes back to zero; you saw that in pause's restore step.</p>
-    <p>A task that never pauses lets the count climb, and when it reaches the limit, five hundred ticks or five seconds by default, the timer handler makes that task throw <span data-say="minus two six two">-262</span>. It's an ordinary error, so it's caught like any other: by the REPL if it was the console, by run-task if it was a worker. The rest of the system never notices.</p>
+    <p>A task that never pauses lets the count climb, and when it reaches the limit, five hundred ticks or five seconds by default, the timer handler makes that task throw <span data-say="minus two six two">-262</span>. It's an ordinary error, so it's caught like any other: by the REPL if it was the console, by run-task if it was a worker. The rest of the system never notices. And whenever a throw is caught, the count starts again from zero, so the catcher always has time to clean up.</p>
     <p>Why count ticks rather than measure the time? Under emulation the host sometimes stalls the whole virtual machine. With a clock, the stall would be blamed on whichever task happened to be running, perhaps in the middle of holding a lock. Ticks that never arrived are simply never counted.</p>
   </div>
 </section>

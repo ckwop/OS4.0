@@ -115,6 +115,7 @@
 : throw  ( k*x n -- k*x | i*x n )
   ?dup if
     handler @ 0= if abort then   \ nothing to catch it: the kernel's ABORT
+    0 task-ticks !               \ the catcher gets a fresh watchdog budget to clean up in
     handler @ rp!  r> handler !  r> swap >r  sp! drop  r>
   then ;
 ' throw 'throw !                 \ kernel-detected errors throw from now on
@@ -147,9 +148,17 @@ variable next-user   user-free next-user !
 \ ---- Semaphores: a lock that a task can hold across pauses; others wanting it
 \ pause until it is free. Re-entrant: the holder may GET it again, and must
 \ RELEASE it as many times. LOCKED runs an xt holding a semaphore and releases
-\ it however the xt ends.
+\ it however the xt ends. The watchdog can throw between any two instructions,
+\ even inside GET or LOCKED before its CATCH, so each semaphore is also on a
+\ list: RELEASE-ALL frees every one a task holds, wherever it was stopped. It
+\ runs where a task's top level catches an error (RESET, RUN-TASK, RESTARTING).
 
-: semaphore  ( "name" -- )  create 0 , 0 , ;      \ holder (a task), count
+variable semaphores                                \ the newest; each links to the one before
+: semaphore  ( "name" -- )  create here  0 , 0 ,  semaphores @ ,  semaphores ! ;  \ holder, count, link
+: release-all  ( -- )  \ every semaphore this task holds
+  semaphores @ begin ?dup while
+    dup @ up@ = if  0 over !  0 over cell+ !  then  2 cells + @
+  repeat ;
 : get  ( sem -- )
   dup @ up@ = if  cell+ 1 swap +!  exit  then
   begin dup @ while pause repeat

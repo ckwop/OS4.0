@@ -152,7 +152,7 @@ user hidden                     \ ACCEPT does not echo: for passwords
   tib 'tib !  tib /tib accept  dup #tib !  0 >in !
   0= eof @ and 0= ;
 : prompt  ( -- )  state @ if ."  compiled" else ."  ok" then cr ;
-: reset   ( i*x -- )  begin depth while drop repeat  0 state !  0 error-blk !  0 error-line !  unclaim ;
+: reset   ( i*x -- )  begin depth while drop repeat  0 state !  0 error-blk !  0 error-line !  unclaim  release-all ;
 
 \ The REPL. Each line runs under CATCH: an error is reported, then the next
 \ line. The dictionary is given up between lines unless a definition is open.
@@ -166,5 +166,7 @@ user hidden                     \ ACCEPT does not echo: for passwords
 \ BYE ends this task's terminal session: on the console it shuts the system down.
 user 'bye   ' bye 'bye !
 : bye  ( -- )  'bye @ execute ;
-: (quit)  ( -- )  repl bye ;
+\ QUIT runs after a throw nothing caught. Only the console becomes a REPL again:
+\ any other task has lost its place, so it retires.
+: (quit)  ( -- )  up@ main-task <> if retire then  repl bye ;
 ' (quit) 'quit !

@@ -6,4 +6,11 @@ task hog-task
 : spin ( -- ) begin again ;
 spin
 .( the console carries on)
+: burn ( -- ) counter counter-hz 5 / + begin dup counter u< until drop ;
+: twice ( -- ) burn ['] abort catch drop burn ." survived" ;
+twice
+: orphan ( -- ) 0 handler ! -1 throw ;
+task orphan-task
+' orphan orphan-task start  pause  orphan-task .task
+.( the console carries on)
 0 watchdog

@@ -125,6 +125,7 @@ dodoes:
 	defconst "f-compile-only", w_fconly, F_CONLY
 	defconst "f-length", w_flength, F_LENMASK
 	defconst "watchdog-limit", w_watchdog, var_watchdog // ( -- addr ) 10 ms timer ticks; 0: off
+	defconst "task-ticks", w_task_ticks, var_task_ticks // ( -- addr ) ticks the running task has had without pausing
 	defuser	"base", w_base, U_BASE		// ( -- addr )
 	defuser	"state", w_state, U_STATE	// ( -- addr ) true while compiling
 	defuser	">in", w_toin, U_TOIN		// ( -- addr )

@@ -35,7 +35,7 @@
       "file": "forth/tasks.fs",
       "pattern": ": run-task  \\( i\\*x xt -- \\)",
       "title": "A task's whole life",
-      "description": "Every started task runs `run-task`: the work under `catch`, a report if it threw, back to the pool if it is pooled, then `stop` for good."
+      "description": "Every started task runs `run-task`: the work under `catch`, a report if it threw, then `retire` (just above): give up the dictionary and every semaphore still held, back to the pool if it is pooled, then `stop` for good. A worker whose error escapes every `catch` retires too (`(quit)` in `forth/interpreter.fs`)."
     },
     {
       "file": "forth/tasks.fs",
@@ -53,13 +53,13 @@
       "file": "forth/core.fs",
       "pattern": ": locked  \\( i\\*x xt sem -- j\\*x \\)",
       "title": "Sharing across a pause",
-      "description": "A semaphore is two cells: its holder and a count. `get` (just above) pauses until it is free, and counts up if this task already holds it. `locked` runs an xt holding the semaphore and releases it however the xt ends.\n\nUse one for anything shared that a task uses **across** a pause."
+      "description": "A semaphore is two cells: its holder and a count. `get` (just above) pauses until it is free, and counts up if this task already holds it. `locked` runs an xt holding the semaphore and releases it however the xt ends. The watchdog can still stop a task inside `get`, before that `catch` exists, so every semaphore is on a chain and `release-all` frees those a task holds when its work ends.\n\nUse one for anything shared that a task uses **across** a pause."
     },
     {
       "file": "forth/tasks.fs",
       "pattern": ": restarting  \\( xt -- \\)",
       "title": "Supervision",
-      "description": "System tasks run their loop under `restarting`: whatever ends the loop is reported, and the loop starts again a second later."
+      "description": "System tasks run their loop under `restarting`: whatever ends the loop is reported, any semaphore it still held is released, and the loop starts again a second later."
     },
     {
       "file": "forth/net/net.fs",

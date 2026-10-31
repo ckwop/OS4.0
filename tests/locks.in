@@ -16,3 +16,9 @@ task writer1  task writer2
 variable good
 : verify ( first c -- ) 0 good !  swap 30 0 do  dup i + block  dup c@ 3 pick =  swap b/buf 1- + c@ 3 pick = and  if 1 good +! then  loop 2drop  good @ . ;
 100 char a verify  200 char b verify
+: stranded ( -- ) door get -262 throw ;
+task strander
+' stranded strander start  5 yield  door @ .
+: held ( -- ) door get 1 0 / ;
+held
+door @ .

@@ -313,7 +313,7 @@ quiet: yes
   <h2>Handing over to Forth</h2>
   <div class="cols even">
     <div>
-      <pre class="code" data-src="forth/interpreter.fs" data-step="1">: <span class="w">(quit)</span>  ( -- )  repl bye ;
+      <pre class="code" data-src="forth/interpreter.fs" data-step="1">: <span class="w">(quit)</span>  ( -- )  up@ main-task &lt;&gt; if retire then  repl bye ;
 ' (quit) 'quit !</pre>
       <div class="src"><a href="../../forth/interpreter.fs" data-ref="forth/interpreter.fs:(quit)">forth/interpreter.fs › (quit)</a></div>
       <pre class="code below" data-src="forth/start.fs" data-step="2">.( OS 4.0) cr
@@ -331,6 +331,7 @@ quit</pre>
     <p>How does the assembly interpreter hand over? Through one variable. Near the end of the interpreter file, the Forth REPL is defined, and its execution token is stored in a kernel variable called tick-quit.</p>
     <p>Start dot fs is the last boot file, and it's three lines. Print the banner, start the application or the network REPL, and call quit.</p>
     <p>Quit resets the return stack and looks at tick-quit. Now that it's set, quit switches the input from the boot files to the terminal and runs the Forth loop. The assembly interpreter is never used again. Everything you type is read by the REPL written in Forth, which means it can be changed and extended in Forth, like the rest of the system.</p>
+    <p>Quit also runs after an error that nothing caught. Only the console gets a fresh REPL then. Any other task has lost its place, so it retires instead, which you'll meet in the lecture on tasks.</p>
   </div>
 </section>
 

@@ -58,7 +58,7 @@ PRIMS = {
 }
 # Kernel words that only push an address or value (defconst, defuser, deftramp).
 KCONST = {
-    "'tib", "#tib", ">in", "state", "base", "watchdog-limit", "f-length", "f-compile-only",
+    "'tib", "#tib", ">in", "state", "base", "watchdog-limit", "task-ticks", "f-length", "f-compile-only",
     "f-hidden", "f-immediate", "user-free", "/user", "main-task", "dict-owner", "'dict-end",
     "dict-end", "task-rlimit", "task-slimit", "task-name", "task-r0", "task-s0", "task-rp",
     "task-sp", "task-wake", "task-status", "task-link", "blk", "handler", "errname", "'throw",
