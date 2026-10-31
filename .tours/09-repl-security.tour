@@ -29,7 +29,7 @@
       "file": "forth/net/repl.fs",
       "pattern": ": session  \\(",
       "title": "A session",
-      "description": "The terminal, `bye` as end-session, the idle timeout, the setup and REPL under `catch`, then everything put back: `reset`, `only`, echo on, the console terminal, the connection closed."
+      "description": "`bye` as end-session and the idle timeout; then, under `catch`, the terminal (`(session)`) and the door's word. However that ends, even if the client is gone before the terminal is set up, everything is put back: the console terminal, the door's count, the connection closed, then `tidy-session` (`reset`, `only`, echo on). `proofs/OS4/Sessions.lean` proves the door's place comes back and the connection is closed whatever the work does."
     },
     {
       "file": "forth/interpreter.fs",

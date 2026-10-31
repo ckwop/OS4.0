@@ -121,24 +121,26 @@ admin-port ' admin-session 4 port-door admin-door</pre>
 <!-- 5 -->
 <section class="slide" data-code="5">
   <h2>A session's life</h2>
-  <pre class="code" data-src="forth/net/repl.fs" data-step="1">: <span class="w">session</span>  ( conn run-xt -- )
-  'bye @ &gt;r
-  swap telnet-terminal  0 eof !  ['] end-session 'bye !  0 state !  decimal
+  <pre class="code" data-src="forth/net/repl.fs" data-step="1">: (session)  ( conn run-xt -- )  swap telnet-terminal  execute ;
+: tidy-session  ( i*x -- )  reset  only  false hidden !  1 sessions-served +! ;
+: <span class="w">session</span>  ( conn door -- )
+  over &gt;r  dup &gt;r  'bye @ &gt;r  door.run @
+  0 eof !  ['] end-session 'bye !  0 state !  decimal
   session-idle @ io-timeout !
-  catch ?dup if  ['] farewell catch if drop then  then
-  reset  only  false hidden !  0 io-timeout !
-  term-conn @  console-terminal  close-connection
-  1 sessions-served +!  r&gt; 'bye ! ;</pre>
+  ['] (session) catch ?dup if  ['] farewell catch if drop then  then
+  console-terminal  0 io-timeout !  r&gt; 'bye !
+  -1 r&gt; door.count +!  r&gt; close-connection  tidy-session ;</pre>
   <div class="src"><a href="../../forth/net/repl.fs" data-ref="forth/net/repl.fs:session">forth/net/repl.fs › session</a></div>
   <ul class="points below">
-    <li data-step="1">Set up: this connection as the terminal; <code>bye</code> ends the session, not the system</li>
-    <li data-step="2">Ten minutes without input: -273, and the session ends</li>
-    <li data-step="3">However it ends, everything is put back before the task returns to the pool</li>
+    <li data-step="1">Set up: <code>bye</code> ends the session, not the system; ten minutes without input is -273</li>
+    <li data-step="2">The terminal and the door's word, both under <code>catch</code></li>
+    <li data-step="3">However it ends: the door's place back, the connection closed, the task put back. Proven</li>
   </ul>
   <div class="talk">
-    <p>This is a session from start to finish, and it runs in a pooled task. First, set up: make the connection this task's terminal, point bye at a word that just ends the session, because bye on the console would shut the machine down, and start in decimal, not compiling.</p>
-    <p>Then set the idle timeout, ten minutes. If the client goes quiet for that long, the next key it's waiting for throws <span data-say="minus two seven three">-273</span>, and the session ends.</p>
-    <p>The session itself runs under catch: the door's word, which for the sandbox and admin doors sets the search order and then runs the ordinary REPL. However it ends, by bye, by the client hanging up, by a timeout or by an error, everything is put back. The stack and state are reset, the search order goes back to the full one, the terminal goes back to the console, and the connection is closed. The task returns to the pool clean, ready for the next client.</p>
+    <p>This is a session from start to finish, and it runs in a pooled task. First, set up: keep the connection and the door on the return stack, point bye at a word that just ends the session, because bye on the console would shut the machine down, and start in decimal, not compiling. Then set the idle timeout, ten minutes. If the client goes quiet for that long, the next key it's waiting for throws <span data-say="minus two seven three">-273</span>, and the session ends.</p>
+    <p>Then, under catch, the session itself: make the connection this task's terminal, and run the door's word, which for the sandbox and admin doors sets the search order and then runs the ordinary REPL.</p>
+    <p>However it ends, by bye, by the client hanging up, by a timeout or by an error, everything is put back. The terminal goes back to the console, the door's count goes down, the connection is closed, and the stack, the state and the search order are reset. The task returns to the pool clean, ready for the next client.</p>
+    <p>Setting up the terminal used to come before the catch. It sends six bytes, and if the client had already gone, that send threw, and nothing was put back. The door kept the place taken, so sixteen such clients shut the sandbox door for good. A proof found it: it shows that whatever the session's work does, the door's place is given back and the connection closed.</p>
   </div>
 </section>
 

@@ -55,18 +55,6 @@ variable new-pw-len
   login? 0= if  ." Goodbye." cr exit  then
   only  s" full Forth" greet  repl ;
 
-\ A session runs its door's word with the connection as its terminal; however
-\ it ends, the task is put back as it was and the connection closed.
-: farewell  ( n -- )  cr .error ;                  \ why the session ended, if it can be told
-: session  ( conn run-xt -- )
-  'bye @ >r
-  swap telnet-terminal  0 eof !  ['] end-session 'bye !  0 state !  decimal
-  session-idle @ io-timeout !
-  catch ?dup if  ['] farewell catch if drop then  then
-  reset  only  false hidden !  0 io-timeout !
-  term-conn @  console-terminal  close-connection
-  1 sessions-served +!  r> 'bye ! ;
-
 \ ---- Doors: a port, the word that runs its sessions, how many it allows and
 \ has. An app makes its own with PORT-DOOR and serves it with SERVE-DOOR.
 
@@ -85,8 +73,21 @@ admin-port ' admin-session 4 port-door admin-door
 : door-of  ( conn -- door )  \ the door whose port it came in on
   c.lport @  doors @  begin  2dup door.port @ <>  while  door.next @  repeat  nip ;
 
-: run-session  ( conn -- )
-  dup door-of >r  r@ door.run @ session  -1 r> door.count +! ;
+\ A session runs its door's word with the connection as its terminal. However
+\ it ends, even if the client is gone before the terminal is set up, the
+\ door's place is given back, the connection closed and the task put back as
+\ it was (proofs/OS4/Sessions.lean).
+: farewell  ( n -- )  cr .error ;                  \ why the session ended, if it can be told
+: (session)  ( conn run-xt -- )  swap telnet-terminal  execute ;
+: tidy-session  ( i*x -- )  reset  only  false hidden !  1 sessions-served +! ;
+: session  ( conn door -- )
+  over >r  dup >r  'bye @ >r  door.run @
+  0 eof !  ['] end-session 'bye !  0 state !  decimal
+  session-idle @ io-timeout !
+  ['] (session) catch ?dup if  ['] farewell catch if drop then  then
+  console-terminal  0 io-timeout !  r> 'bye !
+  -1 r> door.count +!  r> close-connection  tidy-session ;
+: run-session  ( conn -- )  dup door-of session ;
 : turn-away  ( conn -- )  \ the door is full: say so, and close
   5000 io-timeout !
   dup >r  s" Too many sessions: try again later." r@ ['] send-line catch if drop 2drop then

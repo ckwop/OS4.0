@@ -451,7 +451,7 @@ docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-e
     </ul>
     <ul class="points">
       <li data-step="3"><b>Next:</b> proofs fast enough for <code>make test</code>; what words read</li>
-      <li data-step="3"><b>Before players:</b> a stopped task leaves nothing broken (its semaphores and the dictionary, done); crash-safe records; the MUD's own proofs</li>
+      <li data-step="3"><b>Before players:</b> a stopped task leaves nothing broken (its semaphores, the dictionary and its session, done); crash-safe records; the MUD's own proofs</li>
       <li data-step="4"><b>Before the internet:</b> the network survives any input</li>
       <li data-step="4"><b>Depth:</b> TCP's state machine, primitives against the assembly, cryptography</li>
     </ul>
@@ -459,7 +459,7 @@ docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make proofs-e
   <div class="talk">
     <p>Every proof rests on something unproven, and here it's written down. The models of the primitives, written to mirror the assembly but not proven against it. The specifications of catch and throw. The dumper, and the generator's decoding of threads. And Lean's own kernel. Plus one deliberate abstraction: whatever is outside the task is unknown, so theorems hold whatever it does.</p>
     <p>Notice the difference between the generator's two jobs. If it infers a wrong certificate, the check fails, so that part needn't be trusted. If it decoded a thread wrongly, Lean would prove things about the wrong word. That's why the decoding is kept small, and listed as trusted.</p>
-    <p>The verification plan sets the order of what's next. First, proofs fast enough to run on every change, and footprints for what words read. Before players arrive: that a task stopped at any point leaves nothing broken, that records survive a crash, and proofs for the MUD itself. The first of those has begun, and found two more bugs. A task the watchdog stopped inside get kept its semaphore for ever, and a worker whose error nothing caught became a REPL. Now a stopped task releases every semaphore it holds, and the proof shows it frees exactly those.</p>
+    <p>The verification plan sets the order of what's next. First, proofs fast enough to run on every change, and footprints for what words read. Before players arrive: that a task stopped at any point leaves nothing broken, that records survive a crash, and proofs for the MUD itself. The first of those has begun, and found two more bugs. A task the watchdog stopped inside get kept its semaphore for ever, and a worker whose error nothing caught became a REPL. Now a stopped task releases every semaphore it holds, and the proof shows it frees exactly those. The next proof, about sessions, found a third. A client that left before its session began kept its place at the door, so sixteen of them shut the door for good. Now the proof shows a session gives its place back and closes its connection, whatever its work does.</p>
     <p>Before the system faces the internet: that the network survives any input. And later, for depth: the TCP state machine, the primitives against their assembly, and the cryptography.</p>
   </div>
 </section>

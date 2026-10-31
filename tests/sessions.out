@@ -1,0 +1,10 @@
+OS 4.0
+\ A session ends cleanly however it ends, even if its client is gone before it starts  ok
+: dead-conn ( -- conn ) new-conn  sandbox-port over c.lport ! ;  ok
+: live ( -- n ) conns @ count-list ;  ok
+live .  sandbox-door door.count @ . 0 0  ok
+dead-conn sandbox-door admit  100 ms  ok
+live .  sandbox-door door.count @ . 0 0  ok
+: dead-clients ( n -- ) 0 ?do dead-conn sandbox-door admit 20 ms loop ;  ok
+20 dead-clients  200 ms  ok
+live .  sandbox-door door.count @ .  sessions-served @ . 0 0 21  ok

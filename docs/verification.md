@@ -28,8 +28,8 @@ that no longer holds fails the build, as a test would.
 | Colon words modelled | 567 of 582, `interpret` and `find-name` included |
 | Not modelled | Code fields (`cf,`, `does-cf,`), the kernel's `parse-find`, defining words with DOES>, and the words that use them |
 | Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown; the compiler and interpreter primitives (`,`, `header`, `parse`, `parse-name`, `search-list`) |
-| Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, given only the task's own `type` and `bye`; a task's cleanup frees exactly the semaphores it holds and its dictionary claim, and `locked` releases however its xt ends (V6) |
-| Found | A listener and the TCP timer sweep that could run without pausing (#108, #109); HOLD writing past `numbuf` in base 1 (#114); the virtio-net driver trusting the device's buffer id and length (#115, from an audit of every "anywhere" footprint); a semaphore held for good by a task the watchdog stopped inside `get` or `locked`, and a worker turned into a REPL by a throw nothing caught (#116). All fixed |
+| Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, given only the task's own `type` and `bye`; a task's cleanup frees exactly the semaphores it holds and its dictionary claim, and `locked` releases however its xt ends; a session gives its door's place back and closes its connection however its work ends (V6) |
+| Found | A listener and the TCP timer sweep that could run without pausing (#108, #109); HOLD writing past `numbuf` in base 1 (#114); the virtio-net driver trusting the device's buffer id and length (#115, from an audit of every "anywhere" footprint); a semaphore held for good by a task the watchdog stopped inside `get` or `locked`, and a worker turned into a REPL by a throw nothing caught (#116); a client gone before its session started keeping its place at the door, so sixteen shut the door for good (#117). All fixed |
 | Shown to catch | A signed `u>` that passes all 36 hosted tests fails its proof |
 
 Three kinds of compositional proof now exist, all built the same way. The
@@ -109,7 +109,7 @@ Effort is relative: S is a session or two, XL is many.
 | | V1: models of the interpreter primitives, and `search-list-ref` | S | V2 needs `interpret` modelled. |
 | | Course: a lecture and tour on the proofs | S | Explains the approach once, while it has three kinds of proof: the model, certificates and bridges, stack effects, step counts, and what they found. |
 | 2. Before players | V2: sandbox isolation (done but for the terminal's own words, #113, #114) | M | The brief's hard rule, and what every player reaches. |
-| | V6: a stopped task leaves nothing broken (semaphores and the dictionary done, #116) | M | A player can make the watchdog fire, or drop the connection, at any point. |
+| | V6: a stopped task leaves nothing broken (semaphores, the dictionary and sessions done, #116, #117) | M | A player can make the watchdog fire, or drop the connection, at any point. |
 | | V10: proofs for an app (the MUD first) | M | The MUD's own tasks and commands, on the base's results. |
 | | V3: crash-safe records | M | Player data survives a crash at any point. |
 | 3. Before the internet (milestone 11) | V4: the network survives any input | L | Every byte from anyone goes through it. |
@@ -287,24 +287,30 @@ This removes the largest trusted piece, the primitive models.
     error, it holds no semaphore and no dictionary claim, its connection is
     closed, and its task goes back to the pool. Phase 2 needs this one; the
     rest of V6 can wait.
-  - **Status** (`Semaphores.lean`, #116):
+  - **Status** (`Semaphores.lean`, #116; `Sessions.lean`, #117):
     - **Found:** the watchdog fires at any instruction outside `pause`. A task
       stopped inside `get`, or in LOCKED before its `catch`, kept the semaphore
       for good. And a throw caught near the end of the allowance left its
       catcher a few ticks to clean up; a second -262 there escaped every
-      catch, and ABORT ran a REPL in the worker.
+      catch, and ABORT ran a REPL in the worker. And `session` set up the
+      telnet terminal before its `catch`: if the client had already reset the
+      connection, that send threw -269 past the cleanup, so the door kept the
+      place and the connection was never freed.
     - **Fixed:** every semaphore is on a chain, and `release-all` frees those
       the task holds, run by `retire` (the end of `run-task`), `reset` and
       `restarting`. A caught throw restarts the watchdog's count. A throw
-      nothing catches retires any task but the console.
+      nothing catches retires any task but the console. `session` sets the
+      terminal up inside its `catch`, and gives the door's place back itself.
     - **Proven:** `release_all`, that `release-all` clears exactly the
       semaphores on the chain this task holds and writes nothing else (given
       the chain's semaphores do not overlap); `unclaim_frees`;
       `locked_releases`; and `cleanup_wired`, that `retire`, `run-task`,
-      `(quit)`, `reset` and `restarting` call them.
-    - **Still to do:** a session's connection is closed and its task pooled
-      however it ends (`session` in `net/repl.fs`; with V4); and the cleanup's
-      steps bounded, so its fresh allowance is proven enough rather than
+      `(quit)`, `reset` and `restarting` call them. `session_closes`: whatever
+      the session's work does, returning or throwing, `session` comes to
+      `close-connection` with the connection, the caller's return stack and
+      the door's count one less (given the work leaves the count alone).
+    - **Still to do:** that `close-connection` itself finishes; and the
+      cleanup's steps bounded, so its fresh allowance is proven enough rather than
       argued (the chain holds a handful of semaphores, made at boot).
 - **Watchdog (done for the system tasks; DECISIONS.md #108):** a task that pauses
   within bounded steps is never stopped (#48–56).

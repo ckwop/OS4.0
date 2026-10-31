@@ -1,0 +1,9 @@
+\ A session ends cleanly however it ends, even if its client is gone before it starts
+: dead-conn ( -- conn ) new-conn  sandbox-port over c.lport ! ;
+: live ( -- n ) conns @ count-list ;
+live .  sandbox-door door.count @ .
+dead-conn sandbox-door admit  100 ms
+live .  sandbox-door door.count @ .
+: dead-clients ( n -- ) 0 ?do dead-conn sandbox-door admit 20 ms loop ;
+20 dead-clients  200 ms
+live .  sandbox-door door.count @ .  sessions-served @ .
