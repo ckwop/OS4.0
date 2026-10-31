@@ -301,7 +301,20 @@ theorem zless_frame (W) : Frame W zless := by frame_prim
 theorem fetch_frame (W) : Frame W fetch := by frame_prim
 theorem cfetch_frame (W) : Frame W cfetch := by frame_prim
 theorem upfetch_frame (W) : Frame W upfetch := by frame_prim
+theorem slashmod_frame (W) : Frame W slashmod := by frame_prim
+theorem xor_frame (W) : Frame W xor := by frame_prim
+theorem invert_frame (W) : Frame W invert := by frame_prim
+theorem lshift_frame (W) : Frame W lshift := by frame_prim
+theorem rshift_frame (W) : Frame W rshift := by frame_prim
 end Prim
+
+/-- A word that only calls g (EXPOSE's words) writes what g writes. -/
+theorem wrapper_frame {W : Cell → Cell → Prop} {g : Sem} (hg : Frame W g) :
+    Frame W (thread [.call g, .exit]) :=
+  thread_frame fun f hf => by
+    simp only [List.mem_cons, Ins.call.injEq, reduceCtorEq, List.mem_nil_iff, or_false] at hf
+    subst hf
+    exact hg
 
 theorem userAt_frame (off : Cell) (W) : Frame W (userAt off) := by frame_prim
 theorem pushConst_frame (v : Cell) (W) : Frame W (pushConst v) := by frame_prim

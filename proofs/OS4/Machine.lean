@@ -467,6 +467,16 @@ bytes up to the delimiter (its low 32 bits) or the end of the line. -/
     .ok ⟨(j - i) :: (tib + i) :: s, r, wr m (p + uToin) 8 toin, p, e⟩
   | s => s.fail .underflow
 
+/-- `(` ( "ccc<paren>" -- ): a comment, skipped to the next `)` or the end of
+the line (`w_paren`: `parse_sub` for `)`, its results dropped). -/
+@[forth] def paren : Sem := fun ⟨s, r, m, p, e⟩ =>
+  let tib := rd m (p + uTib) 8
+  let n := rd m (p + uNtib) 8
+  let i := rd m (p + uToin) 8
+  let j := scan m tib n (fun b => b.setWidth 32 != (41 : Cell).setWidth 32) n.toNat i
+  let toin := if n.ule j then j else j + 1
+  .ok ⟨s, r, wr m (p + uToin) 8 toin, p, e⟩
+
 /-- HEADER ( addr u -- ): lay down a header named addr u at the dictionary
 pointer, aligned, and link it in as the newest (`header_sub`). -/
 @[forth] def header : Sem

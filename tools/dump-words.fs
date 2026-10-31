@@ -5,7 +5,9 @@
 \ A colon word's cells are its whole thread; a constant's, its value; a DOES>
 \ child's, where its code field branches to, then its body. A body ends where the next newer
 \ header starts, so nothing here decodes threads. First comes "@@ top addr",
-\ the end of the dictionary's space, below which RESERVE takes memory.
+\ the end of the dictionary's space, below which RESERVE takes memory. After
+\ FORTH-WORDLIST's words come the sandbox's, newest first, as colon words
+\ named "sandbox-wordlist:name".
 
 : bl-target  ( xt -- addr | 0 )  \ where the bl in a code field goes, 0 if none
   4 +  dup l@  dup $fc000000 and $94000000 <> if 2drop 0 exit then
@@ -33,9 +35,21 @@ variable limit                                    \ the end of the word being du
   dup #out @ + /out > if flush-out then
   tuck out #out @ + swap cmove  #out +! ;
 
+\ A wordlist other than FORTH-WORDLIST: each word as a colon word named
+\ "list:name", its thread up to its EXIT (EXPOSE's words have no branches).
+: .thread  ( xt -- )
+  cell+ begin dup @ dup u. ['] exit <> while cell+ repeat drop ;
+: .list  ( wid addr u -- )  \ addr u names the list
+  cr ." @@ list " 2dup type
+  rot @ begin ?dup while
+    cr ." @@ "  dup name>xt dup u. ." 1 "  2over type ." :"  over name>string type space  .thread
+    @ pause
+  repeat 2drop ;
+
 : dump-words  ( -- )
   0 #out !  ['] out-type 'type !
   cr ." @@ top " dict-top u.                       \ where reserved memory ends
   here limit !  latest @ begin ?dup while  dup .word  dup limit !  @ pause repeat
+  sandbox-wordlist s" sandbox-wordlist" .list
   cr ." @@ end" cr  flush-out  ['] console-type 'type ! ;  \ the dump is complete
 dump-words

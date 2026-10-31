@@ -54,7 +54,7 @@ PRIMS = {
     "sha256-block": "Prim.sha256block", "sha256-out": "Prim.sha256out",
     # The compiler and the interpreter.
     ",": "Prim.comma", "search-list": "Prim.searchList", "parse-name": "Prim.parseName",
-    "parse": "Prim.parse", "header": "Prim.header",
+    "parse": "Prim.parse", "header": "Prim.header", "(": "Prim.paren",
 }
 # Kernel words that only push an address or value (defconst, defuser, deftramp).
 KCONST = {
@@ -81,7 +81,7 @@ EFFECTS = {
     "pdo": (2, 0, 0, 2), "i": (0, 1, 1, 1), "j": (0, 1, 3, 3), "unloop": (0, 0, 2, 0),
     "pause": (0, 0, 0, 0), "ask": (0, 1, 0, 0), "emit": (1, 0, 0, 0), "syscall": (5, 1, 0, 0),
     "bye": (0, 0, 0, 0), "barrier": (0, 0, 0, 0), "sha256block": (4, 0, 0, 0), "sha256out": (2, 0, 0, 0),
-    "comma": (1, 0, 0, 0), "searchList": (3, 1, 0, 0), "parseName": (0, 2, 0, 0), "parse": (1, 2, 0, 0),
+    "comma": (1, 0, 0, 0), "searchList": (3, 1, 0, 0), "parseName": (0, 2, 0, 0), "parse": (1, 2, 0, 0), "paren": (0, 0, 0, 0),
     "header": (2, 0, 0, 0),
 }
 PRIM_SPECS = {f"Prim.{p}": e + (f"Prim.{p}_spec",) for p, e in EFFECTS.items()}
@@ -217,6 +217,7 @@ PRIM_FOOTS = {
     "comma": ([ALL], [], []), "header": ([ALL], [], []),
     "parseName": ([(("user", 16), ("num", 8))], [ANY, ANY], []),
     "parse": ([(("user", 16), ("num", 8))], [ANY, ANY], []),
+    "paren": ([(("user", 16), ("num", 8))], [], []),
 }
 FOOTS = {f"Prim.{p}": PRIM_FOOTS.get(p, ([], [ANY] * e[1], [])) + (f"Prim.{p}_foot",)
          for p, e in EFFECTS.items()}
@@ -261,9 +262,10 @@ KINDS = {0: "primitive", 1: "colon", 2: "constant", 3: "variable", 4: "does"}
 
 
 class Word:
-    def __init__(self, xt, kind, name, cells):
+    def __init__(self, xt, kind, name, cells, wordlist=None):
         self.xt, self.kind, self.name, self.cells = xt, kind, name, cells
         self.id = name
+        self.wordlist = wordlist                    # a wordlist other than FORTH-WORDLIST
 
 
 class Blocked(Exception):
@@ -271,21 +273,28 @@ class Blocked(Exception):
 
 
 def load(path):
-    """The dump, oldest word first, with unique ids; and the dictionary's top."""
-    words, complete, top = [], False, None
+    """The dump, oldest word first, with unique ids; and the dictionary's top.
+    The words of other wordlists come last, each list oldest first."""
+    words, complete, top, lists, wordlist = [], False, None, {}, None
     for line in open(path):
         f = line.split()
         if f == ["@@", "end"]:
             complete = True
         elif f[:2] == ["@@", "top"] and len(f) == 3:
             top = int(f[2])
+        elif f[:2] == ["@@", "list"] and len(f) == 3:
+            wordlist = f[2]
+            lists[wordlist] = []
         elif len(f) >= 4 and f[0] == "@@":
             if f[2] not in ("0", "1", "2", "3", "4"):
                 sys.exit(f"{path}: {f[3]}: bad kind {f[2]}: is the dump garbled?")
-            words.append(Word(int(f[1]), int(f[2]), f[3], [int(c) for c in f[4:]]))
+            w = Word(int(f[1]), int(f[2]), f[3], [int(c) for c in f[4:]], wordlist)
+            (lists[wordlist] if wordlist else words).append(w)
     if not complete or top is None:
         sys.exit(f"{path}: the dump stops before its end line, or has no top line")
     words.reverse()
+    for ws in lists.values():
+        words += reversed(ws)
     seen = {}
     for w in words:
         seen[w.name] = seen.get(w.name, 0) + 1
@@ -365,7 +374,7 @@ class Generator:
         # The boot files' words, by address: the kernel defines no colon words,
         # so the dictionary starts at the oldest one.
         first = next((n for n, w in enumerate(words) if w.kind == 1), len(words))
-        placed = sorted(words[first:], key=lambda w: w.xt)
+        placed = sorted((w for w in words[first:] if not w.wordlist), key=lambda w: w.xt)
         self.placed_xts = [w.xt for w in placed]
         self.placed_ids = [w.id for w in placed]
         self.dict_end = max((w.xt + 8 * (len(w.cells) + 1) for w in placed), default=0)
@@ -1014,6 +1023,9 @@ def assign_files(gen, kernel):
     gen.modules = ["Kernel"] + [module_name(f) for f in files]
     gen.owners, at = {}, 0
     for w in gen.words:
+        if w.wordlist:                              # with the file that makes its wordlist
+            gen.owners[lean_name(w.id)] = gen.owners[lean_name(w.wordlist)]
+            continue
         if w.kind == 1 and not at:                  # the kernel defines no colon words
             at = 1
         if at:
@@ -1193,6 +1205,15 @@ def main():
         except Blocked as e:
             if w.kind == 1:
                 reasons[str(e)] += 1
+
+    for wl in dict.fromkeys(w.wordlist for w in gen.words if w.wordlist):
+        ws = [w for w in reversed(gen.words) if w.wordlist == wl]
+        out = [w.id for w in ws if isinstance(gen.memo.get(w.xt), Blocked)]
+        if out:                                     # a theorem about the list would miss them
+            sys.exit(f"{wl}: not modelled: {' '.join(out)}")
+        gen.defs.append(f"/-- The words in `{wl}`, newest first. -/\n"
+                        f"noncomputable def {lean_name(wl)}.words : List Sem :=\n"
+                        f"  [{', '.join(gen.memo[w.xt] for w in ws)}]\n")
 
     kernel = "arch/aarch64/kernel.s"
     assign_files(gen, kernel)

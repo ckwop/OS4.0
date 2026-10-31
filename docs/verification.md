@@ -28,7 +28,7 @@ that no longer holds fails the build, as a test would.
 | Colon words modelled | 567 of 582, `interpret` and `find-name` included |
 | Not modelled | Code fields (`cf,`, `does-cf,`), the kernel's `parse-find`, defining words with DOES>, and the words that use them |
 | Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown; the compiler and interpreter primitives (`,`, `header`, `parse`, `parse-name`, `search-list`) |
-| Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2, given that they keep the setting) |
+| Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, given that its 11 output words keep the setting |
 | Found | A listener and the TCP timer sweep that could run without pausing, both fixed (#108, #109) |
 | Shown to catch | A signed `u>` that passes all 36 hosted tests fails its proof |
 
@@ -170,13 +170,17 @@ dictionary", becomes a theorem.
     compilation wordlist; STATE is 0; its headers form a chain that ends.
   - **Also shown:** a number takes the path that writes only `base`, and
     never reaches LITERAL or EXECUTE.
-  - **Still assumed (`hkeep`):** each exposed word, when it runs, keeps that
-    setting. Proving it is the rest of V2. It splits in three:
-    - **bounded writes:** each exposed word's footprint misses the search
-      order, STATE and the sandbox's headers;
-    - **no arbitrary execute:** the vectored output words (`emit`, `type`)
-      execute only their task's own vectors;
-    - **the sandbox as built:** the `Box` taken from the dump of `sandbox.fs`.
+  - **The sandbox as built:** the dump lists the sandbox wordlist's words
+    (`«sandbox-wordlist».words`, generated), and `sandbox_isolated` states
+    isolation for them. The 40 that compute (arithmetic, stack words, `hex`,
+    `decimal`, `(`, `\`) are proven to keep the setting from their frames
+    (`sandbox_keeps`).
+  - **Still assumed:**
+    - **`hout`:** the 11 words that print (`emit`, `type`'s callers, `.s`,
+      `words`, `bye`) keep the setting. They go through the task's `'type`
+      and `'bye` vectors, and number output writes through `hld`;
+    - **`hdump`:** each header on the sandbox's chain runs one of the words
+      the dump found there (the dumper is trusted).
   - **The tools it added** (`Steps.lean`):
     - `run_congr`: two threads that agree wherever an invariant holds give
       the same result;

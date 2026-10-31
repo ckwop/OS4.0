@@ -1,4 +1,5 @@
 import OS4.Search
+import OS4.Words.Sandbox
 
 /-!
 # Sandbox isolation (V2)
@@ -446,5 +447,70 @@ theorem interpret_isolated (B : Box) (hB : B.Ok)
     simp only [execWith, executeM, hd xt hA]
   · left
     simp [List.getElem?_set, Ne.symm h29]
+
+/-! ## The sandbox as `sandbox.fs` builds it
+
+The dump lists the sandbox wordlist's words (`«sandbox-wordlist».words`,
+generated): each is EXPOSE's two cells, a call of the word it exposes and
+EXIT. Those that compute keep the setting, proven here from their frames;
+those that print go through the task's output vectors, and are assumed to
+keep it for now (`outputWords`). -/
+
+/-- f keeps the setting: the same user area, and the support as it was. -/
+def Box.Keeps (B : Box) (f : Sem) : Prop :=
+  ∀ s s', s.up = B.p → B.Inv s.mem → f s = .ok s' → s'.up = B.p ∧ B.Inv s'.mem
+
+theorem keeps_of_frame {B : Box} {W : Cell → Cell → Prop} {f : Sem} (hf : Frame W f)
+    (hW : ∀ a, B.supp a → ¬ W B.p a) : B.Keeps f := by
+  intro s s' hu hI h
+  obtain ⟨hu', hm⟩ := hf s s' h
+  exact ⟨hu'.trans hu, B.inv_frame hW hI fun a ha => hm a (by rw [hu]; exact ha)⟩
+
+/-- The sandbox's words that print, through the task's `'type` and `'bye`. -/
+noncomputable def outputWords : List Sem :=
+  [Words.«sandbox-wordlist:bye», Words.«sandbox-wordlist:words», Words.«sandbox-wordlist:.(»,
+   Words.«sandbox-wordlist:."», Words.«sandbox-wordlist:spaces», Words.«sandbox-wordlist:space»,
+   Words.«sandbox-wordlist:emit», Words.«sandbox-wordlist:cr», Words.«sandbox-wordlist:.s»,
+   Words.«sandbox-wordlist:u.», Words.«sandbox-wordlist:.»]
+
+/-- Every word in the sandbox keeps the setting, given that those that print do. -/
+theorem sandbox_keeps {B : Box} (hB : B.Ok) (hout : ∀ f ∈ outputWords, B.Keeps f) :
+    ∀ f ∈ Words.«sandbox-wordlist».words, B.Keeps f := by
+  have o : ∀ {f}, f ∈ outputWords → B.Keeps f := fun h => hout _ h
+  have n := fun {g : Sem} (hg : Frame noCell g) => keeps_of_frame (B := B) (wrapper_frame hg) Box.supp_none
+  have t := fun {g : Sem} (hg : Frame toinCell g) => keeps_of_frame (B := B) (wrapper_frame hg) (Box.supp_toin hB)
+  have b := fun {g : Sem} (hg : Frame baseCell g) => keeps_of_frame (B := B) (wrapper_frame hg) (Box.supp_base hB)
+  simp only [Words.«sandbox-wordlist».words, List.forall_mem_cons]
+  refine ⟨o (by simp [outputWords]), o (by simp [outputWords]), b decimal_frame, b hex_frame,
+    t backslash_frame, t paren_frame, o (by simp [outputWords]), o (by simp [outputWords]),
+    o (by simp [outputWords]), o (by simp [outputWords]), o (by simp [outputWords]),
+    o (by simp [outputWords]), o (by simp [outputWords]), o (by simp [outputWords]),
+    o (by simp [outputWords]),
+    n (Prim.depth_frame _), n (twodrop_frame _), n (twodup_frame _), n (tuck_frame _), n (nip_frame _),
+    n (rot_frame _), n (Prim.over_frame _), n (Prim.swap_frame _), n (Prim.drop_frame _),
+    n (Prim.dup_frame _), n (Prim.uless_frame _), n (Prim.zless_frame _), n (Prim.zequal_frame _),
+    n (greater_frame _), n (Prim.less_frame _), n (ne_frame _), n (Prim.equal_frame _),
+    n (Prim.rshift_frame _), n (Prim.lshift_frame _), n (Prim.invert_frame _), n (Prim.xor_frame _),
+    n (Prim.or_frame _), n (Prim.and_frame _), n (twostar_frame _), n (oneminus_frame _),
+    n (oneplus_frame _), n (max_frame _), n (min_frame _), n (abs_frame _), n (negate_frame _),
+    n (Prim.slashmod_frame _), n (mod_frame _), n (slash_frame _), n (Prim.star_frame _),
+    n (Prim.minus_frame _), n (Prim.plus_frame _), fun _ h => nomatch h⟩
+
+/-- **Sandbox isolation, for the sandbox `sandbox.fs` builds.** A task whose
+search order is the sandbox alone executes only the sandbox's words, for any
+line. Assumed: each header on the sandbox's chain runs one of the words the
+dump found there (`hdump`, which the dumper is trusted for), and the words
+that print keep the setting (`hout`). -/
+theorem sandbox_isolated (B : Box) (hB : B.Ok)
+    (hdump : ∀ h ∈ B.hs, ∃ f ∈ Words.«sandbox-wordlist».words, dispatch (Box.xtOf B.m0 h) = f)
+    (hout : ∀ f ∈ outputWords, B.Keeps f)
+    (d : Cell → Sem) (hd : ∀ xt, B.Allowed xt → d xt = dispatch xt)
+    (s : S) (hu : s.up = B.p) (hm : s.mem = B.m0) :
+    loopThread (Words.«interpret».code.set 29 (.call (execWith d))) s = Words.«interpret» s := by
+  refine interpret_isolated B hB ?_ d hd s hu hm
+  rintro xt s s' ⟨h, hh, rfl⟩ hu hI hx
+  obtain ⟨f, hf, heq⟩ := hdump h hh
+  rw [heq] at hx
+  exact sandbox_keeps hB hout f hf s s' hu hI hx
 
 end OS4.Isolation

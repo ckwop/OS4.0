@@ -113,6 +113,10 @@ theorem parse_spec : Spec parse 1 2 0 0 := by
   intro xs zs s r m u e hx hz
   match xs, zs, hx, hz with
   | [c], [], _, _ => simp [parse, Out, exists_prefix]; omega
+theorem paren_spec : Spec paren 0 0 0 0 := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [], [], _, _ => simp [paren, Out, exists_prefix]
 theorem header_spec : Spec header 2 0 0 0 := by
   intro xs zs s r m u e hx hz
   match xs, zs, hx, hz with

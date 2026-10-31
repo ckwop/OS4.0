@@ -261,6 +261,14 @@ theorem parse_foot : Foot parse 1 2 0 0 [⟨.user 16, .num 8⟩] [.any, .any] []
     refine ⟨fun b _ hw => ?_, by simp [FOut, agree_cons, agree_nil, holds_any]; omega⟩
     apply wr_apply_other
     exact outside_one (ρ := ⟨[c], [], u⟩) (b := u + 16) (l := 8) (by simp [Val.eval]) (by simp [Val.eval]) hw
+theorem paren_foot : Foot paren 0 0 0 0 [⟨.user 16, .num 8⟩] [] [] := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [], [], _, _ =>
+    simp only [List.nil_append, paren]
+    refine ⟨fun b _ hw => ?_, by simp [FOut, agree_nil]⟩
+    apply wr_apply_other
+    exact outside_one (ρ := ⟨[], [], u⟩) (b := u + 16) (l := 8) (by simp [Val.eval]) (by simp [Val.eval]) hw
 
 end Prim
 

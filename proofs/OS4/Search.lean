@@ -1,4 +1,6 @@
 import OS4.Words.Interpreter
+import OS4.Words.Blocks
+import OS4.Words.Output
 import OS4.Steps
 import OS4.Memory
 
@@ -169,6 +171,22 @@ theorem end_frame : Frame W Words.«end?» :=
 theorem char_fetch_frame : Frame W Words.«char@» :=
   thread_frame (by simp only [Words.«char@».code]
                    frames [source_frame, drop_frame, userAt_frame _, fetch_frame, plus_frame, cfetch_frame])
+theorem oneminus_frame : Frame W Words.«1-» :=
+  thread_frame (by simp only [Words.«1-».code]; frames [minus_frame])
+theorem twostar_frame : Frame W Words.«2*» :=
+  thread_frame (by simp only [Words.«2*».code]; frames [lshift_frame])
+theorem slash_frame : Frame W Words.«/» :=
+  thread_frame (by simp only [Words.«/».code]; frames [slashmod_frame, nip_frame])
+theorem mod_frame : Frame W Words.«mod» :=
+  thread_frame (by simp only [Words.«mod».code]; frames [slashmod_frame, drop_frame])
+theorem ne_frame : Frame W Words.«<>» :=
+  thread_frame (by simp only [Words.«<>».code]; frames [equal_frame, zequal_frame])
+theorem abs_frame : Frame W Words.«abs» :=
+  thread_frame (by simp only [Words.«abs».code]; frames [dup_frame, zless_frame, negate_frame])
+theorem min_frame : Frame W Words.«min» :=
+  thread_frame (by simp only [Words.«min».code]; frames [twodup_frame, greater_frame, swap_frame, drop_frame])
+theorem max_frame : Frame W Words.«max» :=
+  thread_frame (by simp only [Words.«max».code]; frames [twodup_frame, less_frame, swap_frame, drop_frame])
 end
 
 /-- A cell written at a leaves every byte 8 or more past it alone. -/
@@ -202,6 +220,28 @@ theorem parse_name_frame : Frame toinCell Words.«parse-name#2» :=
     simp only [Words.«parse-name#2».code, forall_getElem?_cons, forall_getElem?_nil, and_true]
     keeps [end_frame, Prim.zequal_frame, char_fetch_frame, bl_frame, greater_frame, source_frame,
       Prim.drop_frame, Prim.fetch_frame, Prim.plus_frame, Prim.over_frame, Prim.minus_frame] [plus_store_at])).2
+
+theorem paren_frame : Frame toinCell Prim.paren := by
+  intro s s' h
+  rcases s with ⟨ds, rs, m, p, e⟩
+  simp only [Prim.paren, Except.ok.injEq] at h
+  subst h
+  exact ⟨rfl, fun a ha => wr_far m _ _ a (by simp only [toinCell] at ha; simp only [Prim.uToin]; omega)⟩
+
+theorem backslash_frame : Frame toinCell Words.«\#2» :=
+  (thread_frame_at (P := [13]) (off := 16) (by decide) (fun s0 => by
+    simp only [Words.«\#2».code, forall_getElem?_cons, forall_getElem?_nil, and_true]
+    keeps [userAt_frame _, Prim.fetch_frame, Prim.plus_frame, Prim.and_frame] [store_at])).1
+
+theorem hex_frame : Frame baseCell Words.«hex» :=
+  (thread_frame_at (P := [2]) (off := 0) (by decide) (fun s0 => by
+    simp only [Words.«hex».code, forall_getElem?_cons, forall_getElem?_nil, and_true]
+    keeps [] [store_at])).1
+
+theorem decimal_frame : Frame baseCell Words.«decimal» :=
+  (thread_frame_at (P := [2]) (off := 0) (by decide) (fun s0 => by
+    simp only [Words.«decimal».code, forall_getElem?_cons, forall_getElem?_nil, and_true]
+    keeps [] [store_at])).1
 
 theorem number_frame : Frame baseCell Words.«number?» :=
   (thread_frame_at (P := [47, 53]) (off := 0) (by decide) (fun s0 => by
