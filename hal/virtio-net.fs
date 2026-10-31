@@ -46,9 +46,13 @@ create mac 6 allot
   tx-buf r> /net-header + 0 0 tx-vq 0 desc!
   0 tx-vq net-base @ 1 vq-submit  tx-vq vq-wait ;
 
+\ The id and length come from the device, so neither is trusted: a buffer we
+\ never posted is ignored, and a length is held to the buffer.
 : net-poll  ( addr -- len )
   net-up? 0= if drop 0 exit then
   rx-vq vq-used? 0= if drop 0 exit then
-  rx-vq vq-take  /net-header - >r              ( addr id )
+  rx-vq vq-take                                ( addr id len )
+  over #rx-bufs u< 0= if  2drop drop 0 exit  then
+  /net-header - 0 max  /net-buf /net-header - min >r
   tuck rx-buf /net-header + swap r@ cmove
   rx-post  r> ;

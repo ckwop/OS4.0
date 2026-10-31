@@ -29,7 +29,7 @@ that no longer holds fails the build, as a test would.
 | Not modelled | Code fields (`cf,`, `does-cf,`), the kernel's `parse-find`, defining words with DOES>, and the words that use them |
 | Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown; the compiler and interpreter primitives (`,`, `header`, `parse`, `parse-name`, `search-list`) |
 | Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, given only the task's own `type` and `bye` |
-| Found | A listener and the TCP timer sweep that could run without pausing (#108, #109); HOLD writing past `numbuf` in base 1 (#114). All fixed |
+| Found | A listener and the TCP timer sweep that could run without pausing (#108, #109); HOLD writing past `numbuf` in base 1 (#114); the virtio-net driver trusting the device's buffer id and length (#115, from an audit of every "anywhere" footprint). All fixed |
 | Shown to catch | A signed `u>` that passes all 36 hosted tests fails its proof |
 
 Three kinds of compositional proof now exist, all built the same way. The

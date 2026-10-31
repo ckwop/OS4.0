@@ -75,14 +75,16 @@
       <pre class="code" data-src="hal/virtio-net.fs" data-step="1">: <span class="w">net-poll</span>  ( addr -- len )
   net-up? 0= if drop 0 exit then
   rx-vq vq-used? 0= if drop 0 exit then
-  rx-vq vq-take  /net-header - &gt;r              ( addr id )
+  rx-vq vq-take                                ( addr id len )
+  over #rx-bufs u&lt; 0= if  2drop drop 0 exit  then
+  /net-header - 0 max  /net-buf /net-header - min &gt;r
   tuck rx-buf /net-header + swap r@ cmove
   rx-post  r&gt; ;</pre>
       <div class="src"><a href="../../hal/virtio-net.fs" data-ref="hal/virtio-net.fs:net-poll">hal/virtio-net.fs › net-poll</a></div>
     </div>
     <ul class="points">
       <li data-step="1">64 receive buffers wait on queue 0</li>
-      <li data-step="2">Poll: copy a used buffer out, give it straight back</li>
+      <li data-step="2">Poll: copy a used buffer out, give it straight back; its id and length are the device's, so checked</li>
       <li data-step="3">Send: one frame at a time on queue 1, and wait</li>
       <li data-step="4">Hosted: frames travel as UDP datagrams to a peer</li>
     </ul>
@@ -90,6 +92,7 @@
   <div class="talk">
     <p>On bare metal, the network card is a virtio device, using the same virtqueues as the disk. At start-up the driver gives the device sixty-four receive buffers, so frames can arrive while the system is busy.</p>
     <p>Polling, shown here, checks whether the device has filled a buffer. If it has, the frame is copied out, past a small virtio header, and the buffer goes straight back to the device for the next frame. If not, it returns zero, and the network task sleeps until the next tick.</p>
+    <p>Which buffer was filled, and how much it holds, are numbers the device reports. The driver doesn't take them on trust: a buffer it never gave out is ignored, and a length is held to the buffer's size. A broken or hostile device can't make it copy past the frame.</p>
     <p>Sending uses the second queue: copy the frame into the transmit buffer, submit it, and wait for the device to take it.</p>
     <p>The hosted build has no network card, so its HAL carries each frame as a UDP datagram to a partner program on the host. The tests use exactly that to put a scripted network peer on the other end, as lecture eleven shows.</p>
   </div>
