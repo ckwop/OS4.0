@@ -28,8 +28,8 @@ that no longer holds fails the build, as a test would.
 | Colon words modelled | 567 of 582, `interpret` and `find-name` included |
 | Not modelled | Code fields (`cf,`, `does-cf,`), the kernel's `parse-find`, defining words with DOES>, and the words that use them |
 | Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown; the compiler and interpreter primitives (`,`, `header`, `parse`, `parse-name`, `search-list`) |
-| Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, given only the task's own `type` and `bye`; a task's cleanup frees exactly the semaphores it holds and its dictionary claim, and `locked` releases however its xt ends; a session gives its door's place back and closes its connection however its work ends (V6) |
-| Found | (every defect, and how it was found: [defects.md](defects.md)) A listener and the TCP timer sweep that could run without pausing (#108, #109); HOLD writing past `numbuf` in base 1 (#114); the virtio-net driver trusting the device's buffer id and length (#115, from an audit of every "anywhere" footprint); a semaphore held for good by a task the watchdog stopped inside `get` or `locked`, and a worker turned into a REPL by a throw nothing caught (#116); a client gone before its session started keeping its place at the door, so sixteen shut the door for good (#117). All fixed |
+| Proven | 679 stack effects and footprints, and 272 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, given only the task's own `type` and `bye`; a task's cleanup frees exactly the semaphores it holds and its dictionary claim, and `locked` releases however its xt ends; a session gives its door's place back and closes its connection however its work ends (V6); in a model of the disk, the record protocol keeps the last durable record whatever fails (V3) |
+| Found | (every defect, and how it was found: [defects.md](defects.md)) A listener and the TCP timer sweep that could run without pausing (#108, #109); HOLD writing past `numbuf` in base 1 (#114); the virtio-net driver trusting the device's buffer id and length (#115, from an audit of every "anywhere" footprint); a semaphore held for good by a task the watchdog stopped inside `get` or `locked`, and a worker turned into a REPL by a throw nothing caught (#116); a client gone before its session started keeping its place at the door, so sixteen shut the door for good (#117); `record!` overwriting the copy holding the last durable record after a failed sync (#118). All fixed |
 | Shown to catch | A signed `u>` that passes all 36 hosted tests fails its proof |
 
 Three kinds of compositional proof now exist, all built the same way. The
@@ -111,7 +111,7 @@ Effort is relative: S is a session or two, XL is many.
 | 2. Before players | V2: sandbox isolation (done but for the terminal's own words, #113, #114) | M | The brief's hard rule, and what every player reaches. |
 | | V6: a stopped task leaves nothing broken (semaphores, the dictionary and sessions done, #116, #117) | M | A player can make the watchdog fire, or drop the connection, at any point. |
 | | V10: proofs for an app (the MUD first) | M | The MUD's own tasks and commands, on the base's results. |
-| | V3: crash-safe records | M | Player data survives a crash at any point. |
+| | V3: crash-safe records (the protocol proven in a model, #118) | M | Player data survives a crash at any point. |
 | 3. Before the internet (milestone 11) | V4: the network survives any input | L | Every byte from anyone goes through it. |
 | 4. Depth | V7: TCP state machine | XL | Off-path attacks and the RFC's invariants. |
 | | V5: primitives against the assembly | L | Removes the largest trusted piece. |
@@ -217,6 +217,21 @@ The brief's `sync` rule and DECISIONS.md #95.
 - **Assumption, stated:** a torn copy fails its SipHash check. That holds with
   overwhelming probability, not certainty, so it is a named hypothesis, not an
   axiom.
+- **Status** (`Records.lean`, #118):
+  - **Found:** `record!` overwrote the older copy even when the newer one
+    might not be durable. After a failed sync, a write or the flush, it
+    could be only in a buffer; a second `record!` then wrote over the copy
+    holding the last durable record, and a crash during its sync lost both.
+  - **Fixed:** `record!` syncs first whenever anything is unsynced
+    (`unsynced` in `blocks.fs`).
+  - **Proven, in a model of the protocol:** two copies, each durable,
+    pending (written, not flushed; a crash keeps, loses or tears it) and
+    buffered. Whatever writes and flushes fail, `put_keeps` and
+    `crash_reads` give no garbage and durability; other tasks' evictions keep
+    the invariant; `old_loses` shows the old protocol losing a record.
+  - **Still to do:** link the model to the compiled `record!`, `record@` and
+    block words (which needs the disk in `Machine.lean`), and the
+    new-player ordering.
 
 ### V4: The network survives any input — L
 

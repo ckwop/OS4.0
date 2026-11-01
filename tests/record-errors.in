@@ -1,0 +1,12 @@
+\ Records when the disk fails: the copy holding the last durable record is never overwritten
+create r1 100 allot
+: show ( -- ) r1 100 40 record@ r1 swap type space ;
+: broken ( xt -- n ) data-disk @ >r 99 data-disk ! catch r> data-disk ! ;
+s" first" 40 record!  show  40 copy-seq .  41 copy-seq .
+: put2 ( -- ) s" second" 40 record! ;  : put3 ( -- ) s" third" 40 record! ;
+' put2 broken .  ' put3 broken .
+40 copy-seq .  41 copy-seq .
+\ a crash now loses the cache: the durable record is still there
+empty-buffers show
+s" fourth" 40 record!  empty-buffers show  40 copy-seq .  41 copy-seq .
+' put2 broken .  s" fifth" 40 record!  empty-buffers show  40 copy-seq .  41 copy-seq .

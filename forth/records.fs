@@ -40,8 +40,11 @@ semaphore records-lock
   >r  r@ r.data swap move
   r@ record-sum r> r.check !
   (update) ;
+\ The older copy is overwritten only while the newer one is durable: after a
+\ failed sync (a write or the flush), the newer one might be only in a buffer.
 : (record!)  ( addr len n -- )
   over /record u> if -274 throw then
+  unsynced @ if sync then
   dup copy-seq  over 1+ copy-seq                   ( addr len n s0 s1 )
   2dup max 1+ >r  u< 0= if 1+ then  r> swap         \ the next number, over the older copy
   ['] fill-copy blocks-lock locked

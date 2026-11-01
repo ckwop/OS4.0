@@ -215,7 +215,7 @@
   <h2>What <code>sync</code> promises</h2>
   <div class="cols">
     <div>
-      <pre class="code" data-src="forth/blocks.fs" data-step="1">: <span class="w">(sync)</span>   ( -- )  (save-buffers) data-disk @ blk-flush ;
+      <pre class="code" data-src="forth/blocks.fs" data-step="1">: <span class="w">(sync)</span>   ( -- )  (save-buffers) data-disk @ blk-flush  false unsynced ! ;
 : <span class="w">sync</span>           ( -- )  ['] (sync) blocks-lock locked ;  <span class="c">\ durable once this returns</span></pre>
       <div class="src"><a href="../../forth/blocks.fs" data-ref="forth/blocks.fs:sync">forth/blocks.fs › sync</a></div>
       <pre class="code below" data-src="Makefile" data-step="3">              -drive file=$(1),format=raw,if=none,id=data,cache=writeback \</pre>
@@ -229,7 +229,7 @@
     </ul>
   </div>
   <div class="talk">
-    <p>Sync is the most important word in this lecture. It writes every dirty buffer back to the disk, then asks the device to flush, and waits until it has. When sync returns, your changes are durable: a crash or a power cut can no longer lose them.</p>
+    <p>Sync is the most important word in this lecture. It writes every dirty buffer back to the disk, then asks the device to flush, and waits until it has. When sync returns, your changes are durable: a crash or a power cut can no longer lose them. Once it finishes, it also clears a flag, unsynced, which update sets. A sync that fails leaves the flag set, so record-store knows to sync again before it trusts what is on the disk.</p>
     <p>Update on its own is only a hope. The buffer will be written back eventually, when it's chosen as a victim, but if the machine stops first, the change is gone.</p>
     <p>The flush matters because writes are cached below us. QEMU is told to cache the data disk with write-back caching, which is fast, and it honours flush requests. The setting called <span data-say="cache equals unsafe">cache=unsafe</span> would ignore them, and it's banned by the hard rules.</p>
     <p>The brief also fixes the order of writes where it matters. When a new player is created, their record is written and synced first, and only then the index entry pointing at it, synced again. A crash in between leaves an unused record, never an index pointing at nothing.</p>
@@ -294,6 +294,7 @@ constant /record-header</pre>
   <h2>Writing a record</h2>
   <pre class="code" data-src="forth/records.fs" data-step="1">: <span class="w">(record!)</span>  ( addr len n -- )
   over /record u&gt; if -274 throw then
+  unsynced @ if sync then
   dup copy-seq  over 1+ copy-seq                   ( addr len n s0 s1 )
   2dup max 1+ &gt;r  u&lt; 0= if 1+ then  r&gt; swap         <span class="c">\ the next number, over the older copy</span>
   ['] fill-copy blocks-lock locked
@@ -301,11 +302,12 @@ constant /record-header</pre>
   <div class="src"><a href="../../forth/records.fs" data-ref="forth/records.fs:(record!)">forth/records.fs › (record!)</a></div>
   <ul class="points below">
     <li data-step="2">Up to 1000 bytes of binary data: never Forth source, never execution tokens</li>
-    <li data-step="3">Synced before <code>record!</code> returns</li>
+    <li data-step="3">Synced first if anything is unsynced, and before <code>record!</code> returns. Proven: a crash at any point keeps the last durable record</li>
     <li data-step="4">Used for the admin password's hash, in blocks 998 and 999</li>
   </ul>
   <div class="talk">
-    <p>Here's the write. Refuse anything too large for one block. Read both copies' sequence numbers; an invalid copy counts as zero. The next number is one more than the larger, and it goes over the older copy. Fill that buffer while holding the block lock, so no other task can take the buffer in between. And sync, so that when record-store returns, the new value is durable.</p>
+    <p>Here's the write. Refuse anything too large for one block. If anything is unsynced, sync first. The copy about to be overwritten is the older one, and that is only safe while the newer one is really on the disk. After a failed sync, it might be only in a buffer. Then read both copies' sequence numbers; an invalid copy counts as zero. The next number is one more than the larger, and it goes over the older copy. Fill that buffer while holding the block lock, so no other task can take the buffer in between. And sync, so that when record-store returns, the new value is durable.</p>
+    <p>That first sync came from the proofs. Without it, a disk write that failed, then another record-store, then a crash, could lose the last record that had been saved for certain. A proof now shows that whatever fails, a crash reads the last durable record or a newer one.</p>
     <p>Records hold up to a thousand bytes of binary data. Two hard rules apply to all stored data, and records are where they bite. Never store data as Forth source, which something might later interpret. And never store execution tokens: they're memory addresses, and they change every time the system is rebuilt.</p>
     <p>The network REPL keeps the admin password's hash in a record, in blocks nine nine eight and nine nine nine.</p>
   </div>

@@ -12,6 +12,8 @@ consistently.
 - **Proof**: a proof could not be finished until the code changed.
 - **Proof audit**: a hand audit of what a proof flagged (a footprint that
   writes "anywhere", a loop listed in `proofs/yields.txt`).
+- **Proof planning**: reading the code against a property while setting up
+  its proof, before the proof itself exists.
 - **Test**: a test, or its peer, failed or showed the problem.
 - **App**: using the base for an app (the MUD) showed it.
 - **Hardening**: deliberate review against a threat list (RFCs, an attacker
@@ -42,6 +44,7 @@ one now does.
 | 15 | 2026-10-31 | A throw caught near the end of the watchdog allowance left the cleanup a few ticks; a second -262 escaped every `catch`, and the worker ran a REPL on whatever terminal it had | A client got a REPL outside the session's control and cleanup, and the pool lost the worker | Proof (V6, `Semaphores.lean`) | No; repro in `tests/watchdog` | #116 |
 | 16 | 2026-10-31 | `session` set up the telnet terminal before its `catch`: a client that reset before its task ran made it throw past the cleanup | The door kept the place and the connection leaked; sixteen such clients (a port scan) shut port 4000 for good | Proof (V6, `Sessions.lean`) | No; repro in `tests/sessions` | #117 |
 | 17 | 2026-10-31 | The idle timeout was set only after that terminal setup, so its send waited with no timeout | A client that never opened its window held a place at the door for ever | Proof (V6, `Sessions.lean`, same change) | No | #117 |
+| 18 | 2026-10-31 | `record!` overwrote the older copy even when the newer one might not be durable: after a failed sync it could be only in a buffer | A failed disk write, a second `record!`, then a crash during its sync, lost the last durable record | Proof planning (reading `records.fs` against V3's durability property); proven in a model (`Records.lean`, `old_loses`) | No; repro in `tests/record-errors` (A's copy overwritten in the cache) | #118 |
 
 ## Also shown
 
@@ -52,8 +55,9 @@ one now does.
 
 ## What the log says so far
 
-Up to 2026-10-31: 17 defects. Tests found 1, the app 1, hardening 4, and
-the proofs 11 (6 directly, 5 by the audits they pointed to). No proof-found
+Up to 2026-10-31: 18 defects. Tests found 1, the app 1, hardening 4, and
+the proofs 12 (6 directly, 5 by the audits they pointed to, 1 while
+planning a proof). No proof-found
 defect would have failed the test suite as it stood. The tests had already
 passed over every one of them.
 

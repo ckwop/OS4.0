@@ -68,6 +68,7 @@ create buf-dirty   #buffers cells allot   \ true once UPDATEd
 create buf-pins    #buffers cells allot   \ LOADs reading from it
 user last-buf                             \ the buffer this task's BLOCK or BUFFER returned last
 variable next-buf                         \ where the search for a free one starts
+variable unsynced     \ a buffer was UPDATEd, or a sync failed, since the last sync that finished
 
 : buf    ( i -- addr )  b/buf * buffers + ;
 : 'blk   ( i -- addr )  cells buf-blocks + ;
@@ -107,7 +108,7 @@ variable next-buf                         \ where the search for a free one star
     then
   then (buffer) ;
 
-: (update)        ( -- )  last-buf @ dup 'blk @ ?writable drop  true swap 'dirty ! ;
+: (update)        ( -- )  last-buf @ dup 'blk @ ?writable drop  true swap 'dirty !  true unsynced ! ;
 : (save-buffers)  ( -- )  #buffers 0 do i write-buf loop ;
 
 : buffer  ( u -- addr )  \ a buffer for block u, without reading it from disk
@@ -119,7 +120,7 @@ variable next-buf                         \ where the search for a free one star
 : empty-buffers  ( -- )  ['] (empty-buffers) blocks-lock locked ;  \ discarding changes
 : (flush)  ( -- )  (save-buffers) (empty-buffers) ;
 : flush          ( -- )  ['] (flush) blocks-lock locked ;
-: (sync)   ( -- )  (save-buffers) data-disk @ blk-flush ;
+: (sync)   ( -- )  (save-buffers) data-disk @ blk-flush  false unsynced ! ;
 : sync           ( -- )  ['] (sync) blocks-lock locked ;  \ durable once this returns
 
 \ ---- Loading source from blocks. A block is 16 lines of 64 characters.
