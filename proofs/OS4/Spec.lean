@@ -53,12 +53,21 @@ def ZEq (f : Sem) : Prop :=
   ∀ (x : Cell) (s r : List Cell) (m : Mem) (u : Cell) (e : Nat),
     f ⟨x :: s, r, m, u, e⟩ = .ok ⟨(if x = 0 then -1 else 0) :: s, r, m, u, e⟩
 
+/-- Push v, then run P and then L, as one step: `['] word sem locked`, where
+v is the word's xt, P pushes the semaphore and L is LOCKED. -/
+def seg3 (v : Cell) (P L : Sem) : Sem := fun s =>
+  match P { s with ds := v :: s.ds } with
+  | .ok s1 => L s1
+  | .error e => .error e
+
 /-! ## Certificates -/
 
 /-- The depths before one instruction, counted above the word's own floor;
 for a call, the Spec the callee meets, or q for a `?dup` before a
 `0branch`, or before a `0=` and then a `0branch`, whose own entries are then
-dead (the `0=`'s with z). Unreachable instructions are dead. -/
+dead (the `0=`'s with z); for a literal with lk, the Spec of it and the two
+calls after it as one step (`seg3`), whose own entries are then dead (with
+lk). Unreachable instructions are dead. -/
 structure Cert where
   live : Bool
   d : Nat
@@ -69,11 +78,12 @@ structure Cert where
   rj : Nat
   q : Bool
   z : Bool
+  lk : Bool
 
 /-- Instruction p's entry says it is `0=`. -/
 def zAt (cert : List Cert) (p : Nat) : Bool :=
   match cert[p]? with
-  | some c => c.z
+  | some c => c.z && !c.lk
   | none => false
 
 /-- Instruction p is live, with these depths. -/
@@ -91,7 +101,7 @@ def stepOK (code : List Ins) (cert : List Cert) (out pc : Nat) : Bool :=
     match code[pc]? with
     | none => true
     | some (.call _) =>
-      !c.z &&
+      !c.lk && !c.z &&
       if c.q then
         decide (1 ≤ c.d) &&
         match code[pc + 1]?, code[pc + 2]? with
@@ -101,7 +111,13 @@ def stepOK (code : List Ins) (cert : List Cert) (out pc : Nat) : Bool :=
         | _, _ => false
       else
         decide (c.k ≤ c.d) && decide (c.rk ≤ c.r) && at? cert (pc + 1) (c.d - c.k + c.j) (c.r - c.rk + c.rj)
-    | some (.lit _) => at? cert (pc + 1) (c.d + 1) c.r
+    | some (.lit _) =>
+      if c.lk then
+        match code[pc + 1]?, code[pc + 2]? with
+        | some (.call _), some (.call _) =>
+          decide (c.k ≤ c.d) && decide (c.rk ≤ c.r) && at? cert (pc + 3) (c.d - c.k + c.j) (c.r - c.rk + c.rj)
+        | _, _ => false
+      else at? cert (pc + 1) (c.d + 1) c.r
     | some (.branch t) => at? cert t c.d c.r
     | some (.zbranch t) =>
       decide (1 ≤ c.d) && at? cert t (c.d - 1) c.r && at? cert (pc + 1) (c.d - 1) c.r
@@ -117,15 +133,18 @@ def stepOK (code : List Ins) (cert : List Cert) (out pc : Nat) : Bool :=
 def check (code : List Ins) (cert : List Cert) (inp out : Nat) : Bool :=
   at? cert 0 inp 0 && (List.range code.length).all (stepOK code cert out)
 
-/-- Each call meets the Spec its certificate entry claims, or is `?dup` or `0=`. -/
-def InsMeets : Ins → Cert → Prop
-  | .call f, c => cond c.z (ZEq f) (cond c.q (QDup f) (Spec f c.k c.j c.rk c.rj))
-  | _, _ => True
+/-- Each call meets the Spec its certificate entry claims, or is `?dup` or
+`0=`; a literal with lk, and the two calls after it, meet the Spec its entry
+claims. An instruction sees the ones after it. -/
+def InsMeets : Ins → List Ins → Cert → Prop
+  | .call f, _, c => cond c.lk True (cond c.z (ZEq f) (cond c.q (QDup f) (Spec f c.k c.j c.rk c.rj)))
+  | .lit v, .call P :: .call L :: _, c => cond c.lk (Spec (seg3 v P L) c.k c.j c.rk c.rj) True
+  | _, _, _ => True
 
 def CallsMeet : List Ins → List Cert → Prop
   | [], _ => True
   | _ :: _, [] => True
-  | i :: is, c :: cs => InsMeets i c ∧ CallsMeet is cs
+  | i :: is, c :: cs => InsMeets i is c ∧ CallsMeet is cs
 
 theorem at?_spec {cert : List Cert} {p d r : Nat} (h : at? cert p d r = true) :
     ∃ c, cert[p]? = some c ∧ c.live = true ∧ c.d = d ∧ c.r = r := by
@@ -137,24 +156,34 @@ theorem at?_spec {cert : List Cert} {p d r : Nat} (h : at? cert p d r = true) :
   · contradiction
 
 theorem callsMeet {code : List Ins} {cert : List Cert} (h : CallsMeet code cert) :
-    ∀ {pc : Nat} {f : Sem} {c : Cert}, code[pc]? = some (.call f) → cert[pc]? = some c →
-      InsMeets (.call f) c := by
+    ∀ {pc : Nat} {i : Ins} {c : Cert}, code[pc]? = some i → cert[pc]? = some c →
+      InsMeets i (code.drop (pc + 1)) c := by
   induction code generalizing cert with
-  | nil => intro pc f c h1; simp at h1
-  | cons i is ih =>
+  | nil => intro pc i c h1; simp at h1
+  | cons i0 is ih =>
     cases cert with
-    | nil => intro pc f c _ h2; simp at h2
+    | nil => intro pc i c _ h2; simp at h2
     | cons c' cs =>
       obtain ⟨hi, hrest⟩ := h
-      intro pc f c h1 h2
+      intro pc i c h1 h2
       cases pc with
       | zero =>
         simp only [List.getElem?_cons_zero, Option.some.injEq] at h1 h2
         subst h1 h2
-        exact hi
+        simpa using hi
       | succ pc =>
         simp only [List.getElem?_cons_succ] at h1 h2
-        exact ih hrest h1 h2
+        simpa using ih hrest h1 h2
+
+/-- The two instructions after pc, if they are there. -/
+theorem drop_two {code : List Ins} {pc : Nat} {a b : Ins} (ha : code[pc + 1]? = some a)
+    (hb : code[pc + 2]? = some b) : ∃ t, code.drop (pc + 1) = a :: b :: t := by
+  refine ⟨code.drop (pc + 3), ?_⟩
+  have h1 : pc + 1 < code.length := (List.getElem?_eq_some_iff.mp ha).1
+  have h2 : pc + 2 < code.length := (List.getElem?_eq_some_iff.mp hb).1
+  rw [List.drop_eq_getElem_cons h1, List.drop_eq_getElem_cons h2]
+  simp only [List.getElem?_eq_getElem h1, List.getElem?_eq_getElem h2, Option.some.injEq] at ha hb
+  rw [ha, hb]
 
 /-! ## The bridge -/
 
@@ -182,6 +211,24 @@ theorem run_sound {code : List Ins} {cert : List Cert} {out : Nat} {s r : List C
         at? cert p d' r' = true → ys'.length = d' → zs'.length = r' →
         Out s r u out 0 (run code n p ⟨ys' ++ s, zs' ++ r, m', u, e'⟩) :=
       fun ys' zs' m' e' => nextN ys' zs' m' e' (Nat.le_refl n)
+    -- a callee meeting its Spec, from here, then on from p
+    have callStep : ∀ (F : Sem) (p n' k j rk rj : Nat) (st : S), n' ≤ n → Spec F k j rk rj →
+        k ≤ ys.length → rk ≤ zs.length → at? cert p (ys.length - k + j) (zs.length - rk + rj) = true →
+        F ⟨ys ++ s, zs ++ r, m, u, e⟩ = .ok st → Out s r u out 0 (run code n' p st) := by
+      intro F p n' k j rk rj st hn' hF hk hrk hnx hst
+      have hf := hF (ys.take k) (zs.take rk) (ys.drop k ++ s) (zs.drop rk ++ r) m u e
+        (by simp; omega) (by simp; omega)
+      have e1 : ys.take k ++ (ys.drop k ++ s) = ys ++ s := by
+        rw [← List.append_assoc, List.take_append_drop]
+      have e2 : zs.take rk ++ (zs.drop rk ++ r) = zs ++ r := by
+        rw [← List.append_assoc, List.take_append_drop]
+      rw [e1, e2, hst] at hf
+      obtain ⟨⟨ys2, hl2, hds⟩, ⟨ws, hwl, hrs⟩, hup⟩ := hf
+      obtain ⟨ds', rs', m', u', e'⟩ := st
+      simp only at hds hrs hup
+      subst hds hrs hup
+      have h := nextN (ys2 ++ ys.drop k) (ws ++ zs.drop rk) m' e' hn' hnx (by simp; omega) (by simp; omega)
+      simpa only [List.append_assoc] using h
     cases hcode : code[pc]? with
     | none => simp [run, hcode, S.fail, Out]
     | some ins =>
@@ -201,8 +248,49 @@ theorem run_sound {code : List Ins} {cert : List Cert} {out : Nat} {s r : List C
         simp only [run, hcode, Out]
         exact ⟨⟨ys, by omega, rfl⟩, ⟨[], rfl, rfl⟩, trivial⟩
       | lit v =>
-        simp only [run, hcode]
-        exact next (v :: ys) zs m e hs (by simp; omega) hzs
+        have hm := callsMeet hcalls hcode hcpc
+        cases hl : c.lk
+        case false =>
+          simp only [hl, Bool.false_eq_true, if_false] at hs
+          simp only [run, hcode]
+          exact next (v :: ys) zs m e hs (by simp; omega) hzs
+        case true =>
+          -- `['] word sem locked`: three steps as one
+          simp only [hl, if_true] at hs
+          cases hz1 : code[pc + 1]? with
+          | none => simp [hz1] at hs
+          | some i1 =>
+          cases hz2 : code[pc + 2]? with
+          | none => cases i1 <;> simp [hz1, hz2] at hs
+          | some i2 =>
+          cases i1 with
+          | call P =>
+            cases i2 with
+            | call L =>
+              simp only [hz1, hz2, Bool.and_eq_true, decide_eq_true_eq] at hs
+              obtain ⟨⟨hk, hrk⟩, hn⟩ := hs
+              obtain ⟨t, ht⟩ := drop_two hz1 hz2
+              rw [ht] at hm
+              simp only [InsMeets, hl, cond_true] at hm
+              simp only [run, hcode]
+              cases n with
+              | zero => simp [run, S.fail, Out]
+              | succ n =>
+              simp only [run, hz1]
+              split
+              · rename_i s1 hs1
+                cases n with
+                | zero => simp [run, S.fail, Out]
+                | succ n =>
+                simp only [run, hz2]
+                split
+                · rename_i s2 hs2
+                  exact callStep (seg3 v P L) (pc + 3) n c.k c.j c.rk c.rj s2 (by omega) hm (by omega)
+                    (by omega) (by rw [hys, hzs]; exact hn) (by simp only [seg3, hs1, hs2])
+                · simp [Out]
+              · simp [Out]
+            | _ => simp [hz1, hz2] at hs
+          | _ => cases i2 <;> simp [hz1, hz2] at hs
       | branch t =>
         simp only [run, hcode]
         exact next ys zs m e hs hys hzs
@@ -257,8 +345,8 @@ theorem run_sound {code : List Ins} {cert : List Cert} {out : Nat} {s r : List C
       | call f =>
         have hm := callsMeet hcalls hcode hcpc
         simp only [Bool.and_eq_true, Bool.not_eq_true'] at hs
-        obtain ⟨hcz, hs⟩ := hs
-        simp only [hcz, InsMeets, cond_false] at hm
+        obtain ⟨⟨hcl, hcz⟩, hs⟩ := hs
+        simp only [hcl, hcz, InsMeets, cond_false] at hm
         cases hq : c.q
         case true =>
           -- `?dup`, then `0branch t` or `0=` and `0branch t`: as one step
@@ -295,13 +383,16 @@ theorem run_sound {code : List Ins} {cert : List Cert} {out : Nat} {s r : List C
                 | zbranch t =>
                   simp only [hz1, hz2, Bool.and_eq_true] at hz
                   obtain ⟨⟨hza, hn⟩, ht⟩ := hz
-                  obtain ⟨c1, hc1, hc1z⟩ : ∃ c1, cert[pc + 1]? = some c1 ∧ c1.z = true := by
+                  obtain ⟨c1, hc1, hc1z, hc1l⟩ :
+                      ∃ c1, cert[pc + 1]? = some c1 ∧ c1.z = true ∧ c1.lk = false := by
                     unfold zAt at hza
                     split at hza
-                    · rename_i c1 h; exact ⟨c1, h, hza⟩
+                    · rename_i c1 h
+                      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hza
+                      exact ⟨c1, h, hza.1, hza.2⟩
                     · contradiction
                   have hg := callsMeet hcalls hz1 hc1
-                  simp only [hc1z, InsMeets, cond_true] at hg
+                  simp only [hc1z, hc1l, InsMeets, cond_true, cond_false] at hg
                   cases n with
                   | zero => simp [run, S.fail, Out]
                   | succ n =>
@@ -328,24 +419,11 @@ theorem run_sound {code : List Ins} {cert : List Cert} {out : Nat} {s r : List C
         simp only [hq, cond_false] at hm
         simp only [hq, Bool.false_eq_true, if_false, Bool.and_eq_true, decide_eq_true_eq] at hs
         obtain ⟨⟨hk, hrk⟩, hn⟩ := hs
-        have hf := hm (ys.take c.k) (zs.take c.rk)
-          (ys.drop c.k ++ s) (zs.drop c.rk ++ r) m u e (by simp; omega) (by simp; omega)
-        have e1 : ys.take c.k ++ (ys.drop c.k ++ s) = ys ++ s := by
-          rw [← List.append_assoc, List.take_append_drop]
-        have e2 : zs.take c.rk ++ (zs.drop c.rk ++ r) = zs ++ r := by
-          rw [← List.append_assoc, List.take_append_drop]
-        rw [e1, e2] at hf
         simp only [run, hcode]
         split
         · rename_i st' hst
-          rw [hst] at hf
-          obtain ⟨⟨ys2, hl2, hds⟩, ⟨ws, hwl, hrs⟩, hup⟩ := hf
-          obtain ⟨ds', rs', m', u', e'⟩ := st'
-          simp only at hds hrs hup
-          subst hds hrs hup
-          have h := next (ys2 ++ ys.drop c.k) (ws ++ zs.drop c.rk) m' e' hn
-            (by simp; omega) (by simp; omega)
-          simpa only [List.append_assoc] using h
+          exact callStep f (pc + 1) n c.k c.j c.rk c.rj st' (Nat.le_refl n) hm (by omega) (by omega)
+            (by rw [hys, hzs]; exact hn) hst
         · simp [Out]
 
 theorem check_parts {code : List Ins} {cert : List Cert} {inp out : Nat}

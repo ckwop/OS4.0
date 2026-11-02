@@ -193,6 +193,25 @@ def zequals(qd):
     return {pc + 1 for pc, kind in qd.items() if kind == 2}
 
 
+LOCKED = "«locked»"
+
+# System calls that write no memory of ours (Linux AArch64 numbers): fcntl,
+# openat, lseek, write, pwrite64, fsync, socket, bind, connect. A call to one
+# of these, by a number the certificate knows, writes nothing (the effect is
+# the world's, as for PAUSE: `syscall_quiet_foot`); any other may fill a
+# buffer, so it is shown as writing anywhere (`syscall_foot`).
+QUIET_SYSCALLS = {25, 56, 62, 64, 68, 82, 198, 200, 203}
+
+
+def in_seg(sg, pc):
+    """Whether pc is one of the two calls of a `['] word sem locked` step."""
+    return pc - 1 in sg or pc - 2 in sg
+
+
+def lean_str(s):
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
 def v_text(v, names):
     """A value for the footprint report: in0 is the top input; a user
     variable or a word's body by its name (names: the user offsets' and the
@@ -396,6 +415,8 @@ class Generator:
         self.foots = dict(FOOTS)                    # Lean ref -> (regions, outputs, return outputs, proof)
         self.fthms = []                             # Foot theorems, callees first
         self.no_foot = {}                           # Lean ref -> why it has none
+        self.consts = set()                         # words that push a constant (pushConst)
+        self.needs = {}                             # Lean ref -> the `Runs` facts its theorems rest on
         self.kernel = kernel_words("arch/aarch64")
         self.does_owner = None
         # The boot files' words, by address: the kernel defines no colon words,
@@ -474,6 +495,7 @@ class Generator:
         if w.kind in (2, 3):
             value = w.cells[0] if w.kind == 2 else w.xt + 8
             name = self.emit(w.id, KINDS[w.kind], f"pushConst {self.cell(value)}")
+            self.consts.add(name)
             self.prove(name, (0, 1, 0, 0), "pushConst_spec _")
             v = self.val(value)
             self.prove_foot(name, [], [v], [], f"pushConst_foot _ {v_lean(v)} {lit_proof(v)}")
@@ -577,6 +599,14 @@ class Generator:
         if self.deep:                               # runs a loop, here or in a callee
             self.loopy.add(name)
         self.deep = False
+        sg = self.segs(insns)
+        needs = set()
+        for pc, op in enumerate(insns):
+            if op[0] == "call" and not in_seg(sg, pc):
+                needs |= self.needs.get(op[1], set())
+        for g, n, _ in sg.values():
+            needs |= {(n, g)} | self.needs.get(g, set())
+        self.needs[name] = needs
         found = self.infer(insns)
         if isinstance(found, str):
             self.no_spec[name] = found
@@ -587,8 +617,14 @@ class Generator:
             calls = "True.intro"
             for pc in reversed(range(len(insns))):
                 op = insns[pc]
-                proof = (f"{QDUP}.qdup" if pc in qd else "Prim.zequal_zeq" if pc in zq
-                         else self.specs[op[1]][4] if op[0] == "call" else "True.intro")
+                if pc in sg:
+                    g, _, P = sg[pc]
+                    proof = f"(locked_seg_spec Runs.runs {self.specs[g][4]} {self.specs[P][4]})"
+                elif in_seg(sg, pc):
+                    proof = "True.intro"
+                else:
+                    proof = (f"{QDUP}.qdup" if pc in qd else "Prim.zequal_zeq" if pc in zq
+                             else self.specs[op[1]][4] if op[0] == "call" else "True.intro")
                 calls = f"And.intro {proof} ({calls})"
             self.thms.append(f"noncomputable def {name}.cert : List Cert := [{', '.join(certs)}]\n")
             self.prove(name, (k, j, 0, 0),
@@ -612,7 +648,7 @@ class Generator:
         """State and prove a word's Foot; later words' proofs use it."""
         k, j, rk, rj = self.specs[name][:4]
         self.foots[name] = (regs, dout, rout, f"{name}.foot")
-        self.fthms.append(f"theorem {name}.foot : Foot {name} {k} {j} {rk} {rj}\n"
+        self.fthms.append(f"theorem {name}.foot{self.binders(name)} : Foot {name} {k} {j} {rk} {rj}\n"
                           f"    {rs_lean(regs)} {vs_lean(dout)} {vs_lean(rout)} :=\n  {proof}\n")
 
     def infer_foot(self, name, insns):
@@ -622,9 +658,18 @@ class Generator:
         k, j = self.specs[name][:2]
         qd = qdups(insns)
         zq = zequals(qd)
+        sg = self.segs(insns)
         for pc, op in enumerate(insns):
-            if op[0] == "call" and op[1] not in self.foots and pc not in qd:
+            if op[0] == "call" and op[1] not in self.foots and pc not in qd and not in_seg(sg, pc):
                 return "calls a word with no footprint"
+        seg = {}                                        # pc -> the step's (k, j, regions, outputs, proof)
+        for pc, (g, _, P) in sg.items():
+            pd = self.foots[P][1]
+            if g not in self.foots or len(pd) != 1 or pd[0][0] != "word":
+                return "runs a word with no footprint under LOCKED"
+            gregs, gdout, _, gproof = self.foots[g]
+            seg[pc] = (self.specs[g][0], self.specs[g][1], gregs + [(pd[0], ("num", 16))], gdout,
+                       f"(locked_seg_foot Runs.runs {gproof} {self.foots[P][3]} (fun _ => rfl))")
         state, work, exits = {0: ([A(i) for i in range(k)], [])}, [0], []
         while work:
             pc = work.pop()
@@ -633,14 +678,17 @@ class Generator:
             if op[0] == "exit":
                 exits.append(ds)
                 continue
-            if pc in qd:                                # ?dup [0=] 0branch: zero one down, else as it was
+            if pc in seg:                               # ['] word sem locked: as word, and the semaphore
+                ck, _, _, cdout, _ = seg[pc]
+                succ = [(pc + 3, [v_subst(v, ds[:ck], []) for v in cdout] + ds[ck:], rs)]
+            elif pc in qd:                              # ?dup [0=] 0branch: zero one down, else as it was
                 if qd[pc] == 1:
                     succ = [(insns[pc + 1][1], ds[1:], rs), (pc + 2, ds, rs)]
                 else:
                     succ = [(pc + 3, ds[1:], rs), (insns[pc + 2][1], ds, rs)]
             elif op[0] == "call":
                 ck, cj, crk, crj = self.specs[op[1]][:4]
-                _, dout, rout, _ = self.foots[op[1]]
+                _, dout, rout, _ = self.foot_at(op, ds)
                 DS, RS = ds[:ck], rs[:crk]
                 succ = [(pc + 1, [v_subst(v, DS, RS) for v in dout] + ds[ck:],
                          [v_subst(v, DS, RS) for v in rout] + rs[crk:])]
@@ -671,13 +719,20 @@ class Generator:
             ds, rs = state.get(pc, ([], []))
             ck = cj = crk = crj = 0
             cregs, cdout, crout, lv = [], [], [], ANY
-            if pc in qd:
+            if pc in seg:
+                ck, cj, cregs, cdout, proof = seg[pc]
+                if live:
+                    regs += [r_subst(r, ds[:ck], []) for r in cregs]
+                proofs.append(proof)
+            elif in_seg(sg, pc):
+                proofs.append("True.intro")
+            elif pc in qd:
                 proofs.append(f"{QDUP}.qdup")
             elif pc in zq:
                 proofs.append("Prim.zequal_zeq")
             elif op[0] == "call":
                 ck, cj, crk, crj = self.specs[op[1]][:4]
-                cregs, cdout, crout, proof = self.foots[op[1]]
+                cregs, cdout, crout, proof = self.foot_at(op, ds)
                 if live:
                     regs += [r_subst(r, ds[:ck], rs[:crk]) for r in cregs]
                 proofs.append(proof)
@@ -687,9 +742,37 @@ class Generator:
             else:
                 proofs.append("True.intro")
             certs.append(f"⟨{self.bool(live)}, {vs_lean(ds)}, {vs_lean(rs)}, {ck}, {cj}, {crk}, {crj}, "
-                         f"{rs_lean(cregs)}, {vs_lean(cdout)}, {vs_lean(crout)}, {v_lean(lv)}, {self.bool(pc in qd)}, {self.bool(pc in zq)}⟩")
+                         f"{rs_lean(cregs)}, {vs_lean(cdout)}, {vs_lean(crout)}, {v_lean(lv)}, {self.bool(pc in qd)}, {self.bool(pc in zq)}, "
+                         f"{self.bool(pc in seg or in_seg(sg, pc))}⟩")
         regs = [ALL] if any(ANY in r for r in regs) else list(dict.fromkeys(regs))
         return regs, dout, certs, proofs
+
+    def segs(self, insns):
+        """`['] word sem locked`, which certificates take as one step (`seg3`):
+        the literal's pc -> (word's ref, word's name, sem's ref). The sem word
+        pushes a constant, and nothing else jumps into the step."""
+        targets = {op[1] for op in insns if op[0] in ("branch", "zbranch", "qdo", "loop", "ploop")}
+        found = {}
+        for pc, op in enumerate(insns[:-2]):
+            if op[0] != "lit" or insns[pc + 1][0] != "call" or insns[pc + 2] != ("call", LOCKED):
+                continue
+            if pc + 1 in targets or pc + 2 in targets:
+                continue
+            v, g, P = self.val(op[1]), self.memo.get(op[1]), insns[pc + 1][1]
+            if v[0] == "word" and v[2] == 0 and isinstance(g, str) and P in self.consts:
+                found[pc] = (g, v[1], P)
+        return found
+
+    def foot_at(self, op, ds):
+        """A call's callee summary, given the stack before it: a system call
+        whose number shows it writes no memory gets the precise one."""
+        if op == ("call", "Prim.syscall") and ds and ds[0][0] == "num" and ds[0][1] in QUIET_SYSCALLS:
+            return [], [ANY], [], "Prim.syscall_quiet_foot"
+        return self.foots[op[1]]
+
+    def binders(self, name):
+        """The `Runs` facts a word's theorems rest on, as instance arguments."""
+        return "".join(f" [Runs {lean_str(n)} {g}]" for n, g in sorted(self.needs.get(name, ())))
 
     def emit(self, ident, what, body):
         self.defs.append(f"/-- {what} -/\n@[forth] noncomputable def {lean_name(ident)} : Sem := {body}\n")
@@ -702,7 +785,7 @@ class Generator:
         """State and prove a word's Spec; later words' proofs use it."""
         k, j, rk, rj = effect
         self.specs[name] = (k, j, rk, rj, f"{name}.spec")
-        self.thms.append(f"theorem {name}.spec : Spec {name} {k} {j} {rk} {rj} :=\n  {proof}\n")
+        self.thms.append(f"theorem {name}.spec{self.binders(name)} : Spec {name} {k} {j} {rk} {rj} :=\n  {proof}\n")
 
     def infer(self, insns):
         """The depths of both stacks before each instruction, relative to the
@@ -710,6 +793,7 @@ class Generator:
         state, work, low, exits = {0: (0, 0)}, [0], 0, set()
         qd = qdups(insns)
         zq = zequals(qd)
+        sg = self.segs(insns)
         while work:
             pc = work.pop()
             d, r = state[pc]
@@ -717,7 +801,14 @@ class Generator:
             if op[0] == "exit":
                 exits.add((d, r))
                 continue
-            if pc in qd:                            # ?dup [0=] 0branch: zero one down, else as it was
+            if pc in sg:                            # ['] word sem locked: word's effect
+                g = sg[pc][0]
+                if g not in self.specs or self.specs[g][2:4] != (0, 0):
+                    return "runs a word with no Spec under LOCKED"
+                k, j = self.specs[g][:2]
+                low = min(low, d - k)
+                succ = [(pc + 3, d - k + j, r)]
+            elif pc in qd:                          # ?dup [0=] 0branch: zero one down, else as it was
                 low = min(low, d - 1)
                 if qd[pc] == 1:
                     succ = [(insns[pc + 1][1], d - 1, r), (pc + 2, d, r)]
@@ -766,14 +857,19 @@ class Generator:
         certs = []
         for pc, op in enumerate(insns):
             if pc not in state:
-                certs.append(f"⟨Bool.false, 0, 0, 0, 0, 0, 0, {self.bool(pc in qd)}, {self.bool(pc in zq)}⟩")
+                certs.append(f"⟨Bool.false, 0, 0, 0, 0, 0, 0, {self.bool(pc in qd)}, {self.bool(pc in zq)}, "
+                             f"{self.bool(in_seg(sg, pc))}⟩")
                 continue
             d, r = state[pc]
             if pc in qd:
-                certs.append(f"⟨Bool.true, {d - low}, {r}, 0, 0, 0, 0, Bool.true, Bool.false⟩")
+                certs.append(f"⟨Bool.true, {d - low}, {r}, 0, 0, 0, 0, Bool.true, Bool.false, Bool.false⟩")
+                continue
+            if pc in sg:
+                k, j = self.specs[sg[pc][0]][:2]
+                certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, 0, 0, Bool.false, Bool.false, Bool.true⟩")
                 continue
             k, j, rk, rj = self.specs[op[1]][:4] if op[0] == "call" else (0, 0, 0, 0)
-            certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, {rk}, {rj}, Bool.false, Bool.false⟩")
+            certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, {rk}, {rj}, Bool.false, Bool.false, Bool.false⟩")
         return -low, dx - low, certs
 
     # ---- Counted words (proofs/OS4/Yield.lean): steps between pauses
@@ -1088,6 +1184,12 @@ def assign_files(gen, kernel):
         gen.owners[lean_name(f"does:{w.id}")] = at
 
 
+def runners_after_core(m):
+    """A module's own imports, for Specs and Foots: its words, and after
+    core.fs's the `locked` lemmas (OS4.Runners), which rest on core.fs's."""
+    return [f"OS4.Words.{m}"] + ([] if m == "Core" else ["OS4.Runners"])
+
+
 def write_modules(path, chunks, gen, what, base, own, uses, opening=(), closing=()):
     """Each chunk of Lean goes in the module of the newest boot file it names,
     which imports only the modules it uses: own(module) for its own file's,
@@ -1200,7 +1302,7 @@ def comments(gen, kernel):
             if ck >= k and ck - k == cj - j:
                 counts["agree"] += 1
                 thms.append(f"/-- `{name}` ( {comment.strip()} ) -/\n"
-                            f"theorem {lean_name(w.id)}.comment : Spec {ref} {ck} {cj} 0 0 :=\n"
+                            f"theorem {lean_name(w.id)}.comment{gen.binders(ref)} : Spec {ref} {ck} {cj} 0 0 :=\n"
                             f"  spec_frame {ref}.spec {ck - k}\n")
             else:
                 counts["disagree"] += 1
@@ -1215,7 +1317,7 @@ def footprints(gen, path, report_path):
     write_modules(path, gen.fthms, gen,
                   "each word's footprint (OS4.Footprint): what it may write, proven\n"
                   "-- from a certificate and its callees' footprints",
-                  ["OS4.FootPrims", "OS4.Idioms"], lambda m: [f"OS4.Words.{m}"],
+                  ["OS4.FootPrims", "OS4.Idioms"], runners_after_core,
                   lambda m, has: [f"OS4.Foots.{m}" if has else f"OS4.Words.{m}"],
                   ["set_option maxRecDepth 16384             -- `decide` over the longest threads' certificates"])
     names = {"user": {off: name for name, (how, *rest) in gen.kernel.items() if how == "user" for off in rest},
@@ -1287,7 +1389,7 @@ def main():
         write_modules(path, gen.thms + thms, gen,
                       "each word's stack effect, proven from a certificate and its\n"
                       "-- callees' effects; then each agreeing stack comment",
-                      ["OS4.PrimSpecs", "OS4.Idioms"], lambda m: [f"OS4.Words.{m}"],
+                      ["OS4.PrimSpecs", "OS4.Idioms"], runners_after_core,
                       lambda m, has: [f"OS4.Specs.{m}" if has else f"OS4.Words.{m}"],
                       ["set_option maxRecDepth 16384             -- `decide` over the longest threads' certificates"])
         open(report, "w", newline="\n").write("".join(f + "\n" for f in findings))

@@ -18,6 +18,7 @@ Abstractions, which the proofs inherit:
   calls do not push a return address, so words that reach below their own
   frame on the return stack (`catch`, `throw`) cannot be modelled this way;
   those two are given specifications instead (`catchM`, `throwM`).
+  A failure with code 0, which THROW never makes, is not caught (`Err.code`).
   `(s")` is decoded by the generator into the two literals it pushes.
 * Memory is bytes, little endian, at 64-bit addresses, all of it readable and
   writable. The data and return stacks are not in it, so `sp@` and `rp@`
@@ -46,6 +47,9 @@ Abstractions, which the proofs inherit:
   generated beside this one and not proven equal to it. They trust that each
   table of xts in proofs/yields.txt holds only the words listed there, and that
   the loops listed there as not counted end.
+* The xt of each word the boot files hand to LOCKED as a literal runs that
+  word (`Runs`, in `OS4.Runners`). A theorem that relies on it says so: it
+  takes the fact as an instance argument.
 -/
 
 namespace OS4
@@ -513,14 +517,20 @@ specifications (trusted). -/
 
 /-- The code CATCH sees for a failure, if it catches it: kernel errors are
 thrown with the codes in kernel.s. Running out of fuel (not finishing) and
-BYE are not caught. -/
+BYE are not caught. Nor is a failure with code 0, which cannot happen (THROW
+of 0 does nothing; only an xt nothing is known of could fail so here), so a
+caught code is never 0 (`code_ne_zero`). -/
 def Err.code : Err → Option Cell
   | .underflow => some (-4)
   | .rUnderflow => some (-6)
   | .divZero => some (-10)
   | .outOfRange => some (-11)
-  | .throw n => some n
+  | .throw n => if n = 0 then none else some n
   | _ => none
+
+theorem Err.code_ne_zero {e : Err} {n : Cell} (h : e.code = some n) : n ≠ 0 := by
+  cases e <;> simp [Err.code] at h
+  all_goals first | (subst h; decide) | (obtain ⟨h0, rfl⟩ := h; exact h0)
 
 /-- What the word with execution token xt does. Unknown here: a theorem
 proven with it holds whatever the dictionary holds. A theorem that needs to

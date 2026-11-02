@@ -378,11 +378,12 @@ structure FCert where
   lv : Val
   q : Bool
   z : Bool
+  lk : Bool
 
 /-- Instruction p's entry says it is `0=` (in `?dup 0= if`; see `ZEq`). -/
 def zAtF (cert : List FCert) (p : Nat) : Bool :=
   match cert[p]? with
-  | some c => c.z
+  | some c => c.z && !c.lk
   | none => false
 
 /-- Instruction p is live, and its stacks are no more precise than these. -/
@@ -394,6 +395,17 @@ def atF (cert : List FCert) (p : Nat) (ds rs : List Val) : Bool :=
 /-- A region the word's own regions include. -/
 def coveredBy (regs : List Reg) (r : Reg) : Bool := decide (r ∈ regs) || decide (Reg.all ∈ regs)
 
+/-- A callee summarised by c, in its caller's terms: its writes are among
+the word's, and what it leaves is what entry p expects. -/
+def callOK (cert : List FCert) (regs : List Reg) (c : FCert) (p : Nat) : Bool :=
+  let DS := c.ds.take c.k
+  let RS := c.rs.take c.rk
+  decide (c.k ≤ c.ds.length) && decide (c.rk ≤ c.rs.length) &&
+  decide (c.dout.length = c.j) && decide (c.rout.length = c.rj) &&
+  c.regs.all (fun r => coveredBy regs (r.subst DS RS)) &&
+  atF cert p (c.dout.map (Val.subst DS RS) ++ c.ds.drop c.k)
+    (c.rout.map (Val.subst DS RS) ++ c.rs.drop c.rk)
+
 def fstep (code : List Ins) (cert : List FCert) (regs : List Reg) (dout : List Val) (pc : Nat) : Bool :=
   match cert[pc]? with
   | none => false
@@ -402,22 +414,20 @@ def fstep (code : List Ins) (cert : List FCert) (regs : List Reg) (dout : List V
     match code[pc]? with
     | none => true
     | some (.call _) =>
-      !c.z &&
+      !c.lk && !c.z &&
       if c.q then
         match c.ds, code[pc + 1]?, code[pc + 2]? with
         | w :: ds, some (.zbranch t), _ => atF cert t ds c.rs && atF cert (pc + 2) (w :: ds) c.rs
         | w :: ds, some (.call _), some (.zbranch t) =>
           zAtF cert (pc + 1) && atF cert (pc + 3) ds c.rs && atF cert t (w :: ds) c.rs
         | _, _, _ => false
-      else
-      let DS := c.ds.take c.k
-      let RS := c.rs.take c.rk
-      decide (c.k ≤ c.ds.length) && decide (c.rk ≤ c.rs.length) &&
-      decide (c.dout.length = c.j) && decide (c.rout.length = c.rj) &&
-      c.regs.all (fun r => coveredBy regs (r.subst DS RS)) &&
-      atF cert (pc + 1) (c.dout.map (Val.subst DS RS) ++ c.ds.drop c.k)
-        (c.rout.map (Val.subst DS RS) ++ c.rs.drop c.rk)
-    | some (.lit _) => atF cert (pc + 1) (c.lv :: c.ds) c.rs
+      else callOK cert regs c (pc + 1)
+    | some (.lit _) =>
+      if c.lk then
+        match code[pc + 1]?, code[pc + 2]? with
+        | some (.call _), some (.call _) => callOK cert regs c (pc + 3)
+        | _, _ => false
+      else atF cert (pc + 1) (c.lv :: c.ds) c.rs
     | some (.branch t) => atF cert t c.ds c.rs
     | some (.zbranch t) =>
       match c.ds with
@@ -445,23 +455,34 @@ def fcheck (code : List Ins) (cert : List FCert) (inp out : Nat) (regs : List Re
   decide (dout.length = out) && atF cert 0 (argList inp) [] &&
     (List.range code.length).all (fstep code cert regs dout)
 
-/-- Each call meets the Foot its certificate entry claims, or is `?dup`;
-each literal is its value. -/
-def InsFoot : Ins → FCert → Prop
-  | .call f, c => cond c.z (ZEq f) (cond c.q (QDup f) (Foot f c.k c.j c.rk c.rj c.regs c.dout c.rout))
-  | .lit v, c => ∀ ρ, c.lv.holds ρ v
-  | _, _ => True
+/-- P writes nothing, whether it returns or fails. -/
+def NoWrite (P : Sem) : Prop := ∀ s, resMem (P s) = s.mem
+
+/-- Each call meets the Foot its certificate entry claims, or is `?dup` or
+`0=`; each literal is its value, but a literal with lk and the two calls
+after it meet the Foot its entry claims (`seg3`), the first call writing
+nothing. An instruction sees the ones after it. -/
+def InsFoot : Ins → List Ins → FCert → Prop
+  | .call f, _, c => cond c.lk True (cond c.z (ZEq f) (cond c.q (QDup f) (Foot f c.k c.j c.rk c.rj c.regs c.dout c.rout)))
+  | .lit v, next, c => cond c.lk (SegFoot v next c) (∀ ρ, c.lv.holds ρ v)
+  | _, _, _ => True
+where
+  SegFoot (v : Cell) (next : List Ins) (c : FCert) : Prop :=
+    match next with
+    | .call P :: .call L :: _ => NoWrite P ∧ Foot (seg3 v P L) c.k c.j c.rk c.rj c.regs c.dout c.rout
+    | _ => True
 
 def InsFoots : List Ins → List FCert → Prop
   | [], _ => True
   | _ :: _, [] => True
-  | i :: is, c :: cs => InsFoot i c ∧ InsFoots is cs
+  | i :: is, c :: cs => InsFoot i is c ∧ InsFoots is cs
 
 theorem insFoots {code : List Ins} {cert : List FCert} (h : InsFoots code cert) :
-    ∀ {pc : Nat} {i : Ins} {c : FCert}, code[pc]? = some i → cert[pc]? = some c → InsFoot i c := by
+    ∀ {pc : Nat} {i : Ins} {c : FCert}, code[pc]? = some i → cert[pc]? = some c →
+      InsFoot i (code.drop (pc + 1)) c := by
   induction code generalizing cert with
   | nil => intro pc i c h1; simp at h1
-  | cons i is ih =>
+  | cons i0 is ih =>
     cases cert with
     | nil => intro pc i c _ h2; simp at h2
     | cons c' cs =>
@@ -471,10 +492,10 @@ theorem insFoots {code : List Ins} {cert : List FCert} (h : InsFoots code cert) 
       | zero =>
         simp only [List.getElem?_cons_zero, Option.some.injEq] at h1 h2
         subst h1 h2
-        exact hi
+        simpa using hi
       | succ pc =>
         simp only [List.getElem?_cons_succ] at h1 h2
-        exact ih hrest h1 h2
+        simpa using ih hrest h1 h2
 
 theorem atF_spec {cert : List FCert} {p : Nat} {ds rs : List Val} (h : atF cert p ds rs = true) :
     ∃ c, cert[p]? = some c ∧ c.live = true ∧ leL ds c.ds = true ∧ leL rs c.rs = true := by
@@ -531,6 +552,60 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
       fun ys' zs' m' e' => nextN ys' zs' m' e' (Nat.le_refl n)
     have failed : ∀ err, FRes regs dout ⟨xs0, [], u⟩ m0 s r u out
         ((⟨ys ++ s, zs ++ r, m, u, e⟩ : S).fail err) := fun err => ⟨hk, trivial⟩
+    -- a callee this entry summarises, from here, then on from p
+    have callStep : ∀ (F : Sem) (p n' : Nat), n' ≤ n → Foot F c.k c.j c.rk c.rj c.regs c.dout c.rout →
+        callOK cert regs c p = true →
+        FRes regs dout ⟨xs0, [], u⟩ m0 s r u out
+          (match F ⟨ys ++ s, zs ++ r, m, u, e⟩ with
+           | .ok s' => run code n' p s'
+           | .error e => .error e) := by
+      intro F p n' hn' hi hs
+      simp only [callOK, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hs
+      obtain ⟨⟨⟨⟨⟨hk1, hrk⟩, hdj⟩, hrj⟩, hcov⟩, hn⟩ := hs
+      have hft := hi (ys.take c.k) (zs.take c.rk) (ys.drop c.k ++ s) (zs.drop c.rk ++ r) m u e
+        (by simp; omega) (by simp; omega)
+      have e1 : ys.take c.k ++ (ys.drop c.k ++ s) = ys ++ s := by
+        rw [← List.append_assoc, List.take_append_drop]
+      have e2 : zs.take c.rk ++ (zs.drop c.rk ++ r) = zs ++ r := by
+        rw [← List.append_assoc, List.take_append_drop]
+      rw [e1, e2] at hft
+      obtain ⟨hkept, hfo⟩ := hft
+      have hd := agree_take c.k hay
+      have hr := agree_take c.rk haz
+      have hdl : (c.ds.take c.k).length = (ys.take c.k).length := by simp [hys]
+      have hrl : (c.rs.take c.rk).length = (zs.take c.rk).length := by simp [hzs]
+      -- the callee's writes are among the word's
+      have hk' : ∀ m', Kept c.regs ⟨ys.take c.k, zs.take c.rk, u⟩ m m' → Kept regs ⟨xs0, [], u⟩ m0 m' := by
+        intro m' hm a hq hw
+        rw [hm a hq ?_, hk a hq hw]
+        rintro ⟨r', hr', hh⟩
+        exact hw (coveredBy_writes (hcov r' hr') (has_subst (ρ := ⟨xs0, [], u⟩) hd hdl hr hrl hh))
+      split
+      · rename_i st' hst
+        rw [hst] at hkept hfo
+        obtain ⟨hl1, hd1, ha1, hl2, hd2, ha2, hup⟩ := hfo
+        obtain ⟨ds', rs', m', u', e'⟩ := st'
+        simp only at hl1 hd1 ha1 hl2 hd2 ha2 hup hkept
+        subst u'
+        have eds : ds' = ds'.take c.j ++ (ys.drop c.k ++ s) := by
+          conv => lhs; rw [← List.take_append_drop c.j ds']
+          rw [hd1]
+        have ers : rs' = rs'.take c.rj ++ (zs.drop c.rk ++ r) := by
+          conv => lhs; rw [← List.take_append_drop c.rj rs']
+          rw [hd2]
+        rw [eds, ers, ← List.append_assoc, ← List.append_assoc]
+        have hlj : (ds'.take c.j).length = c.j := by simp; omega
+        have hlrj : (rs'.take c.rj).length = c.rj := by simp; omega
+        refine nextN _ _ m' e' hn' hn ?_ ?_ ?_ ?_ (hk' m' hkept)
+        · simp [hlj, hdj, hys]
+        · simp [hlrj, hrj, hzs]
+        · refine agree_append (by simp [hlj, hdj]) ?_ (agree_drop c.k hay)
+          exact agree_subst (ρ := ⟨xs0, [], u⟩) hd hdl hr hrl (run_foot.agree_take_of ha1)
+        · refine agree_append (by simp [hlrj, hrj]) ?_ (agree_drop c.rk haz)
+          exact agree_subst (ρ := ⟨xs0, [], u⟩) hd hdl hr hrl (run_foot.agree_take_of ha2)
+      · rename_i fl hst
+        rw [hst] at hkept
+        exact ⟨hk' _ hkept, trivial⟩
     cases hcode : code[pc]? with
     | none => simp only [run, hcode]; exact failed _
     | some ins =>
@@ -560,8 +635,59 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
         · simp
         · exact agree_nil _ _
       | lit v =>
-        simp only [run, hcode]
-        exact next (v :: ys) zs m e hs (by simp [hys]) hzs (agree_cons.mpr ⟨hi _, hay⟩) haz hk
+        cases hl : c.lk
+        case false =>
+          simp only [hl, Bool.false_eq_true, if_false] at hs
+          simp only [InsFoot, hl, cond_false] at hi
+          simp only [run, hcode]
+          exact next (v :: ys) zs m e hs (by simp [hys]) hzs (agree_cons.mpr ⟨hi _, hay⟩) haz hk
+        case true =>
+          -- `['] word sem locked`: three steps as one
+          simp only [hl, if_true] at hs
+          cases hz1 : code[pc + 1]? with
+          | none => simp [hz1] at hs
+          | some i1 =>
+          cases hz2 : code[pc + 2]? with
+          | none => cases i1 <;> simp [hz1, hz2] at hs
+          | some i2 =>
+          cases i1 with
+          | call P =>
+            cases i2 with
+            | call L =>
+              simp only [hz1, hz2] at hs
+              obtain ⟨t, ht⟩ := drop_two hz1 hz2
+              rw [ht] at hi
+              simp only [InsFoot, InsFoot.SegFoot, hl, cond_true] at hi
+              obtain ⟨hP, hF⟩ := hi
+              have hPm := hP ⟨v :: (ys ++ s), zs ++ r, m, u, e⟩
+              simp only [run, hcode]
+              cases n with
+              | zero => exact ⟨hk, trivial⟩
+              | succ n =>
+              simp only [run, hz1]
+              split
+              · rename_i s1 hs1
+                rw [hs1] at hPm
+                simp only [resMem] at hPm
+                cases n with
+                | zero =>
+                  refine ⟨?_, trivial⟩
+                  simp only [run, S.fail, resMem, hPm]
+                  exact hk
+                | succ n =>
+                simp only [run, hz2]
+                have hseg : seg3 v P L ⟨ys ++ s, zs ++ r, m, u, e⟩ = L s1 := by simp only [seg3, hs1]
+                have := callStep (seg3 v P L) (pc + 3) n (by omega) hF hs
+                rw [hseg] at this
+                exact this
+              · rename_i fl hs1
+                rw [hs1] at hPm
+                simp only [resMem] at hPm
+                refine ⟨?_, trivial⟩
+                simp only [resMem, hPm]
+                exact hk
+            | _ => simp [hz1, hz2] at hs
+          | _ => cases i2 <;> simp [hz1, hz2] at hs
       | branch t =>
         simp only [run, hcode]
         exact next ys zs m e hs hys hzs hay haz hk
@@ -618,8 +744,8 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
             ha (agree_cons.mpr ⟨holds_any _ _, agree_cons.mpr ⟨h2.1, h2.2⟩⟩) hk
       | call f =>
         simp only [Bool.and_eq_true, Bool.not_eq_true'] at hs
-        obtain ⟨hcz, hs⟩ := hs
-        simp only [hcz, InsFoot, cond_false] at hi
+        obtain ⟨⟨hcl, hcz⟩, hs⟩ := hs
+        simp only [hcl, hcz, InsFoot, cond_false] at hi
         cases hq : c.q
         case true =>
           -- `?dup`, then `0branch t` or `0=` and `0branch t`: as one step
@@ -658,13 +784,16 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
                 | zbranch t =>
                   simp only [hz1, hz2, Bool.and_eq_true] at hs
                   obtain ⟨⟨hza, hn⟩, ht⟩ := hs
-                  obtain ⟨c1, hc1, hc1z⟩ : ∃ c1, cert[pc + 1]? = some c1 ∧ c1.z = true := by
+                  obtain ⟨c1, hc1, hc1z, hc1l⟩ :
+                      ∃ c1, cert[pc + 1]? = some c1 ∧ c1.z = true ∧ c1.lk = false := by
                     unfold zAtF at hza
                     split at hza
-                    · rename_i c1 h; exact ⟨c1, h, hza⟩
+                    · rename_i c1 h
+                      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hza
+                      exact ⟨c1, h, hza.1, hza.2⟩
                     · contradiction
                   have hg := insFoots hins hz1 hc1
-                  simp only [hc1z, InsFoot, cond_true] at hg
+                  simp only [hc1z, hc1l, InsFoot, cond_true, cond_false] at hg
                   have hg0 := hg 0 (ys' ++ s) (zs ++ r) m u e
                   have hgx := hg x (x :: (ys' ++ s)) (zs ++ r) m u e
                   cases n with
@@ -690,53 +819,8 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
         case false =>
         simp only [hq, cond_false] at hi
         simp only [hq, Bool.false_eq_true, if_false] at hs
-        simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hs
-        obtain ⟨⟨⟨⟨⟨hk1, hrk⟩, hdj⟩, hrj⟩, hcov⟩, hn⟩ := hs
-        have hft := hi (ys.take c.k) (zs.take c.rk) (ys.drop c.k ++ s) (zs.drop c.rk ++ r) m u e
-          (by simp; omega) (by simp; omega)
-        have e1 : ys.take c.k ++ (ys.drop c.k ++ s) = ys ++ s := by
-          rw [← List.append_assoc, List.take_append_drop]
-        have e2 : zs.take c.rk ++ (zs.drop c.rk ++ r) = zs ++ r := by
-          rw [← List.append_assoc, List.take_append_drop]
-        rw [e1, e2] at hft
-        obtain ⟨hkept, hfo⟩ := hft
-        have hd := agree_take c.k hay
-        have hr := agree_take c.rk haz
-        have hdl : (c.ds.take c.k).length = (ys.take c.k).length := by simp [hys]
-        have hrl : (c.rs.take c.rk).length = (zs.take c.rk).length := by simp [hzs]
-        -- the callee's writes are among the word's
-        have hk' : ∀ m', Kept c.regs ⟨ys.take c.k, zs.take c.rk, u⟩ m m' → Kept regs ⟨xs0, [], u⟩ m0 m' := by
-          intro m' hm a hq hw
-          rw [hm a hq ?_, hk a hq hw]
-          rintro ⟨r', hr', hh⟩
-          exact hw (coveredBy_writes (hcov r' hr') (has_subst (ρ := ⟨xs0, [], u⟩) hd hdl hr hrl hh))
         simp only [run, hcode]
-        split
-        · rename_i st' hst
-          rw [hst] at hkept hfo
-          obtain ⟨hl1, hd1, ha1, hl2, hd2, ha2, hup⟩ := hfo
-          obtain ⟨ds', rs', m', u', e'⟩ := st'
-          simp only at hl1 hd1 ha1 hl2 hd2 ha2 hup hkept
-          subst u'
-          have eds : ds' = ds'.take c.j ++ (ys.drop c.k ++ s) := by
-            conv => lhs; rw [← List.take_append_drop c.j ds']
-            rw [hd1]
-          have ers : rs' = rs'.take c.rj ++ (zs.drop c.rk ++ r) := by
-            conv => lhs; rw [← List.take_append_drop c.rj rs']
-            rw [hd2]
-          rw [eds, ers, ← List.append_assoc, ← List.append_assoc]
-          have hlj : (ds'.take c.j).length = c.j := by simp; omega
-          have hlrj : (rs'.take c.rj).length = c.rj := by simp; omega
-          refine next _ _ m' e' hn ?_ ?_ ?_ ?_ (hk' m' hkept)
-          · simp [hlj, hdj, hys]
-          · simp [hlrj, hrj, hzs]
-          · refine agree_append (by simp [hlj, hdj]) ?_ (agree_drop c.k hay)
-            exact agree_subst (ρ := ⟨xs0, [], u⟩) hd hdl hr hrl (agree_take_of ha1)
-          · refine agree_append (by simp [hlrj, hrj]) ?_ (agree_drop c.rk haz)
-            exact agree_subst (ρ := ⟨xs0, [], u⟩) hd hdl hr hrl (agree_take_of ha2)
-        · rename_i fl hst
-          rw [hst] at hkept
-          exact ⟨hk' _ hkept, trivial⟩
+        exact callStep f (pc + 1) n (Nat.le_refl n) hi hs
 where
   agree_take_of {ρ : Env} {vs : List Val} {xs : List Cell} {n : Nat} (h : Agree ρ vs xs) :
       Agree ρ vs (xs.take n) := by

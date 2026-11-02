@@ -28,7 +28,7 @@ that no longer holds fails the build, as a test would.
 | Colon words modelled | 624 of 639, `interpret` and `find-name` included |
 | Not modelled | Code fields (`cf,`, `does-cf,`), the kernel's `parse-find`, defining words with DOES>, and the words that use them |
 | Model covers | Stacks, byte memory, loops, DOES> children, strings, CATCH/THROW/EXECUTE, PAUSE and the outside world as unknown; the compiler and interpreter primitives (`,`, `header`, `parse`, `parse-name`, `search-list`) |
-| Proven | 787 stack effects and footprints, and 334 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, on the console or a network session, given only that `telnet-type` keeps its setting; a task's cleanup frees exactly the semaphores it holds and its dictionary claim, and `locked` releases however its xt ends; a session gives its door's place back and closes its connection however its work ends (V6); in a model of the disk, the record protocol keeps the last durable record whatever fails (V3) |
+| Proven | 837 stack effects and footprints, and 383 stack comments; the arithmetic and stack words for all inputs; `fill-ref` equal to `fill`; the system tasks' steps between pauses; a sandboxed INTERPRET executes only the sandbox's words (V2), for the sandbox `sandbox.fs` builds, on the console or a network session, given only that `telnet-type` keeps its setting; a task's cleanup frees exactly the semaphores it holds and its dictionary claim, and `locked` releases however its xt ends; a session gives its door's place back and closes its connection however its work ends (V6); in a model of the disk, the record protocol keeps the last durable record whatever fails (V3) |
 | Found | (every defect, and how it was found: [defects.md](defects.md)) A listener and the TCP timer sweep that could run without pausing (#108, #109); HOLD writing past `numbuf` in base 1 (#114); the virtio-net driver trusting the device's buffer id and length (#115, from an audit of every "anywhere" footprint); a semaphore held for good by a task the watchdog stopped inside `get` or `locked`, and a worker turned into a REPL by a throw nothing caught (#116); a client gone before its session started keeping its place at the door, so sixteen shut the door for good (#117); `record!` overwriting the copy holding the last durable record after a failed sync (#118). All fixed |
 | Shown to catch | A signed `u>` that passes all 36 hosted tests fails its proof |
 
@@ -44,10 +44,13 @@ the word's own theorem:
 
 Footprints in detail (DECISIONS.md #111):
 
-- **787 footprints proven,** one for every word with a stack effect. 589
-  write nothing, 59 write named places (`claim` only `dict-owner`; `ms` only
+- **837 footprints proven,** one for every word with a stack effect. 590
+  write nothing, 63 write named places (`claim` only `dict-owner`; `ms` only
   its own task's `task-status` and `task-wake`; `+!` only the cell at its
-  address), and 137 may write anywhere. `build/footprints.txt` lists each.
+  address), and 182 may write anywhere. `build/footprints.txt` lists each.
+- **System calls:** one whose number shows it fills no buffer (write,
+  socket, ...) writes nothing; read, pread64 and getrandom may write
+  anywhere (#121).
 - **Values are symbolic:** an input plus an offset, the user area plus an
   offset, a word's address, a number, or unknown. They follow the stacks
   through `swap`, `>r`, `+` of a literal and every proven callee.
@@ -59,19 +62,20 @@ Footprints in detail (DECISIONS.md #111):
 
 Stack effects in detail (DECISIONS.md #107):
 
-- **787 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems. 624 of 639 colon words are modelled, since the generator decodes `(s")` (now a colon word) and stops at the data a `message:` leaves after a word, and the compiler and interpreter primitives are modelled.
+- **837 effects proven:** every word with a fixed effect, loops included. Each is proven from a certificate and from its callees' theorems. 624 of 639 colon words are modelled, since the generator decodes `(s")` (now a colon word) and stops at the data a `message:` leaves after a word, and the compiler and interpreter primitives are modelled.
 - **The `?dup if` idioms (#120):** `?dup` just before a `0branch`, or before `0=` and a `0branch`, is one step of the certificate (`QDup`, `ZEq`): zero goes one item down, anything else on at the same depth. They gave 66 more effects (from 721).
-- **334 stack comments proven in their own terms:** none disagree with their code.
+- **`['] word sem locked` (#121):** one step of the certificate, with word's effect, and word's footprint plus the semaphore's 16 bytes (`Runners.lean`). That the literal xt runs word is trusted (`Runs`), and shows as an instance argument in every theorem that rests on it. It gave 50 more effects.
+- **383 stack comments proven in their own terms:** none disagree with their code.
 - **What is still missing a proven effect:**
   - words whose effect depends on their data (`digit?`, `get-order`, `reset`'s `begin depth while`);
-  - words that reach their callees through `execute` or `catch` (`type`, `emit`, `locked`);
+  - words that run an xt from memory or the stack (`type`, `emit`, `key`, `bye`), or CATCH and go on after an error: the model cannot say what a failing word left on the stack, so CATCH's result has no fixed effect;
   - every word that calls one of those.
 
 Trusted today:
 
 - **The primitive models:** each is written to mirror its assembly.
-- **The CATCH and THROW specifications.**
-- **The dumper and the generator.**
+- **The CATCH and THROW specifications.** A failure with code 0, which THROW never makes, is not caught (#121).
+- **The dumper and the generator.** In particular, `Runs`: the literal xt of each word handed to LOCKED runs that word (#121).
 - **Lean's kernel.**
 - **One abstraction:** the outside world (other tasks, devices, the clock) is unknown, and theorems hold whatever it does.
 - **For step counts (`Yield.lean`):**
@@ -395,7 +399,7 @@ step counts. V2, V4 and V6 all depend on it.
 - **Done when:** `fill`, `cmove` and the stack and arithmetic words have footprints,
   and the bridge proves them for colon words. Then V2 and V4 build on it.
 - **Status:** writes done (#111): every primitive's footprint, `thread_foot`
-  and `loopThread_foot`, and 787 words' footprints generated and proven.
+  and `loopThread_foot`, and 837 words' footprints generated and proven.
   Still to do: reads (noninterference); letting callers use a hand-written
   footprint such as `fill-ref`'s in place of the generated one; and
   addresses read from memory, such as a connection's buffer, which need an

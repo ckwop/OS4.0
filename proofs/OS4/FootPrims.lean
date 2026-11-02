@@ -207,6 +207,16 @@ theorem syscall_foot : Foot syscall 5 1 0 0 [Reg.all] [.any] [] := by
   match xs, zs, hx, hz with
   | [_, _, _, _, _], [], _, _ =>
     exact ⟨kept_all, by simp [syscall, FOut, agree_cons, agree_nil, holds_any]; omega⟩
+/-- A system call's effect on memory is the world's, as PAUSE's is, so this
+holds of any call. The generator uses it only for calls whose number shows
+they fill no buffer (write, socket, ...: `QUIET_SYSCALLS`), and
+`syscall_foot` for the rest, so that a word reading into a buffer is still
+shown as writing. -/
+theorem syscall_quiet_foot : Foot syscall 5 1 0 0 [] [.any] [] := by
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [_, _, _, _, _], [], _, _ =>
+    exact ⟨fun a hq _ => hq _ _, by simp [syscall, FOut, agree_cons, agree_nil, holds_any]; omega⟩
 theorem bye_foot : Foot bye 0 0 0 0 [] [] [] := by prim_foot
 theorem barrier_foot : Foot barrier 0 0 0 0 [] [] [] := by prim_foot
 theorem sha256block_foot : Foot sha256block 4 0 0 0 [Reg.all] [] [] := by
