@@ -174,7 +174,8 @@ variable o-conn  variable o-seq  variable o-flags  variable o-pos  variable o-le
   o-conn @ rx-room 65535 min  tx-tcp tcp-window + n16!
   0 tx-tcp tcp-checksum + n16!  0 tx-tcp 18 + n16!
   dup 24 = if  $02040000 our-mss or  tx-tcp /tcp + n32!  then
-  o-len @ 0 ?do  o-conn @ o-pos @ i + tx@  over tx-tcp + i + c!  loop
+  o-len @  dup our-mss u> if -24 throw then         \ the data fits the frame, whatever o-len holds
+  0 ?do  o-conn @ o-pos @ i + tx@  over tx-tcp + i + c!  loop
   o-len @ +                                        ( seglen )
   my-ip @ o-conn @ c.rip @ 2 pick proto-tcp pseudo-sum  tx-tcp 2 pick sum16 fold
   tx-tcp tcp-checksum + n16!

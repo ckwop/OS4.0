@@ -5,4 +5,6 @@ task server  ' line-server server start
 : settled? ( -- flag ) conns @ 0= served @ 32 = and ;
 : settle ( -- ) 110000 deadline begin 200 ms settled? over expired? or until drop ;
 settle served @ .  conns @ count-list .
+create fake-conn /conn allot  fake-conn /conn 0 fill
+fake-conn 0 0 0 2000 ' segment-out catch . 2drop 2drop drop
 1000 ms

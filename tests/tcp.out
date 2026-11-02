@@ -6,6 +6,8 @@ task server  ' line-server server start  ok
 : settled? ( -- flag ) conns @ 0= served @ 32 = and ;  ok
 : settle ( -- ) 110000 deadline begin 200 ms settled? over expired? or until drop ;  ok
 settle served @ .  conns @ count-list . 32 0  ok
+create fake-conn /conn allot  fake-conn /conn 0 fill  ok
+fake-conn 0 0 0 2000 ' segment-out catch . 2drop 2drop drop -24  ok
 1000 ms  ok
 --- peer ---
 peer: tcp: 32 of 32 clients connected, 320 of 320 lines echoed, 32 closed cleanly
