@@ -11,6 +11,7 @@ import OS4.Yield
 import OS4.Costs
 import OS4.Footprint
 import OS4.FootPrims
+import OS4.Idioms
 import OS4.Foots
 import OS4.Steps
 import OS4.Search

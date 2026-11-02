@@ -38,10 +38,20 @@ theorem exists_prefix (l s : List Cell) (j : Nat) :
     conv => lhs; rw [← List.take_append_drop j l]
     rw [h2]
 
+/-- What `?dup` does: x stays, with a second copy unless it is zero, and
+nothing else changes. Its depth afterwards depends on x, so a certificate
+takes `?dup` together with the `0branch` that follows it (the `?dup if`
+idiom): zero goes to the branch's target one item down, anything else on
+with the depth it had. -/
+def QDup (f : Sem) : Prop :=
+  ∀ (x : Cell) (s r : List Cell) (m : Mem) (u : Cell) (e : Nat),
+    f ⟨x :: s, r, m, u, e⟩ = .ok ⟨if x = 0 then x :: s else x :: x :: s, r, m, u, e⟩
+
 /-! ## Certificates -/
 
 /-- The depths before one instruction, counted above the word's own floor;
-for a call, the Spec the callee meets. Unreachable instructions are dead. -/
+for a call, the Spec the callee meets, or q for a `?dup` before a
+`0branch` (whose own entry is then dead). Unreachable instructions are dead. -/
 structure Cert where
   live : Bool
   d : Nat
@@ -50,6 +60,7 @@ structure Cert where
   j : Nat
   rk : Nat
   rj : Nat
+  q : Bool
 
 /-- Instruction p is live, with these depths. -/
 def at? (cert : List Cert) (p d r : Nat) : Bool :=
@@ -66,7 +77,13 @@ def stepOK (code : List Ins) (cert : List Cert) (out pc : Nat) : Bool :=
     match code[pc]? with
     | none => true
     | some (.call _) =>
-      decide (c.k ≤ c.d) && decide (c.rk ≤ c.r) && at? cert (pc + 1) (c.d - c.k + c.j) (c.r - c.rk + c.rj)
+      if c.q then
+        decide (1 ≤ c.d) &&
+        match code[pc + 1]? with
+        | some (.zbranch t) => at? cert t (c.d - 1) c.r && at? cert (pc + 2) c.d c.r
+        | _ => false
+      else
+        decide (c.k ≤ c.d) && decide (c.rk ≤ c.r) && at? cert (pc + 1) (c.d - c.k + c.j) (c.r - c.rk + c.rj)
     | some (.lit _) => at? cert (pc + 1) (c.d + 1) c.r
     | some (.branch t) => at? cert t c.d c.r
     | some (.zbranch t) =>
@@ -83,9 +100,9 @@ def stepOK (code : List Ins) (cert : List Cert) (out pc : Nat) : Bool :=
 def check (code : List Ins) (cert : List Cert) (inp out : Nat) : Bool :=
   at? cert 0 inp 0 && (List.range code.length).all (stepOK code cert out)
 
-/-- Each call meets the Spec its certificate entry claims. -/
+/-- Each call meets the Spec its certificate entry claims, or is `?dup`. -/
 def InsMeets : Ins → Cert → Prop
-  | .call f, c => Spec f c.k c.j c.rk c.rj
+  | .call f, c => cond c.q (QDup f) (Spec f c.k c.j c.rk c.rj)
   | _, _ => True
 
 def CallsMeet : List Ins → List Cert → Prop
@@ -104,7 +121,7 @@ theorem at?_spec {cert : List Cert} {p d r : Nat} (h : at? cert p d r = true) :
 
 theorem callsMeet {code : List Ins} {cert : List Cert} (h : CallsMeet code cert) :
     ∀ {pc : Nat} {f : Sem} {c : Cert}, code[pc]? = some (.call f) → cert[pc]? = some c →
-      Spec f c.k c.j c.rk c.rj := by
+      InsMeets (.call f) c := by
   induction code generalizing cert with
   | nil => intro pc f c h1; simp at h1
   | cons i is ih =>
@@ -132,16 +149,22 @@ theorem run_sound {code : List Ins} {cert : List Cert} {out : Nat} {s r : List C
       cert[pc]? = some c → c.live = true → ys.length = c.d → zs.length = c.r →
       Out s r u out 0 (run code n pc ⟨ys ++ s, zs ++ r, m, u, e⟩) := by
   intro n
-  induction n with
-  | zero => intros; simp [run, S.fail, Out]
-  | succ n ih =>
-    intro pc ys zs m e c hcpc hlive hys hzs
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  intro pc ys zs m e c hcpc hlive hys hzs
+  cases n with
+  | zero => simp [run, S.fail, Out]
+  | succ n =>
+    have nextN : ∀ {n' p d' r' : Nat} (ys' zs' : List Cell) (m' : Mem) (e' : Nat), n' ≤ n →
+        at? cert p d' r' = true → ys'.length = d' → zs'.length = r' →
+        Out s r u out 0 (run code n' p ⟨ys' ++ s, zs' ++ r, m', u, e'⟩) := by
+      intro n' p d' r' ys' zs' m' e' hn h h1 h2
+      obtain ⟨c', hc', hl', hd', hr'⟩ := at?_spec h
+      exact ih n' (by omega) p ys' zs' m' e' c' hc' hl' (by omega) (by omega)
     have next : ∀ {p d' r' : Nat} (ys' zs' : List Cell) (m' : Mem) (e' : Nat),
         at? cert p d' r' = true → ys'.length = d' → zs'.length = r' →
-        Out s r u out 0 (run code n p ⟨ys' ++ s, zs' ++ r, m', u, e'⟩) := by
-      intro p d' r' ys' zs' m' e' h h1 h2
-      obtain ⟨c', hc', hl', hd', hr'⟩ := at?_spec h
-      exact ih p ys' zs' m' e' c' hc' hl' (by omega) (by omega)
+        Out s r u out 0 (run code n p ⟨ys' ++ s, zs' ++ r, m', u, e'⟩) :=
+      fun ys' zs' m' e' => nextN ys' zs' m' e' (Nat.le_refl n)
     cases hcode : code[pc]? with
     | none => simp [run, hcode, S.fail, Out]
     | some ins =>
@@ -215,9 +238,42 @@ theorem run_sound {code : List Ins} {cert : List Cert} {out : Nat} {s r : List C
           · exact next ys' zs' m e hn (by omega) (by omega)
           · exact next ys' ((i + k) :: l :: zs') m e ht (by omega) (by simp; omega)
       | call f =>
-        simp only [Bool.and_eq_true, decide_eq_true_eq] at hs
+        have hm := callsMeet hcalls hcode hcpc
+        cases hq : c.q
+        case true =>
+          -- `?dup` then `0branch t`: two steps at once
+          simp only [hq, InsMeets, cond_true] at hm
+          simp only [hq, if_true, Bool.and_eq_true, decide_eq_true_eq] at hs
+          obtain ⟨hd1, hz⟩ := hs
+          cases hz1 : code[pc + 1]? with
+          | none => rw [hz1] at hz; simp at hz
+          | some i1 =>
+            cases i1 with
+            | zbranch t =>
+              rw [hz1] at hz
+              simp only [Bool.and_eq_true] at hz
+              obtain ⟨ht, hn⟩ := hz
+              obtain ⟨x, ys', rfl⟩ : ∃ x ys', ys = x :: ys' := by
+                cases ys with
+                | nil => simp at hys; omega
+                | cons x ys' => exact ⟨x, ys', rfl⟩
+              simp only [List.length_cons] at hys
+              simp only [run, hcode, List.cons_append, hm x (ys' ++ s) (zs ++ r) m u e]
+              cases n with
+              | zero => simp [run, S.fail, Out]
+              | succ n =>
+                simp only [run, hz1]
+                by_cases hx : x = 0
+                · simp only [hx, if_true]
+                  exact nextN ys' zs m e (by omega) ht (by omega) hzs
+                · simp only [hx, if_false]
+                  exact nextN (x :: ys') zs m e (by omega) hn (by simp; omega) hzs
+            | _ => rw [hz1] at hz; simp at hz
+        case false =>
+        simp only [hq, InsMeets, cond_false] at hm
+        simp only [hq, Bool.false_eq_true, if_false, Bool.and_eq_true, decide_eq_true_eq] at hs
         obtain ⟨⟨hk, hrk⟩, hn⟩ := hs
-        have hf := callsMeet hcalls hcode hcpc (ys.take c.k) (zs.take c.rk)
+        have hf := hm (ys.take c.k) (zs.take c.rk)
           (ys.drop c.k ++ s) (zs.drop c.rk ++ r) m u e (by simp; omega) (by simp; omega)
         have e1 : ys.take c.k ++ (ys.drop c.k ++ s) = ys ++ s := by
           rw [← List.append_assoc, List.take_append_drop]

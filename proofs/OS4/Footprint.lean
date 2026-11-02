@@ -1,4 +1,4 @@
-import OS4.Machine
+import OS4.Spec
 
 /-!
 # Footprints, compositionally
@@ -361,7 +361,9 @@ theorem leL_agree {ρ : Env} : ∀ {vs ws : List Val} {xs : List Cell}, leL vs w
   | _ :: _, [], _, hl, _ => by simp [leL] at hl
 
 /-- The symbolic stacks before one instruction; for a call, the callee's
-summary; for a literal, its value. Unreachable instructions are dead. -/
+summary, or q for a `?dup` before a `0branch` (whose own entry is then
+dead; see `QDup`); for a literal, its value. Unreachable instructions are
+dead. -/
 structure FCert where
   live : Bool
   ds : List Val
@@ -374,6 +376,7 @@ structure FCert where
   dout : List Val
   rout : List Val
   lv : Val
+  q : Bool
 
 /-- Instruction p is live, and its stacks are no more precise than these. -/
 def atF (cert : List FCert) (p : Nat) (ds rs : List Val) : Bool :=
@@ -392,6 +395,11 @@ def fstep (code : List Ins) (cert : List FCert) (regs : List Reg) (dout : List V
     match code[pc]? with
     | none => true
     | some (.call _) =>
+      if c.q then
+        match c.ds, code[pc + 1]? with
+        | w :: ds, some (.zbranch t) => atF cert t ds c.rs && atF cert (pc + 2) (w :: ds) c.rs
+        | _, _ => false
+      else
       let DS := c.ds.take c.k
       let RS := c.rs.take c.rk
       decide (c.k ≤ c.ds.length) && decide (c.rk ≤ c.rs.length) &&
@@ -427,9 +435,10 @@ def fcheck (code : List Ins) (cert : List FCert) (inp out : Nat) (regs : List Re
   decide (dout.length = out) && atF cert 0 (argList inp) [] &&
     (List.range code.length).all (fstep code cert regs dout)
 
-/-- Each call meets the Foot its certificate entry claims; each literal is its value. -/
+/-- Each call meets the Foot its certificate entry claims, or is `?dup`;
+each literal is its value. -/
 def InsFoot : Ins → FCert → Prop
-  | .call f, c => Foot f c.k c.j c.rk c.rj c.regs c.dout c.rout
+  | .call f, c => cond c.q (QDup f) (Foot f c.k c.j c.rk c.rj c.regs c.dout c.rout)
   | .lit v, c => ∀ ρ, c.lv.holds ρ v
   | _, _ => True
 
@@ -491,18 +500,25 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
       Agree ⟨xs0, [], u⟩ c.ds ys → Agree ⟨xs0, [], u⟩ c.rs zs → Kept regs ⟨xs0, [], u⟩ m0 m →
       FRes regs dout ⟨xs0, [], u⟩ m0 s r u out (run code n pc ⟨ys ++ s, zs ++ r, m, u, e⟩) := by
   intro n
-  induction n with
-  | zero => intro pc ys zs m e c _ _ _ _ _ _ hk; exact ⟨hk, trivial⟩
-  | succ n ih =>
-    intro pc ys zs m e c hcpc hlive hys hzs hay haz hk
+  induction n using Nat.strongRecOn with
+  | _ n ih =>
+  intro pc ys zs m e c hcpc hlive hys hzs hay haz hk
+  cases n with
+  | zero => exact ⟨hk, trivial⟩
+  | succ n =>
+    have nextN : ∀ {n' p : Nat} {ds' rs' : List Val} (ys' zs' : List Cell) (m' : Mem) (e' : Nat), n' ≤ n →
+        atF cert p ds' rs' = true → ys'.length = ds'.length → zs'.length = rs'.length →
+        Agree ⟨xs0, [], u⟩ ds' ys' → Agree ⟨xs0, [], u⟩ rs' zs' → Kept regs ⟨xs0, [], u⟩ m0 m' →
+        FRes regs dout ⟨xs0, [], u⟩ m0 s r u out (run code n' p ⟨ys' ++ s, zs' ++ r, m', u, e'⟩) := by
+      intro n' p ds' rs' ys' zs' m' e' hn h h1 h2 h3 h4 h5
+      obtain ⟨c', hc', hl', hd', hr'⟩ := atF_spec h
+      exact ih n' (by omega) p ys' zs' m' e' c' hc' hl' (by rw [h1, leL_length hd'])
+        (by rw [h2, leL_length hr']) (leL_agree hd' h3) (leL_agree hr' h4) h5
     have next : ∀ {p : Nat} {ds' rs' : List Val} (ys' zs' : List Cell) (m' : Mem) (e' : Nat),
         atF cert p ds' rs' = true → ys'.length = ds'.length → zs'.length = rs'.length →
         Agree ⟨xs0, [], u⟩ ds' ys' → Agree ⟨xs0, [], u⟩ rs' zs' → Kept regs ⟨xs0, [], u⟩ m0 m' →
-        FRes regs dout ⟨xs0, [], u⟩ m0 s r u out (run code n p ⟨ys' ++ s, zs' ++ r, m', u, e'⟩) := by
-      intro p ds' rs' ys' zs' m' e' h h1 h2 h3 h4 h5
-      obtain ⟨c', hc', hl', hd', hr'⟩ := atF_spec h
-      exact ih p ys' zs' m' e' c' hc' hl' (by rw [h1, leL_length hd']) (by rw [h2, leL_length hr'])
-        (leL_agree hd' h3) (leL_agree hr' h4) h5
+        FRes regs dout ⟨xs0, [], u⟩ m0 s r u out (run code n p ⟨ys' ++ s, zs' ++ r, m', u, e'⟩) :=
+      fun ys' zs' m' e' => nextN ys' zs' m' e' (Nat.le_refl n)
     have failed : ∀ err, FRes regs dout ⟨xs0, [], u⟩ m0 s r u out
         ((⟨ys ++ s, zs ++ r, m, u, e⟩ : S).fail err) := fun err => ⟨hk, trivial⟩
     cases hcode : code[pc]? with
@@ -591,6 +607,41 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
         · exact next ys' ((i + k) :: lv :: zs') m e hs.1 hys (by simp [hzs])
             ha (agree_cons.mpr ⟨holds_any _ _, agree_cons.mpr ⟨h2.1, h2.2⟩⟩) hk
       | call f =>
+        cases hq : c.q
+        case true =>
+          -- `?dup` then `0branch t`: two steps at once
+          simp only [hq, InsFoot, cond_true] at hi
+          simp only [hq, if_true] at hs
+          rcases hcd : c.ds with _ | ⟨w, ds⟩ <;> rw [hcd] at hs hys hay
+          · simp at hs
+          cases hz1 : code[pc + 1]? with
+          | none => rw [hz1] at hs; simp at hs
+          | some i1 =>
+            cases i1 with
+            | zbranch t =>
+              rw [hz1] at hs
+              simp only [Bool.and_eq_true] at hs
+              obtain ⟨ht, hn⟩ := hs
+              obtain ⟨x, ys', rfl⟩ : ∃ x ys', ys = x :: ys' := by
+                cases ys with
+                | nil => simp at hys
+                | cons x ys' => exact ⟨x, ys', rfl⟩
+              simp only [List.length_cons, Nat.add_right_cancel_iff] at hys
+              have hw := agree_cons.mp hay
+              simp only [run, hcode, List.cons_append, hi x (ys' ++ s) (zs ++ r) m u e]
+              cases n with
+              | zero => exact ⟨hk, trivial⟩
+              | succ n =>
+                simp only [run, hz1]
+                by_cases hx : x = 0
+                · simp only [hx, if_true]
+                  exact nextN ys' zs m e (by omega) ht hys hzs hw.2 haz hk
+                · simp only [hx, if_false]
+                  exact nextN (x :: ys') zs m e (by omega) hn (by simp [hys]) hzs hay haz hk
+            | _ => rw [hz1] at hs; simp at hs
+        case false =>
+        simp only [hq, InsFoot, cond_false] at hi
+        simp only [hq, Bool.false_eq_true, if_false] at hs
         simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hs
         obtain ⟨⟨⟨⟨⟨hk1, hrk⟩, hdj⟩, hrj⟩, hcov⟩, hn⟩ := hs
         have hft := hi (ys.take c.k) (zs.take c.rk) (ys.drop c.k ++ s) (zs.drop c.rk ++ r) m u e

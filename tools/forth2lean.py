@@ -166,6 +166,17 @@ def lit_proof(v):
     return f"(holds_{v[0]} _ _)" if v[0] == "word" else f"(holds_{v[0]} _)"
 
 
+QDUP = "«?dup»"
+
+
+def qdups(insns):
+    """Where a thread calls ?dup just before a 0branch nothing else jumps to:
+    the `?dup if` idiom, which certificates take as one step (`QDup`)."""
+    targets = {op[1] for op in insns if op[0] in ("branch", "zbranch", "qdo", "loop", "ploop")}
+    return {pc for pc, op in enumerate(insns[:-1])
+            if op == ("call", QDUP) and insns[pc + 1][0] == "zbranch" and pc + 1 not in targets}
+
+
 def v_text(v, names):
     """A value for the footprint report: in0 is the top input; a user
     variable or a word's body by its name (names: the user offsets' and the
@@ -555,9 +566,12 @@ class Generator:
             self.no_spec[name] = found
         else:
             k, j, certs = found
+            qd = qdups(insns)
             calls = "True.intro"
-            for op in reversed(insns):
-                calls = f"And.intro {self.specs[op[1]][4] if op[0] == 'call' else 'True.intro'} ({calls})"
+            for pc in reversed(range(len(insns))):
+                op = insns[pc]
+                proof = f"{QDUP}.qdup" if pc in qd else self.specs[op[1]][4] if op[0] == "call" else "True.intro"
+                calls = f"And.intro {proof} ({calls})"
             self.thms.append(f"noncomputable def {name}.cert : List Cert := [{', '.join(certs)}]\n")
             self.prove(name, (k, j, 0, 0),
                        f"{runner}_spec (code := {name}.code) (cert := {name}.cert)\n"
@@ -588,8 +602,9 @@ class Generator:
         (`arg i`), joined where paths meet; the regions its calls write, in
         its own terms; and what it leaves. Or why not."""
         k, j = self.specs[name][:2]
-        for op in insns:
-            if op[0] == "call" and op[1] not in self.foots:
+        qd = qdups(insns)
+        for pc, op in enumerate(insns):
+            if op[0] == "call" and op[1] not in self.foots and pc not in qd:
                 return "calls a word with no footprint"
         state, work, exits = {0: ([A(i) for i in range(k)], [])}, [0], []
         while work:
@@ -599,7 +614,9 @@ class Generator:
             if op[0] == "exit":
                 exits.append(ds)
                 continue
-            if op[0] == "call":
+            if pc in qd:                                # ?dup 0branch: zero on, one down; else past it
+                succ = [(insns[pc + 1][1], ds[1:], rs), (pc + 2, ds, rs)]
+            elif op[0] == "call":
                 ck, cj, crk, crj = self.specs[op[1]][:4]
                 _, dout, rout, _ = self.foots[op[1]]
                 DS, RS = ds[:ck], rs[:crk]
@@ -632,7 +649,9 @@ class Generator:
             ds, rs = state.get(pc, ([], []))
             ck = cj = crk = crj = 0
             cregs, cdout, crout, lv = [], [], [], ANY
-            if op[0] == "call":
+            if pc in qd:
+                proofs.append(f"{QDUP}.qdup")
+            elif op[0] == "call":
                 ck, cj, crk, crj = self.specs[op[1]][:4]
                 cregs, cdout, crout, proof = self.foots[op[1]]
                 if live:
@@ -644,7 +663,7 @@ class Generator:
             else:
                 proofs.append("True.intro")
             certs.append(f"⟨{self.bool(live)}, {vs_lean(ds)}, {vs_lean(rs)}, {ck}, {cj}, {crk}, {crj}, "
-                         f"{rs_lean(cregs)}, {vs_lean(cdout)}, {vs_lean(crout)}, {v_lean(lv)}⟩")
+                         f"{rs_lean(cregs)}, {vs_lean(cdout)}, {vs_lean(crout)}, {v_lean(lv)}, {self.bool(pc in qd)}⟩")
         regs = [ALL] if any(ANY in r for r in regs) else list(dict.fromkeys(regs))
         return regs, dout, certs, proofs
 
@@ -665,6 +684,7 @@ class Generator:
         """The depths of both stacks before each instruction, relative to the
         word's floor: (inputs, outputs, certificate entries), or why not."""
         state, work, low, exits = {0: (0, 0)}, [0], 0, set()
+        qd = qdups(insns)
         while work:
             pc = work.pop()
             d, r = state[pc]
@@ -672,7 +692,10 @@ class Generator:
             if op[0] == "exit":
                 exits.add((d, r))
                 continue
-            if op[0] == "call":
+            if pc in qd:                            # ?dup 0branch: zero on, one down; else past it
+                low = min(low, d - 1)
+                succ = [(insns[pc + 1][1], d - 1, r), (pc + 2, d, r)]
+            elif op[0] == "call":
                 if op[1] not in self.specs:
                     return "calls a word with no Spec"
                 k, j, rk, rj, _ = self.specs[op[1]]
@@ -715,11 +738,14 @@ class Generator:
         certs = []
         for pc, op in enumerate(insns):
             if pc not in state:
-                certs.append("⟨Bool.false, 0, 0, 0, 0, 0, 0⟩")
+                certs.append(f"⟨Bool.false, 0, 0, 0, 0, 0, 0, {self.bool(pc in qd)}⟩")
                 continue
             d, r = state[pc]
+            if pc in qd:
+                certs.append(f"⟨Bool.true, {d - low}, {r}, 0, 0, 0, 0, Bool.true⟩")
+                continue
             k, j, rk, rj = self.specs[op[1]][:4] if op[0] == "call" else (0, 0, 0, 0)
-            certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, {rk}, {rj}⟩")
+            certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, {rk}, {rj}, Bool.false⟩")
         return -low, dx - low, certs
 
     # ---- Counted words (proofs/OS4/Yield.lean): steps between pauses
@@ -1161,7 +1187,7 @@ def footprints(gen, path, report_path):
     write_modules(path, gen.fthms, gen,
                   "each word's footprint (OS4.Footprint): what it may write, proven\n"
                   "-- from a certificate and its callees' footprints",
-                  ["OS4.FootPrims"], lambda m: [f"OS4.Words.{m}"],
+                  ["OS4.FootPrims", "OS4.Idioms"], lambda m: [f"OS4.Words.{m}"],
                   lambda m, has: [f"OS4.Foots.{m}" if has else f"OS4.Words.{m}"],
                   ["set_option maxRecDepth 16384             -- `decide` over the longest threads' certificates"])
     names = {"user": {off: name for name, (how, *rest) in gen.kernel.items() if how == "user" for off in rest},
@@ -1233,7 +1259,7 @@ def main():
         write_modules(path, gen.thms + thms, gen,
                       "each word's stack effect, proven from a certificate and its\n"
                       "-- callees' effects; then each agreeing stack comment",
-                      ["OS4.PrimSpecs"], lambda m: [f"OS4.Words.{m}"],
+                      ["OS4.PrimSpecs", "OS4.Idioms"], lambda m: [f"OS4.Words.{m}"],
                       lambda m, has: [f"OS4.Specs.{m}" if has else f"OS4.Words.{m}"])
         open(report, "w", newline="\n").write("".join(f + "\n" for f in findings))
         print(f"{path}: {sum(t.startswith("theorem") for t in gen.thms)} stack effects proven; stack comments:")
