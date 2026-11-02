@@ -38,10 +38,12 @@ structure Box where
 namespace Box
 variable (B : Box)
 
-/-- The user-area bytes isolation rests on: STATE, `#order` and `context`, and
-`task-buffers`, which says where the task's buffers are. -/
+/-- The user-area bytes isolation rests on: STATE, `#order` and `context`;
+`task-buffers`, which says where the task's buffers are; and the terminal's
+vectors `'type` and `'bye`, which say what TYPE and BYE run. -/
 def userSupp (a : Cell) : Prop :=
-  ((a - (B.p + 8)).toNat < 8 ∨ (a - (B.p + 352)).toNat < 16) ∨ (a - (B.p + 176)).toNat < 8
+  ((a - (B.p + 8)).toNat < 8 ∨ (a - (B.p + 352)).toNat < 16) ∨
+    ((a - (B.p + 176)).toNat < 8 ∨ (a - (B.p + 144)).toNat < 8 ∨ (a - (B.p + 440)).toNat < 8)
 /-- The dictionary bytes it rests on: `current`, the wordlist's cell, and
 each header's link and length byte. -/
 def dictSupp (a : Cell) : Prop :=

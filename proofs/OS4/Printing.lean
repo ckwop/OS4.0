@@ -145,8 +145,9 @@ theorem uvar_frame {code : List Ins} {off : Cell}
 /-- The support misses an 8-byte user variable at off, between the cells it
 holds and below the end of the user area. -/
 theorem Box.supp_apart (hB : B.Ok) {off : Cell}
-    (h : (16 ≤ off.toNat ∧ off.toNat + 8 ≤ 176) ∨ (184 ≤ off.toNat ∧ off.toNat + 8 ≤ 352) ∨
-      (368 ≤ off.toNat ∧ off.toNat + 8 ≤ 512)) :
+    (h : (16 ≤ off.toNat ∧ off.toNat + 8 ≤ 144) ∨ (152 ≤ off.toNat ∧ off.toNat + 8 ≤ 176) ∨
+      (184 ≤ off.toNat ∧ off.toNat + 8 ≤ 352) ∨ (368 ≤ off.toNat ∧ off.toNat + 8 ≤ 440) ∨
+      (448 ≤ off.toNat ∧ off.toNat + 8 ≤ 512)) :
     ∀ a, B.supp a → 8 ≤ (a - (B.p + off)).toNat := by
   intro a ha
   rcases ha with h' | h'
