@@ -170,11 +170,27 @@ QDUP = "«?dup»"
 
 
 def qdups(insns):
-    """Where a thread calls ?dup just before a 0branch nothing else jumps to:
-    the `?dup if` idiom, which certificates take as one step (`QDup`)."""
+    """Where a thread calls ?dup just before a 0branch, or before 0= and a
+    0branch, that nothing else jumps into: the `?dup if` and `?dup 0= if`
+    idioms, which certificates take as one step (`QDup`, `ZEq`). pc -> 1 or 2,
+    the instructions after ?dup that the step takes in."""
     targets = {op[1] for op in insns if op[0] in ("branch", "zbranch", "qdo", "loop", "ploop")}
-    return {pc for pc, op in enumerate(insns[:-1])
-            if op == ("call", QDUP) and insns[pc + 1][0] == "zbranch" and pc + 1 not in targets}
+    found = {}
+    for pc, op in enumerate(insns):
+        if op != ("call", QDUP):
+            continue
+        rest = insns[pc + 1:pc + 3]
+        if rest[:1] and rest[0][0] == "zbranch" and pc + 1 not in targets:
+            found[pc] = 1
+        elif (len(rest) == 2 and rest[0] == ("call", "Prim.zequal") and rest[1][0] == "zbranch"
+              and pc + 1 not in targets and pc + 2 not in targets):
+            found[pc] = 2
+    return found
+
+
+def zequals(qd):
+    """The 0= of each `?dup 0= if`."""
+    return {pc + 1 for pc, kind in qd.items() if kind == 2}
 
 
 def v_text(v, names):
@@ -567,10 +583,12 @@ class Generator:
         else:
             k, j, certs = found
             qd = qdups(insns)
+            zq = zequals(qd)
             calls = "True.intro"
             for pc in reversed(range(len(insns))):
                 op = insns[pc]
-                proof = f"{QDUP}.qdup" if pc in qd else self.specs[op[1]][4] if op[0] == "call" else "True.intro"
+                proof = (f"{QDUP}.qdup" if pc in qd else "Prim.zequal_zeq" if pc in zq
+                         else self.specs[op[1]][4] if op[0] == "call" else "True.intro")
                 calls = f"And.intro {proof} ({calls})"
             self.thms.append(f"noncomputable def {name}.cert : List Cert := [{', '.join(certs)}]\n")
             self.prove(name, (k, j, 0, 0),
@@ -603,6 +621,7 @@ class Generator:
         its own terms; and what it leaves. Or why not."""
         k, j = self.specs[name][:2]
         qd = qdups(insns)
+        zq = zequals(qd)
         for pc, op in enumerate(insns):
             if op[0] == "call" and op[1] not in self.foots and pc not in qd:
                 return "calls a word with no footprint"
@@ -614,8 +633,11 @@ class Generator:
             if op[0] == "exit":
                 exits.append(ds)
                 continue
-            if pc in qd:                                # ?dup 0branch: zero on, one down; else past it
-                succ = [(insns[pc + 1][1], ds[1:], rs), (pc + 2, ds, rs)]
+            if pc in qd:                                # ?dup [0=] 0branch: zero one down, else as it was
+                if qd[pc] == 1:
+                    succ = [(insns[pc + 1][1], ds[1:], rs), (pc + 2, ds, rs)]
+                else:
+                    succ = [(pc + 3, ds[1:], rs), (insns[pc + 2][1], ds, rs)]
             elif op[0] == "call":
                 ck, cj, crk, crj = self.specs[op[1]][:4]
                 _, dout, rout, _ = self.foots[op[1]]
@@ -651,6 +673,8 @@ class Generator:
             cregs, cdout, crout, lv = [], [], [], ANY
             if pc in qd:
                 proofs.append(f"{QDUP}.qdup")
+            elif pc in zq:
+                proofs.append("Prim.zequal_zeq")
             elif op[0] == "call":
                 ck, cj, crk, crj = self.specs[op[1]][:4]
                 cregs, cdout, crout, proof = self.foots[op[1]]
@@ -663,7 +687,7 @@ class Generator:
             else:
                 proofs.append("True.intro")
             certs.append(f"⟨{self.bool(live)}, {vs_lean(ds)}, {vs_lean(rs)}, {ck}, {cj}, {crk}, {crj}, "
-                         f"{rs_lean(cregs)}, {vs_lean(cdout)}, {vs_lean(crout)}, {v_lean(lv)}, {self.bool(pc in qd)}⟩")
+                         f"{rs_lean(cregs)}, {vs_lean(cdout)}, {vs_lean(crout)}, {v_lean(lv)}, {self.bool(pc in qd)}, {self.bool(pc in zq)}⟩")
         regs = [ALL] if any(ANY in r for r in regs) else list(dict.fromkeys(regs))
         return regs, dout, certs, proofs
 
@@ -685,6 +709,7 @@ class Generator:
         word's floor: (inputs, outputs, certificate entries), or why not."""
         state, work, low, exits = {0: (0, 0)}, [0], 0, set()
         qd = qdups(insns)
+        zq = zequals(qd)
         while work:
             pc = work.pop()
             d, r = state[pc]
@@ -692,9 +717,12 @@ class Generator:
             if op[0] == "exit":
                 exits.add((d, r))
                 continue
-            if pc in qd:                            # ?dup 0branch: zero on, one down; else past it
+            if pc in qd:                            # ?dup [0=] 0branch: zero one down, else as it was
                 low = min(low, d - 1)
-                succ = [(insns[pc + 1][1], d - 1, r), (pc + 2, d, r)]
+                if qd[pc] == 1:
+                    succ = [(insns[pc + 1][1], d - 1, r), (pc + 2, d, r)]
+                else:
+                    succ = [(pc + 3, d - 1, r), (insns[pc + 2][1], d, r)]
             elif op[0] == "call":
                 if op[1] not in self.specs:
                     return "calls a word with no Spec"
@@ -738,14 +766,14 @@ class Generator:
         certs = []
         for pc, op in enumerate(insns):
             if pc not in state:
-                certs.append(f"⟨Bool.false, 0, 0, 0, 0, 0, 0, {self.bool(pc in qd)}⟩")
+                certs.append(f"⟨Bool.false, 0, 0, 0, 0, 0, 0, {self.bool(pc in qd)}, {self.bool(pc in zq)}⟩")
                 continue
             d, r = state[pc]
             if pc in qd:
-                certs.append(f"⟨Bool.true, {d - low}, {r}, 0, 0, 0, 0, Bool.true⟩")
+                certs.append(f"⟨Bool.true, {d - low}, {r}, 0, 0, 0, 0, Bool.true, Bool.false⟩")
                 continue
             k, j, rk, rj = self.specs[op[1]][:4] if op[0] == "call" else (0, 0, 0, 0)
-            certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, {rk}, {rj}, Bool.false⟩")
+            certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, {rk}, {rj}, Bool.false, Bool.false⟩")
         return -low, dx - low, certs
 
     # ---- Counted words (proofs/OS4/Yield.lean): steps between pauses
@@ -1260,7 +1288,8 @@ def main():
                       "each word's stack effect, proven from a certificate and its\n"
                       "-- callees' effects; then each agreeing stack comment",
                       ["OS4.PrimSpecs", "OS4.Idioms"], lambda m: [f"OS4.Words.{m}"],
-                      lambda m, has: [f"OS4.Specs.{m}" if has else f"OS4.Words.{m}"])
+                      lambda m, has: [f"OS4.Specs.{m}" if has else f"OS4.Words.{m}"],
+                      ["set_option maxRecDepth 16384             -- `decide` over the longest threads' certificates"])
         open(report, "w", newline="\n").write("".join(f + "\n" for f in findings))
         print(f"{path}: {sum(t.startswith("theorem") for t in gen.thms)} stack effects proven; stack comments:")
         for r, n in counts.most_common():

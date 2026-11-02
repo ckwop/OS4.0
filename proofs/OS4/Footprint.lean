@@ -377,6 +377,13 @@ structure FCert where
   rout : List Val
   lv : Val
   q : Bool
+  z : Bool
+
+/-- Instruction p's entry says it is `0=` (in `?dup 0= if`; see `ZEq`). -/
+def zAtF (cert : List FCert) (p : Nat) : Bool :=
+  match cert[p]? with
+  | some c => c.z
+  | none => false
 
 /-- Instruction p is live, and its stacks are no more precise than these. -/
 def atF (cert : List FCert) (p : Nat) (ds rs : List Val) : Bool :=
@@ -395,10 +402,13 @@ def fstep (code : List Ins) (cert : List FCert) (regs : List Reg) (dout : List V
     match code[pc]? with
     | none => true
     | some (.call _) =>
+      !c.z &&
       if c.q then
-        match c.ds, code[pc + 1]? with
-        | w :: ds, some (.zbranch t) => atF cert t ds c.rs && atF cert (pc + 2) (w :: ds) c.rs
-        | _, _ => false
+        match c.ds, code[pc + 1]?, code[pc + 2]? with
+        | w :: ds, some (.zbranch t), _ => atF cert t ds c.rs && atF cert (pc + 2) (w :: ds) c.rs
+        | w :: ds, some (.call _), some (.zbranch t) =>
+          zAtF cert (pc + 1) && atF cert (pc + 3) ds c.rs && atF cert t (w :: ds) c.rs
+        | _, _, _ => false
       else
       let DS := c.ds.take c.k
       let RS := c.rs.take c.rk
@@ -438,7 +448,7 @@ def fcheck (code : List Ins) (cert : List FCert) (inp out : Nat) (regs : List Re
 /-- Each call meets the Foot its certificate entry claims, or is `?dup`;
 each literal is its value. -/
 def InsFoot : Ins → FCert → Prop
-  | .call f, c => cond c.q (QDup f) (Foot f c.k c.j c.rk c.rj c.regs c.dout c.rout)
+  | .call f, c => cond c.z (ZEq f) (cond c.q (QDup f) (Foot f c.k c.j c.rk c.rj c.regs c.dout c.rout))
   | .lit v, c => ∀ ρ, c.lv.holds ρ v
   | _, _ => True
 
@@ -607,28 +617,30 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
         · exact next ys' ((i + k) :: lv :: zs') m e hs.1 hys (by simp [hzs])
             ha (agree_cons.mpr ⟨holds_any _ _, agree_cons.mpr ⟨h2.1, h2.2⟩⟩) hk
       | call f =>
+        simp only [Bool.and_eq_true, Bool.not_eq_true'] at hs
+        obtain ⟨hcz, hs⟩ := hs
+        simp only [hcz, InsFoot, cond_false] at hi
         cases hq : c.q
         case true =>
-          -- `?dup` then `0branch t`: two steps at once
-          simp only [hq, InsFoot, cond_true] at hi
+          -- `?dup`, then `0branch t` or `0=` and `0branch t`: as one step
+          simp only [hq, cond_true] at hi
           simp only [hq, if_true] at hs
           rcases hcd : c.ds with _ | ⟨w, ds⟩ <;> rw [hcd] at hs hys hay
           · simp at hs
+          obtain ⟨x, ys', rfl⟩ : ∃ x ys', ys = x :: ys' := by
+            cases ys with
+            | nil => simp at hys
+            | cons x ys' => exact ⟨x, ys', rfl⟩
+          simp only [List.length_cons, Nat.add_right_cancel_iff] at hys
+          have hw := agree_cons.mp hay
+          simp only [run, hcode, List.cons_append, hi x (ys' ++ s) (zs ++ r) m u e]
           cases hz1 : code[pc + 1]? with
-          | none => rw [hz1] at hs; simp at hs
+          | none => simp [hz1] at hs
           | some i1 =>
             cases i1 with
             | zbranch t =>
-              rw [hz1] at hs
-              simp only [Bool.and_eq_true] at hs
+              simp only [hz1, Bool.and_eq_true] at hs
               obtain ⟨ht, hn⟩ := hs
-              obtain ⟨x, ys', rfl⟩ : ∃ x ys', ys = x :: ys' := by
-                cases ys with
-                | nil => simp at hys
-                | cons x ys' => exact ⟨x, ys', rfl⟩
-              simp only [List.length_cons, Nat.add_right_cancel_iff] at hys
-              have hw := agree_cons.mp hay
-              simp only [run, hcode, List.cons_append, hi x (ys' ++ s) (zs ++ r) m u e]
               cases n with
               | zero => exact ⟨hk, trivial⟩
               | succ n =>
@@ -638,9 +650,45 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
                   exact nextN ys' zs m e (by omega) ht hys hzs hw.2 haz hk
                 · simp only [hx, if_false]
                   exact nextN (x :: ys') zs m e (by omega) hn (by simp [hys]) hzs hay haz hk
-            | _ => rw [hz1] at hs; simp at hs
+            | call g =>
+              cases hz2 : code[pc + 2]? with
+              | none => simp [hz1, hz2] at hs
+              | some i2 =>
+                cases i2 with
+                | zbranch t =>
+                  simp only [hz1, hz2, Bool.and_eq_true] at hs
+                  obtain ⟨⟨hza, hn⟩, ht⟩ := hs
+                  obtain ⟨c1, hc1, hc1z⟩ : ∃ c1, cert[pc + 1]? = some c1 ∧ c1.z = true := by
+                    unfold zAtF at hza
+                    split at hza
+                    · rename_i c1 h; exact ⟨c1, h, hza⟩
+                    · contradiction
+                  have hg := insFoots hins hz1 hc1
+                  simp only [hc1z, InsFoot, cond_true] at hg
+                  have hg0 := hg 0 (ys' ++ s) (zs ++ r) m u e
+                  have hgx := hg x (x :: (ys' ++ s)) (zs ++ r) m u e
+                  cases n with
+                  | zero => exact ⟨hk, trivial⟩
+                  | succ n =>
+                  cases n with
+                  | zero =>
+                    by_cases hx : x = 0
+                    · subst hx; simp only [if_true, run, hz1, hg0]; exact ⟨hk, trivial⟩
+                    · simp only [hx, if_false, run, hz1, hgx]; exact ⟨hk, trivial⟩
+                  | succ n =>
+                    by_cases hx : x = 0
+                    · subst hx
+                      simp only [if_true, run, hz1, hg0]
+                      simp only [hz2]
+                      rw [if_neg (by decide)]
+                      exact nextN ys' zs m e (by omega) hn hys hzs hw.2 haz hk
+                    · simp only [hx, if_false, run, hz1, hgx]
+                      simp only [hz2, if_true]
+                      exact nextN (x :: ys') zs m e (by omega) ht (by simp [hys]) hzs hay haz hk
+                | _ => simp [hz1, hz2] at hs
+            | _ => simp [hz1] at hs
         case false =>
-        simp only [hq, InsFoot, cond_false] at hi
+        simp only [hq, cond_false] at hi
         simp only [hq, Bool.false_eq_true, if_false] at hs
         simp only [Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true] at hs
         obtain ⟨⟨⟨⟨⟨hk1, hrk⟩, hdj⟩, hrj⟩, hcov⟩, hn⟩ := hs
