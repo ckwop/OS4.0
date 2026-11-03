@@ -216,14 +216,12 @@ variable leaves
 
 : pick-ref  ( xu ... x0 u -- xu ... x0 xu )  1+ cells sp@ + @ ;
 
-variable ref-divisor   variable ref-carry
 : um/mod-ref  ( ud u -- urem uquot )  \ shift and subtract, a bit at a time
-  ref-divisor !
-  64 0 do
-    dup 63 rshift ref-carry !                      \ the bit leaving the high cell
+  >r  64 0 do                                      \ the divisor is J in the loop
+    dup 63 rshift >r                               \ the bit leaving the high cell
     1 lshift over 63 rshift or  swap 1 lshift swap \ shift ud left one bit
-    ref-carry @  over ref-divisor @ u< 0= or if  ref-divisor @ -  swap 1 or swap  then
-  loop swap ;
+    r>  over j u< 0= or if  j -  swap 1 or swap  then
+  loop  r> drop swap ;
 
 \ ---- Records: FIELD names an offset into a record, given the record's address.
 \ Use: 0  cell field p.x  cell field p.y  constant /point

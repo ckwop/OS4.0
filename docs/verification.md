@@ -145,7 +145,8 @@ debt marked **must fix before public**.
 - **Reference definitions:** each one proven equal to its primitive's model.
   These are `fill-ref`, `cmove-ref`, `cmove>-ref`, `pick-ref`, `um/mod-ref` and
   `search-list-ref`. Together they give the brief's "keep the Forth definition
-  as the reference" a check. Done: `fill-ref`, `cmove-ref`, `cmove>-ref`.
+  as the reference" a check. Done: `fill-ref`, `cmove-ref`, `cmove>-ref`,
+  `um/mod-ref` (wherever UM/MOD divides; #127).
   `pick-ref` reads the stack through `sp@`, and the model keeps the stacks as
   lists, not in memory, so it stays checked by `tests/reference` (#126).
 - **TD-13 (stack overflow between checks):** done (#126). A static pass in

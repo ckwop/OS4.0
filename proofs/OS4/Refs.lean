@@ -195,4 +195,106 @@ theorem cmove_up_ref (u dst src : Cell) (s r : List Cell) (m : Mem) (p : Cell) (
   rw [h]
   simp [forth]
 
+/-! ## UM/MOD
+
+UM/MOD-REF keeps the divisor on the return stack, under the loop's
+parameters (J), and has no checks: it is compared where the primitive divides
+(a divisor that is not 0, a quotient that fits). -/
+
+/-- A round that subtracts: the bit that left was set, or the divisor fits. -/
+theorem um_round_sub (n : Nat) (dv hi lo i : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat)
+    (hc : hi >>> 63 ≠ 0 ∨ ¬ ((hi <<< 1) ||| (lo >>> 63)).ult dv = true) :
+    run Words.«um/mod-ref».code (n + 28) 4 ⟨hi :: lo :: s, i :: 64 :: dv :: r, m, p, e⟩ =
+      if i + 1 = 64 then
+        run Words.«um/mod-ref».code n 32
+          ⟨(((hi <<< 1) ||| (lo >>> 63)) - dv) :: ((lo <<< 1) ||| 1) :: s, dv :: r, m, p, e⟩
+      else
+        run Words.«um/mod-ref».code n 4
+          ⟨(((hi <<< 1) ||| (lo >>> 63)) - dv) :: ((lo <<< 1) ||| 1) :: s, (i + 1) :: 64 :: dv :: r, m, p, e⟩ := by
+  rw [show n + 28 = n + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
+    1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+  by_cases h0 : hi >>> 63 = 0
+  · have hu : ((hi <<< 1) ||| (lo >>> 63)).ult dv = false := by
+      rcases hc with hc | hc
+      · exact absurd h0 hc
+      · simpa using hc
+    simp [forth, h0, hu]
+  · simp [forth]
+    exact fun h => absurd h h0
+
+/-- A round that only shifts. -/
+theorem um_round_keep (n : Nat) (dv hi lo i : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat)
+    (h0 : hi >>> 63 = 0) (hu : ((hi <<< 1) ||| (lo >>> 63)).ult dv = true) :
+    run Words.«um/mod-ref».code (n + 22) 4 ⟨hi :: lo :: s, i :: 64 :: dv :: r, m, p, e⟩ =
+      if i + 1 = 64 then
+        run Words.«um/mod-ref».code n 32 ⟨((hi <<< 1) ||| (lo >>> 63)) :: (lo <<< 1) :: s, dv :: r, m, p, e⟩
+      else
+        run Words.«um/mod-ref».code n 4
+          ⟨((hi <<< 1) ||| (lo >>> 63)) :: (lo <<< 1) :: s, (i + 1) :: 64 :: dv :: r, m, p, e⟩ := by
+  rw [show n + 22 = n + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
+    1 by omega]
+  simp [forth, h0, hu]
+
+/-- The rounds left, from round k. -/
+theorem um_loop (dv : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    ∀ (d k : Nat) (hi lo : Cell), k + d + 1 = 64 → ∀ n, ∃ j,
+      run Words.«um/mod-ref».code (n + 28 * (d + 1)) 4 ⟨hi :: lo :: s, BitVec.ofNat 64 k :: 64 :: dv :: r, m, p, e⟩ =
+        run Words.«um/mod-ref».code (n + j) 32
+          ⟨(Prim.umdivRounds dv (d + 1) hi lo).1 :: (Prim.umdivRounds dv (d + 1) hi lo).2 :: s, dv :: r, m, p, e⟩ := by
+  intro d
+  induction d with
+  | zero =>
+    intro k hi lo hk n
+    have hi64 : BitVec.ofNat 64 k + 1 = 64 := by bv_omega
+    by_cases hc : hi >>> 63 ≠ 0 ∨ ¬ ((hi <<< 1) ||| (lo >>> 63)).ult dv = true
+    · refine ⟨0, ?_⟩
+      rw [show n + 28 * (0 + 1) = n + 28 by omega, um_round_sub n dv hi lo _ s r m p e hc, if_pos hi64]
+      simp only [Prim.umdivRounds, if_pos hc, Nat.add_zero]
+    · have h0 : hi >>> 63 = 0 := Classical.byContradiction fun h => hc (Or.inl h)
+      have hu : ((hi <<< 1) ||| (lo >>> 63)).ult dv = true := Classical.byContradiction fun h => hc (Or.inr h)
+      refine ⟨6, ?_⟩
+      rw [show n + 28 * (0 + 1) = n + 6 + 22 by omega, um_round_keep (n + 6) dv hi lo _ s r m p e h0 hu,
+        if_pos hi64]
+      simp only [Prim.umdivRounds, if_neg hc]
+  | succ d ih =>
+    intro k hi lo hk n
+    have hne : BitVec.ofNat 64 k + 1 ≠ 64 := by bv_omega
+    have hk1 : BitVec.ofNat 64 k + 1 = BitVec.ofNat 64 (k + 1) := by bv_omega
+    by_cases hc : hi >>> 63 ≠ 0 ∨ ¬ ((hi <<< 1) ||| (lo >>> 63)).ult dv = true
+    · obtain ⟨j, hr⟩ := ih (k + 1) _ _ (by omega) n
+      refine ⟨j, ?_⟩
+      rw [show n + 28 * (d + 1 + 1) = n + 28 * (d + 1) + 28 by omega,
+        um_round_sub _ dv hi lo _ s r m p e hc, if_neg hne, hk1, hr]
+      simp only [Prim.umdivRounds, if_pos hc]
+    · have h0 : hi >>> 63 = 0 := Classical.byContradiction fun h => hc (Or.inl h)
+      have hu : ((hi <<< 1) ||| (lo >>> 63)).ult dv = true := Classical.byContradiction fun h => hc (Or.inr h)
+      obtain ⟨j, hr⟩ := ih (k + 1) _ _ (by omega) (n + 6)
+      refine ⟨6 + j, ?_⟩
+      rw [show n + 28 * (d + 1 + 1) = n + 6 + 28 * (d + 1) + 22 by omega,
+        um_round_keep _ dv hi lo _ s r m p e h0 hu, if_neg hne, hk1, hr, show n + 6 + j = n + (6 + j) by omega]
+      simp only [Prim.umdivRounds, if_neg hc]
+
+/-- UM/MOD-REF does exactly what the UM/MOD primitive does, wherever that
+divides. -/
+theorem umslashmod_ref (dv hi lo : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat)
+    (hd : dv ≠ 0) (hlt : hi.ult dv = true) :
+    Words.«um/mod-ref» ⟨dv :: hi :: lo :: s, r, m, p, e⟩ = Prim.umslashmod ⟨dv :: hi :: lo :: s, r, m, p, e⟩ := by
+  obtain ⟨j, hr⟩ := um_loop dv s r m p e 63 0 hi lo (by omega) 4
+  have pre : ∀ n, run Words.«um/mod-ref».code (n + 1 + 1 + 1 + 1) 0 ⟨dv :: hi :: lo :: s, r, m, p, e⟩ =
+      run Words.«um/mod-ref».code n 4 ⟨hi :: lo :: s, BitVec.ofNat 64 0 :: 64 :: dv :: r, m, p, e⟩ := by
+    intro n
+    simp [forth]
+  have post : ∀ (n : Nat) (a b : Cell),
+      run Words.«um/mod-ref».code (n + 1 + 1 + 1 + 1) 32 ⟨a :: b :: s, dv :: r, m, p, e⟩ =
+        .ok ⟨b :: a :: s, r, m, p, e⟩ := by
+    intro n a b
+    simp [forth]
+  have run_all : run Words.«um/mod-ref».code ((4 + 28 * (63 + 1)) + 1 + 1 + 1 + 1) 0
+      ⟨dv :: hi :: lo :: s, r, m, p, e⟩ =
+      .ok ⟨(Prim.umdivRounds dv (63 + 1) hi lo).2 :: (Prim.umdivRounds dv (63 + 1) hi lo).1 :: s, r, m, p, e⟩ := by
+    rw [pre, hr, show 4 + j = j + 1 + 1 + 1 + 1 by omega, post]
+  rw [show Words.«um/mod-ref» ⟨dv :: hi :: lo :: s, r, m, p, e⟩ = _ from
+    loopThread_eq _ _ _ _ run_all (by simp [outOfFuel])]
+  simp only [Prim.umslashmod, if_neg hd, hlt, not_true_eq_false, if_false]
+
 end OS4.Refs
