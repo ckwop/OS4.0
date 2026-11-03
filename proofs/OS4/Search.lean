@@ -199,7 +199,10 @@ theorem wr_far (m : Mem) (a v x : Cell) (hx : 8 ≤ (x - a).toNat) : wr m a 8 v 
   omega
 
 theorem plus_store_at : StoreAt Words.«+!» := by
-  intro s s' a t hds h
+  refine ⟨fun s s' a t hds h => ?_, fun s fl h => ?_⟩
+  case refine_2 =>
+    rcases s with ⟨_ | ⟨a, _ | ⟨v, t⟩⟩, rs, m, u, e⟩ <;> simp [forth, S.fail] at h
+    all_goals (subst h; rfl)
   rcases s with ⟨ds, rs, m, u, e⟩
   simp only at hds
   subst hds
@@ -222,7 +225,7 @@ theorem parse_name_frame : Frame toinCell Words.«parse-name#2» :=
       Prim.drop_frame, Prim.fetch_frame, Prim.plus_frame, Prim.over_frame, Prim.minus_frame] [plus_store_at])).2
 
 theorem paren_frame : Frame toinCell Prim.paren := by
-  intro s s' h
+  refine ⟨fun s s' h => ?_, fun s fl h => by simp [Prim.paren] at h⟩
   rcases s with ⟨ds, rs, m, p, e⟩
   simp only [Prim.paren, Except.ok.injEq] at h
   subst h

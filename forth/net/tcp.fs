@@ -461,7 +461,8 @@ variable next-sweep             \ when the sweep may run again
 
 \ ---- For the application. Words that wait sleep until the network task wakes
 \ them, or until the task's IO-TIMEOUT runs out: then they throw -273, and a
-\ send that made no progress for that long first resets the connection. A
+\ send that made no progress for that long has the connection reset (by the
+\ network task's sweep, or by CLOSE-CONNECTION if that comes first). A
 \ connection must not be used after CLOSE-CONNECTION.
 
 -273 message: timed out
@@ -478,6 +479,10 @@ user cur-conn                   \ the connection SEND or GET-LINE is working on
 : open?  ( conn -- flag )  \ we can still send on it
   dup c.state @  dup established =  swap close-wait = or  swap fin-queued flag? 0= and ;
 
+\ A connection whose timeout has passed is reset by the next sweep: the sending
+\ task only writes the connection's own record (proofs/OS4/Telnet.lean).
+: reset-soon  ( conn -- )  0 deadline swap c.timeout ! ;
+
 \ Queue data on cur-conn, sending only when we must wait for room. Throws -269
 \ once the connection is closed.
 : (send)  ( addr len -- )
@@ -486,7 +491,7 @@ user cur-conn                   \ the connection SEND or GET-LINE is working on
     cur-conn @ open? 0= if 2drop -269 throw then
     cur-conn @ tx-room ?dup 0= if
       cur-conn @ tcp-output
-      ['] io-wait catch ?dup if  cur-conn @ abort-connection throw  then
+      ['] io-wait catch ?dup if  cur-conn @ reset-soon throw  then
     else
       io-start                                      \ progress: the time starts again
       over min                                      ( addr len n )
@@ -528,10 +533,14 @@ create crlf  13 c, 10 c,
   again ;
 
 \ Send what is queued, then a FIN; then let it go. If that has not finished
-\ within LINGER-MS, the connection is reset.
+\ within LINGER-MS, the connection is reset. If a send asked for a reset
+\ (RESET-SOON: no other timeout runs before our FIN), the sweep does it, and
+\ frees the connection as the application has closed it: resetting it here as
+\ well could free it twice.
 : close-connection  ( conn -- )
   dup app-closed flag+
   dup c.state @ closed = if  free-conn exit  then
+  dup c.timeout @ if  drop exit  then
   linger-ms deadline over c.timeout !
   dup fin-queued flag+  tcp-output ;
 : drop-connection  ( conn -- )  dup abort-connection close-connection ;  \ reset it, and let it go

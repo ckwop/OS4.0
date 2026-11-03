@@ -223,15 +223,113 @@ theorem run_inv (code : List Ins) (Q : Nat → S → Prop) (hQ : Invariant code 
       · simp only [hb, if_true] at h
         exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.ploopEnd hds hrs hb⟩) h
 
+/-- A run that fails does so at a point the invariant reached: by a step that
+cannot go on, leaving memory as it was there, or in a call. -/
+theorem run_err (code : List Ins) (Q : Nat → S → Prop) (hQ : Invariant code Q) :
+    ∀ n pc s fl, Q pc s → run code n pc s = .error fl →
+      ∃ pc' s', Q pc' s' ∧ (fl.mem = s'.mem ∨ ∃ f, code[pc']? = some (.call f) ∧ f s' = .error fl) := by
+  intro n
+  induction n with
+  | zero =>
+    intro pc s fl hq h
+    simp only [run, S.fail, Except.error.injEq] at h
+    subst h
+    exact ⟨pc, s, hq, Or.inl rfl⟩
+  | succ n ih =>
+    intro pc s fl hq h
+    have here : ∀ err, (s.fail err : Except Fail S) = .error fl →
+        ∃ pc' s', Q pc' s' ∧ (fl.mem = s'.mem ∨ ∃ f, code[pc']? = some (.call f) ∧ f s' = .error fl) := by
+      intro err he
+      simp only [S.fail, Except.error.injEq] at he
+      subst he
+      exact ⟨pc, s, hq, Or.inl rfl⟩
+    simp only [run] at h
+    rcases hc : code[pc]? with _ | ⟨f | v | t | t | t | t | t | _⟩ <;> simp only [hc] at h
+    case none => exact here _ h
+    case some.exit => simp at h
+    case some.call =>
+      rcases hf : f s with e | s1 <;> simp only [hf] at h
+      case error =>
+        simp only [Except.error.injEq] at h
+        subst h
+        exact ⟨pc, s, hq, Or.inr ⟨f, hc, hf⟩⟩
+      case ok => exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.call hf⟩) h
+    case some.lit => exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.lit⟩) h
+    case some.branch => exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.branch⟩) h
+    case some.zbranch =>
+      rcases hds : s.ds with _ | ⟨x, ds⟩ <;> simp only [hds] at h
+      case nil => exact here _ h
+      case cons =>
+        by_cases hx : x = 0
+        · subst hx
+          rw [if_pos rfl] at h
+          exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.zjump hds⟩) h
+        · rw [if_neg hx] at h
+          exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.zfall hds hx⟩) h
+    case some.qdo =>
+      rcases hds : s.ds with _ | ⟨start, _ | ⟨limit, ds⟩⟩ <;> simp only [hds] at h
+      case nil => exact here _ h
+      case cons.nil => exact here _ h
+      case cons.cons =>
+        by_cases hl : limit = start
+        · subst hl
+          rw [if_pos rfl] at h
+          exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.qdoSkip hds⟩) h
+        · rw [if_neg hl] at h
+          exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.qdoEnter hds hl⟩) h
+    case some.loop =>
+      rcases hrs : s.rs with _ | ⟨i, _ | ⟨l, rs⟩⟩ <;> simp only [hrs] at h
+      case nil => exact here _ h
+      case cons.nil => exact here _ h
+      case cons.cons =>
+        by_cases hl : i + 1 = l
+        · rw [if_pos hl] at h
+          exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.loopEnd hrs hl⟩) h
+        · rw [if_neg hl] at h
+          exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.loopBack hrs hl⟩) h
+    case some.ploop =>
+      rcases hds : s.ds with _ | ⟨k, ds⟩ <;> rcases hrs : s.rs with _ | ⟨i, _ | ⟨l, rs⟩⟩ <;>
+        simp only [hds, hrs] at h
+      all_goals try (exact here _ h)
+      cases hb : (((i - l) ^^^ (i - l + k)) &&& ((i - l) ^^^ k)).msb
+      · simp only [hb, Bool.false_eq_true, if_false] at h
+        exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.ploopBack hds hrs hb⟩) h
+      · simp only [hb, if_true] at h
+        exact ih _ _ _ (hQ _ _ _ _ hq ⟨_, hc, Step.ploopEnd hds hrs hb⟩) h
+
+/-- An instruction keeps Q; and if it is a call that fails from where Q holds,
+the failure's memory satisfies E. -/
+structure KeepsE (Q : Nat → S → Prop) (E : Mem → Prop) (pc : Nat) (i : Ins) : Prop where
+  ok : Keeps Q pc i
+  err : ∀ f, i = .call f → ∀ s fl, Q pc s → f s = .error fl → E fl.mem
+
+/-- A thread whose instructions keep Q, from a state where Q holds, fails
+only with memory E holds of, if Q gives E wherever it holds. -/
+theorem run_fails {code : List Ins} {Q : Nat → S → Prop} {E : Mem → Prop}
+    (h : ∀ pc i, code[pc]? = some i → KeepsE Q E pc i) (hS : ∀ pc s, Q pc s → E s.mem) :
+    ∀ n pc s fl, Q pc s → run code n pc s = .error fl → E fl.mem := by
+  intro n pc s fl hq hr
+  obtain ⟨pc', s', hq', hf⟩ := run_err code Q (invariant_of_keeps fun pc i hi => (h pc i hi).1) n pc s fl hq hr
+  rcases hf with hm | ⟨f, hc, hf⟩
+  · rw [hm]; exact hS _ _ hq'
+  · exact (h _ _ hc).2 f rfl s' fl hq' hf
+
+/-- An instruction other than a call never fails into a callee. -/
+theorem keepsE_of {Q : Nat → S → Prop} {E : Mem → Prop} {pc : Nat} {i : Ins} (hi : ∀ f, i ≠ .call f)
+    (h : Keeps Q pc i) : KeepsE Q E pc i :=
+  ⟨h, fun f hf => absurd hf (hi f)⟩
+
 /-! ## Frames: what a word leaves alone
 
 `Frame W f`: when f returns, the user area is the same, and so is every byte
-outside W (given the user area). A thread whose calls all have frame W has it
-too, whatever its stack does; so a word that writes nothing, or only its own
-user variables, can be shown so without knowing its stack effect. -/
+outside W (given the user area); and when it fails, so is every byte outside
+W. A thread whose calls all have frame W has it too, whatever its stack does;
+so a word that writes nothing, or only its own user variables, can be shown
+so without knowing its stack effect. -/
 
 def Frame (W : Cell → Cell → Prop) (f : Sem) : Prop :=
-  ∀ s s', f s = .ok s' → s'.up = s.up ∧ ∀ a, ¬ W s.up a → s'.mem a = s.mem a
+  (∀ s s', f s = .ok s' → s'.up = s.up ∧ ∀ a, ¬ W s.up a → s'.mem a = s.mem a) ∧
+  ∀ s fl, f s = .error fl → ∀ a, ¬ W s.up a → fl.mem a = s.mem a
 
 private theorem frame_inv {W : Cell → Cell → Prop} {code : List Ins}
     (h : ∀ f, Ins.call f ∈ code → Frame W f) (s0 : S) :
@@ -239,32 +337,43 @@ private theorem frame_inv {W : Cell → Cell → Prop} {code : List Ins}
   intro pc s pc' s' ⟨hu, hm⟩ ⟨i, hc, hs⟩
   cases hs with
   | call hf =>
-    obtain ⟨hu', hm'⟩ := h _ (List.mem_of_getElem? hc) _ _ hf
+    obtain ⟨hu', hm'⟩ := (h _ (List.mem_of_getElem? hc)).1 _ _ hf
     refine ⟨hu'.trans hu, fun a ha => ?_⟩
     rw [hm' a (hu ▸ ha), hm a ha]
   | _ => exact ⟨hu, hm⟩
 
+private theorem frame_run {W : Cell → Cell → Prop} {code : List Ins}
+    (h : ∀ f, Ins.call f ∈ code → Frame W f) (n : Nat) (s : S) :
+    (∀ s', run code n 0 s = .ok s' → s'.up = s.up ∧ ∀ a, ¬ W s.up a → s'.mem a = s.mem a) ∧
+    ∀ fl, run code n 0 s = .error fl → ∀ a, ¬ W s.up a → fl.mem a = s.mem a := by
+  refine ⟨fun s' hs => ?_, fun fl hs a ha => ?_⟩
+  · obtain ⟨_, _, hu, hm⟩ := run_inv code _ (frame_inv h s) _ 0 s s' ⟨rfl, fun _ _ => rfl⟩ hs
+    exact ⟨hu, hm⟩
+  · obtain ⟨pc', s', ⟨hu, hm⟩, hf⟩ := run_err code _ (frame_inv h s) _ 0 s fl ⟨rfl, fun _ _ => rfl⟩ hs
+    rcases hf with he | ⟨f, hc, hf⟩
+    · rw [he, hm a ha]
+    · rw [(h _ (List.mem_of_getElem? hc)).2 _ _ hf a (by rw [hu]; exact ha), hm a ha]
+
 theorem thread_frame {W : Cell → Cell → Prop} {code : List Ins}
-    (h : ∀ f, Ins.call f ∈ code → Frame W f) : Frame W (thread code) := by
-  intro s s' hs
-  obtain ⟨_, _, hu, hm⟩ := run_inv code _ (frame_inv h s) _ 0 s s' ⟨rfl, fun _ _ => rfl⟩ hs
-  exact ⟨hu, hm⟩
+    (h : ∀ f, Ins.call f ∈ code → Frame W f) : Frame W (thread code) :=
+  ⟨fun s s' hs => (frame_run h _ s).1 s' hs, fun s fl hs => (frame_run h _ s).2 fl hs⟩
 
 theorem loopThread_frame {W : Cell → Cell → Prop} {code : List Ins}
     (h : ∀ f, Ins.call f ∈ code → Frame W f) : Frame W (loopThread code) := by
-  intro s s' hs
-  unfold loopThread at hs
-  split at hs
-  · obtain ⟨_, _, hu, hm⟩ := run_inv code _ (frame_inv h s) _ 0 s s' ⟨rfl, fun _ _ => rfl⟩ hs
-    exact ⟨hu, hm⟩
+  refine ⟨fun s s' hs => ?_, fun s fl hs => ?_⟩ <;> unfold loopThread at hs <;> split at hs
+  · exact (frame_run h _ s).1 s' hs
   · simp [S.fail] at hs
+  · exact (frame_run h _ s).2 fl hs
+  · simp only [S.fail, Except.error.injEq] at hs
+    subst hs
+    exact fun _ _ => rfl
 
 /-- Prove `Frame W p` for a primitive that writes nothing. -/
 macro "frame_prim" : tactic =>
-  `(tactic| (intro s s' h;
+  `(tactic| (refine ⟨fun s s' h => ?_, fun s fl h => ?_⟩ <;>
              rcases s with ⟨_ | ⟨x, _ | ⟨y, ds⟩⟩, _ | ⟨z, rs⟩, m, u, e⟩ <;>
              simp [forth, S.fail] at h <;> (repeat' split at h) <;> (try simp at h) <;>
-             (subst h; exact ⟨rfl, fun _ _ => rfl⟩)))
+             first | (subst h; exact ⟨rfl, fun _ _ => rfl⟩) | (subst h; exact fun _ _ => rfl)))
 
 /-- Prove `∀ f, .call f ∈ code → Frame W f` from the callees' frames, given
 as lemmas taking W. -/
@@ -335,86 +444,115 @@ def Framed (W : Cell → Cell → Prop) (s0 s : S) : Prop :=
 theorem framed_call {W : Cell → Cell → Prop} {f : Sem} (hf : Frame W f) {s0 s s' : S}
     (h : Framed W s0 s) (hs : f s = .ok s') : Framed W s0 s' := by
   obtain ⟨hu, hm⟩ := h
-  obtain ⟨hu', hm'⟩ := hf _ _ hs
+  obtain ⟨hu', hm'⟩ := hf.1 _ _ hs
   refine ⟨hu'.trans hu, fun a ha => ?_⟩
   rw [hm' a (hu ▸ ha), hm a ha]
+
+theorem framed_fail {W : Cell → Cell → Prop} {f : Sem} (hf : Frame W f) {s0 s : S} {fl : Fail}
+    (h : Framed W s0 s) (hs : f s = .error fl) : ∀ a, ¬ W s0.up a → fl.mem a = s0.mem a := by
+  obtain ⟨hu, hm⟩ := h
+  intro a ha
+  rw [hf.2 _ _ hs a (hu ▸ ha), hm a ha]
 
 /-- The invariant: framed, and at a store the user variable's address on top. -/
 def FQ (W : Cell → Cell → Prop) (P : List Nat) (off : Cell) (s0 : S) (pc : Nat) (s : S) : Prop :=
   Framed W s0 s ∧ (pc ∈ P → ∃ t, s.ds = (s0.up + off) :: t)
 
-/-- g writes only the cell whose address is on top. -/
+/-- What a failure from s0 may leave: every byte outside W as in s0. -/
+def FE (W : Cell → Cell → Prop) (s0 : S) (m : Mem) : Prop := ∀ a, ¬ W s0.up a → m a = s0.mem a
+
+/-- g writes only the cell whose address is on top, and fails without writing. -/
 def StoreAt (g : Sem) : Prop :=
-  ∀ s s' a t, s.ds = a :: t → g s = .ok s' → s'.up = s.up ∧ ∀ x, 8 ≤ (x - a).toNat → s'.mem x = s.mem x
+  (∀ s s' a t, s.ds = a :: t → g s = .ok s' → s'.up = s.up ∧ ∀ x, 8 ≤ (x - a).toNat → s'.mem x = s.mem x) ∧
+  ∀ s fl, g s = .error fl → fl.mem = s.mem
 
 section
 variable {W : Cell → Cell → Prop} {P : List Nat} {off : Cell} {s0 : S} {pc : Nat}
 
-theorem keeps_frame {f : Sem} (hf : Frame W f) (hp : pc + 1 ∉ P) : Keeps (FQ W P off s0) pc (.call f) := by
-  intro s pc' s' ⟨h, _⟩ hs
-  cases hs with
-  | call h' => exact ⟨framed_call hf h h', fun h'' => absurd h'' hp⟩
+theorem keeps_frame {f : Sem} (hf : Frame W f) (hp : pc + 1 ∉ P) :
+    KeepsE (FQ W P off s0) (FE W s0) pc (.call f) := by
+  refine ⟨fun s pc' s' ⟨h, _⟩ hs => ?_, fun g hg s fl ⟨h, _⟩ hs => ?_⟩
+  · cases hs with
+    | call h' => exact ⟨framed_call hf h h', fun h'' => absurd h'' hp⟩
+  · cases hg
+    exact framed_fail hf h hs
 
-theorem keeps_userAt : Keeps (FQ W P off s0) pc (.call (userAt off)) := by
-  intro s pc' s' ⟨h, _⟩ hs
-  cases hs with
-  | call h' =>
-    refine ⟨framed_call (userAt_frame off W) h h', fun _ => ⟨s.ds, ?_⟩⟩
-    simp only [userAt, Except.ok.injEq] at h'
-    subst h'
-    simp [h.1]
+theorem keeps_userAt : KeepsE (FQ W P off s0) (FE W s0) pc (.call (userAt off)) := by
+  refine ⟨fun s pc' s' ⟨h, _⟩ hs => ?_, fun g hg s fl _ hs => ?_⟩
+  · cases hs with
+    | call h' =>
+      refine ⟨framed_call (userAt_frame off W) h h', fun _ => ⟨s.ds, ?_⟩⟩
+      simp only [userAt, Except.ok.injEq] at h'
+      subst h'
+      simp [h.1]
+  · cases hg
+    simp [userAt] at hs
 
 theorem keeps_store {g : Sem} (hg : StoreAt g) (hW : ∀ p a, (a - (p + off)).toNat < 8 → W p a)
-    (hin : pc ∈ P) (hp : pc + 1 ∉ P) : Keeps (FQ W P off s0) pc (.call g) := by
-  intro s pc' s' ⟨⟨hu, hm⟩, ht⟩ hs
-  cases hs with
-  | call h' =>
-    obtain ⟨t, hds⟩ := ht hin
-    obtain ⟨hu', hm'⟩ := hg _ _ _ _ hds h'
-    refine ⟨⟨hu'.trans hu, fun a ha => ?_⟩, fun h'' => absurd h'' hp⟩
-    have : 8 ≤ (a - (s0.up + off)).toNat := by
-      have := mt (hW s0.up a) ha
-      omega
-    rw [hm' a this, hm a ha]
+    (hin : pc ∈ P) (hp : pc + 1 ∉ P) : KeepsE (FQ W P off s0) (FE W s0) pc (.call g) := by
+  refine ⟨fun s pc' s' ⟨⟨hu, hm⟩, ht⟩ hs => ?_, fun g' hg' s fl ⟨⟨_, hm⟩, _⟩ hs => ?_⟩
+  · cases hs with
+    | call h' =>
+      obtain ⟨t, hds⟩ := ht hin
+      obtain ⟨hu', hm'⟩ := hg.1 _ _ _ _ hds h'
+      refine ⟨⟨hu'.trans hu, fun a ha => ?_⟩, fun h'' => absurd h'' hp⟩
+      have : 8 ≤ (a - (s0.up + off)).toNat := by
+        have := mt (hW s0.up a) ha
+        omega
+      rw [hm' a this, hm a ha]
+  · cases hg'
+    intro a ha
+    rw [hg.2 _ _ hs, hm a ha]
 
-theorem keeps_lit {v : Cell} (hp : pc + 1 ∉ P) : Keeps (FQ W P off s0) pc (.lit v) := by
-  intro s pc' s' ⟨h, _⟩ hs
+theorem keeps_lit {v : Cell} (hp : pc + 1 ∉ P) : KeepsE (FQ W P off s0) (FE W s0) pc (.lit v) := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' ⟨h, _⟩ hs => ?_
   cases hs with
   | lit => exact ⟨h, fun h'' => absurd h'' hp⟩
 
-theorem keeps_branch {t : Nat} (ht : t ∉ P) : Keeps (FQ W P off s0) pc (.branch t) := by
-  intro s pc' s' ⟨h, _⟩ hs
+theorem keeps_branch {t : Nat} (ht : t ∉ P) : KeepsE (FQ W P off s0) (FE W s0) pc (.branch t) := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' ⟨h, _⟩ hs => ?_
   cases hs with
   | branch => exact ⟨h, fun h'' => absurd h'' ht⟩
 
 theorem keeps_zbranch {t : Nat} (ht : t ∉ P) (hp : pc + 1 ∉ P) :
-    Keeps (FQ W P off s0) pc (.zbranch t) := by
-  intro s pc' s' ⟨h, _⟩ hs
+    KeepsE (FQ W P off s0) (FE W s0) pc (.zbranch t) := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' ⟨h, _⟩ hs => ?_
   cases hs with
   | zjump _ => exact ⟨h, fun h'' => absurd h'' ht⟩
   | zfall _ _ => exact ⟨h, fun h'' => absurd h'' hp⟩
 
-theorem keeps_exit : Keeps (FQ W P off s0) pc .exit := by
-  intro s pc' s' _ hs
+theorem keeps_exit : KeepsE (FQ W P off s0) (FE W s0) pc .exit := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' _ hs => ?_
   cases hs
 end
 
 /-- A thread whose every instruction keeps `FQ` has frame W. -/
 theorem thread_frame_at {W : Cell → Cell → Prop} {P : List Nat} {off : Cell} {code : List Ins}
-    (h0 : 0 ∉ P) (h : ∀ s0 pc i, code[pc]? = some i → Keeps (FQ W P off s0) pc i) :
+    (h0 : 0 ∉ P) (h : ∀ s0 pc i, code[pc]? = some i → KeepsE (FQ W P off s0) (FE W s0) pc i) :
     Frame W (thread code) ∧ Frame W (loopThread code) := by
+  have q0 : ∀ s, FQ W P off s 0 s := fun s => ⟨⟨rfl, fun _ _ => rfl⟩, fun h' => absurd h' h0⟩
   have go : ∀ n s s', run code n 0 s = .ok s' → s'.up = s.up ∧ ∀ a, ¬ W s.up a → s'.mem a = s.mem a := by
     intro n s s' hs
     obtain ⟨_, _, hf, _⟩ :=
-      run_inv code _ (invariant_of_keeps (h s)) n 0 s s' ⟨⟨rfl, fun _ _ => rfl⟩, fun h' => absurd h' h0⟩ hs
+      run_inv code _ (invariant_of_keeps fun pc i hi => (h s pc i hi).1) n 0 s s' (q0 s) hs
     exact hf
-  refine ⟨fun s s' hs => go _ s s' hs, fun s s' hs => ?_⟩
+  have gof : ∀ n s fl, run code n 0 s = .error fl → ∀ a, ¬ W s.up a → fl.mem a = s.mem a :=
+    fun n s fl hs => run_fails (h s) (fun _ _ hq => hq.1.2) n 0 s fl (q0 s) hs
+  have lt : ∀ s fl, loopThread code s = .error fl → ∀ a, ¬ W s.up a → fl.mem a = s.mem a := by
+    intro s fl hs
+    unfold loopThread at hs
+    split at hs
+    · exact gof _ s fl hs
+    · simp only [S.fail, Except.error.injEq] at hs
+      subst hs
+      exact fun _ _ => rfl
+  refine ⟨⟨fun s s' hs => go _ s s' hs, fun s fl hs => gof _ s fl hs⟩, fun s s' hs => ?_, lt⟩
   unfold loopThread at hs
   split at hs
   · exact go _ s s' hs
   · simp [S.fail] at hs
 
-/-- Discharge each instruction's `Keeps` after `forall_getElem?_cons` has
+/-- Discharge each instruction's `KeepsE` after `forall_getElem?_cons` has
 split them out: stores through `stores`, other calls through `frames`. -/
 syntax "keeps" "[" term,* "]" "[" term,* "]" : tactic
 macro_rules
@@ -430,7 +568,10 @@ macro_rules
        $[| ((with_reducible apply keeps_store $(gs.getElems) (fun _ _ h => h)) <;> decide)]*)
 
 theorem store_at : StoreAt Prim.store := by
-  intro s s' a t hds h
+  refine ⟨fun s s' a t hds h => ?_, fun s fl h => ?_⟩
+  case refine_2 =>
+    rcases s with ⟨_ | ⟨a, _ | ⟨v, t⟩⟩, rs, m, u, e⟩ <;> simp [forth, S.fail] at h
+    all_goals (subst h; rfl)
   rcases s with ⟨ds, rs, m, u, e⟩
   simp only at hds
   subst hds

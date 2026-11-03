@@ -34,83 +34,100 @@ def KQ (B : Box) (F : Nat → S → Prop) (pc : Nat) (s : S) : Prop :=
   s.up = B.p ∧ B.Inv s.mem ∧ F pc s
 
 theorem thread_keeps_at {F : Nat → S → Prop} {code : List Ins} (h0 : ∀ s, F 0 s)
-    (h : ∀ pc i, code[pc]? = some i → Keeps (KQ B F) pc i) :
+    (h : ∀ pc i, code[pc]? = some i → KeepsE (KQ B F) B.Inv pc i) :
     B.Keeps (thread code) ∧ B.Keeps (loopThread code) := by
   have go : ∀ n s s', s.up = B.p → B.Inv s.mem → run code n 0 s = .ok s' →
       s'.up = B.p ∧ B.Inv s'.mem := by
     intro n s s' hu hI hs
-    obtain ⟨_, _, hu', hI', _⟩ := run_inv code _ (invariant_of_keeps h) n 0 s s' ⟨hu, hI, h0 _⟩ hs
+    obtain ⟨_, _, hu', hI', _⟩ :=
+      run_inv code _ (invariant_of_keeps fun pc i hi => (h pc i hi).ok) n 0 s s' ⟨hu, hI, h0 _⟩ hs
     exact ⟨hu', hI'⟩
-  refine ⟨fun s s' hu hI hs => go _ s s' hu hI hs, fun s s' hu hI hs => ?_⟩
-  unfold loopThread at hs
-  split at hs
+  have gof : ∀ n s fl, s.up = B.p → B.Inv s.mem → run code n 0 s = .error fl → B.Inv fl.mem :=
+    fun n s fl hu hI hs => run_fails h (fun _ _ hq => hq.2.1) n 0 s fl ⟨hu, hI, h0 _⟩ hs
+  refine ⟨⟨fun s s' hu hI hs => go _ s s' hu hI hs, fun s fl hu hI hs => gof _ s fl hu hI hs⟩,
+    fun s s' hu hI hs => ?_, fun s fl hu hI hs => ?_⟩ <;> unfold loopThread at hs <;> split at hs
   · exact go _ s s' hu hI hs
   · simp [S.fail] at hs
+  · exact gof _ s fl hu hI hs
+  · simp only [S.fail, Except.error.injEq] at hs
+    subst hs
+    exact hI
 
 /-- A thread whose every call keeps the setting keeps it. -/
 theorem thread_keeps {code : List Ins} (h : ∀ f, Ins.call f ∈ code → B.Keeps f) :
     B.Keeps (thread code) ∧ B.Keeps (loopThread code) :=
-  thread_keeps_at (F := fun _ _ => True) (fun _ => trivial) fun pc i hi s pc' s' ⟨hu, hI, _⟩ hs => by
-    cases hs with
-    | call hf =>
-      obtain ⟨hu', hI'⟩ := h _ (List.mem_of_getElem? hi) _ _ hu hI hf
-      exact ⟨hu', hI', trivial⟩
-    | _ => exact ⟨hu, hI, trivial⟩
+  thread_keeps_at (F := fun _ _ => True) (fun _ => trivial) fun pc i hi =>
+    ⟨fun s pc' s' ⟨hu, hI, _⟩ hs => by
+      cases hs with
+      | call hf =>
+        obtain ⟨hu', hI'⟩ := (h _ (List.mem_of_getElem? hi)).ok _ _ hu hI hf
+        exact ⟨hu', hI', trivial⟩
+      | _ => exact ⟨hu, hI, trivial⟩,
+     fun f hf s fl ⟨hu, hI, _⟩ hs => by
+      subst hf
+      exact (h _ (List.mem_of_getElem? hi)).err _ _ hu hI hs⟩
 
 section
 variable {F : Nat → S → Prop} {pc : Nat}
 
 theorem gk {f : Sem} (hf : B.Keeps f)
     (hR : ∀ s s', s.up = B.p → B.Inv s.mem → F pc s → f s = .ok s' → F (pc + 1) s') :
-    Keeps (KQ B F) pc (.call f) := by
-  intro s pc' s' ⟨hu, hI, hr⟩ hs
-  cases hs with
-  | call h =>
-    obtain ⟨hu', hI'⟩ := hf s s' hu hI h
-    exact ⟨hu', hI', hR s s' hu hI hr h⟩
+    KeepsE (KQ B F) B.Inv pc (.call f) := by
+  refine ⟨fun s pc' s' ⟨hu, hI, hr⟩ hs => ?_, fun g hg s fl ⟨hu, hI, _⟩ hs => ?_⟩
+  · cases hs with
+    | call h =>
+      obtain ⟨hu', hI'⟩ := hf.ok s s' hu hI h
+      exact ⟨hu', hI', hR s s' hu hI hr h⟩
+  · cases hg
+    exact hf.err s fl hu hI hs
 
 theorem gl {v : Cell} (hR : ∀ s, F pc s → F (pc + 1) { s with ds := v :: s.ds }) :
-    Keeps (KQ B F) pc (.lit v) := by
-  intro s pc' s' ⟨hu, hI, hr⟩ hs
+    KeepsE (KQ B F) B.Inv pc (.lit v) := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' ⟨hu, hI, hr⟩ hs => ?_
   cases hs with
   | lit => exact ⟨hu, hI, hR _ hr⟩
 
-theorem gb {t : Nat} (hR : ∀ s, F pc s → F t s) : Keeps (KQ B F) pc (.branch t) := by
-  intro s pc' s' ⟨hu, hI, hr⟩ hs
+theorem gb {t : Nat} (hR : ∀ s, F pc s → F t s) : KeepsE (KQ B F) B.Inv pc (.branch t) := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' ⟨hu, hI, hr⟩ hs => ?_
   cases hs with
   | branch => exact ⟨hu, hI, hR _ hr⟩
 
 theorem gz {t : Nat} (hj : ∀ s ds, s.ds = 0 :: ds → F pc s → F t { s with ds := ds })
     (hn : ∀ s x ds, s.ds = x :: ds → x ≠ 0 → F pc s → F (pc + 1) { s with ds := ds }) :
-    Keeps (KQ B F) pc (.zbranch t) := by
-  intro s pc' s' ⟨hu, hI, hr⟩ hs
+    KeepsE (KQ B F) B.Inv pc (.zbranch t) := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' ⟨hu, hI, hr⟩ hs => ?_
   cases hs with
   | zjump hds => exact ⟨hu, hI, hj _ _ hds hr⟩
   | zfall hds hx => exact ⟨hu, hI, hn _ _ _ hds hx hr⟩
 
 /-- A point the thread never reaches. -/
-theorem gF {i : Ins} (h : ∀ s, ¬ F pc s) : Keeps (KQ B F) pc i :=
-  fun _ _ _ ⟨_, _, hr⟩ _ => absurd hr (h _)
+theorem gF {i : Ins} (h : ∀ s, ¬ F pc s) : KeepsE (KQ B F) B.Inv pc i :=
+  ⟨fun _ _ _ ⟨_, _, hr⟩ _ => absurd hr (h _), fun _ _ _ _ ⟨_, _, hr⟩ _ => absurd hr (h _)⟩
 
-theorem ge : Keeps (KQ B F) pc .exit := by
-  intro s pc' s' _ hs
-  cases hs
+theorem ge : KeepsE (KQ B F) B.Inv pc .exit :=
+  keepsE_of (fun _ h => by cases h) fun _ _ _ _ hs => by cases hs
 
 /-- A store into the cell at the user area plus off, which the support misses. -/
 theorem gs {g : Sem} (hg : StoreAt g) {off : Cell}
     (hoff : ∀ a, B.supp a → 8 ≤ (a - (B.p + off)).toNat)
     (hat : ∀ s, F pc s → ∃ t, s.ds = (B.p + off) :: t) (hR : ∀ s, F (pc + 1) s) :
-    Keeps (KQ B F) pc (.call g) := by
-  intro s pc' s' ⟨hu, hI, hr⟩ hs
-  cases hs with
-  | call h =>
-    obtain ⟨t, hds⟩ := hat _ hr
-    obtain ⟨hu', hm⟩ := hg _ _ _ _ hds h
-    exact ⟨hu'.trans hu, fun a ha => (hm a (hoff a ha)).trans (hI a ha), hR _⟩
+    KeepsE (KQ B F) B.Inv pc (.call g) := by
+  refine ⟨fun s pc' s' ⟨hu, hI, hr⟩ hs => ?_, fun g' hg' s fl ⟨_, hI, _⟩ hs => ?_⟩
+  · cases hs with
+    | call h =>
+      obtain ⟨t, hds⟩ := hat _ hr
+      obtain ⟨hu', hm⟩ := hg.1 _ _ _ _ hds h
+      exact ⟨hu'.trans hu, fun a ha => (hm a (hoff a ha)).trans (hI a ha), hR _⟩
+  · cases hg'
+    rw [hg.2 _ _ hs]
+    exact hI
 end
 
 theorem cstore_at : StoreAt Prim.cstore := by
-  intro s s' a t hds h
+  refine ⟨fun s s' a t hds h => ?_, fun s fl h => ?_⟩
+  case refine_2 =>
+    rcases s with ⟨_ | ⟨a, _ | ⟨v, t⟩⟩, rs, m, u, e⟩ <;> simp [forth, S.fail] at h
+    all_goals (subst h; rfl)
   rcases s with ⟨ds, rs, m, u, e⟩
   simp only at hds
   subst hds
@@ -140,7 +157,8 @@ theorem uvar_ok {code : List Ins} {off : Cell}
 
 theorem uvar_frame {code : List Ins} {off : Cell}
     (hc : code = [.lit off, .call Prim.upfetch, .call Prim.plus, .exit]) (W) : Frame W (thread code) :=
-  fun s s' h => by rw [uvar_ok hc s s' h]; exact ⟨rfl, fun _ _ => rfl⟩
+  ⟨fun s s' h => by rw [uvar_ok hc s s' h]; exact ⟨rfl, fun _ _ => rfl⟩,
+   fun s fl h => by subst hc; rcases s with ⟨ds, rs, m, u, e⟩; simp [forth] at h⟩
 
 /-- The support misses an 8-byte user variable at off, between the cells it
 holds and below the end of the user area. -/
@@ -164,18 +182,17 @@ variable (W : Cell → Cell → Prop)
 open Prim
 
 theorem pick_frame : Frame W pick := by
-  intro s s' h
-  rcases s with ⟨_ | ⟨x, ds⟩, rs, m, u, e⟩
+  refine ⟨fun s s' h => ?_, fun s fl h => ?_⟩ <;> rcases s with ⟨_ | ⟨x, ds⟩, rs, m, u, e⟩
   all_goals simp only [Prim.pick, S.fail] at h
   all_goals (repeat' split at h)
-  all_goals first | (cases h; done) | (cases h; exact ⟨rfl, fun _ _ => rfl⟩)
+  all_goals first | (cases h; done) | (cases h; exact ⟨rfl, fun _ _ => rfl⟩) | (cases h; exact fun _ _ => rfl)
 theorem i_frame : Frame W i := by frame_prim
 theorem umslashmod_frame : Frame W umslashmod := by
-  intro s s' h
-  rcases s with ⟨_ | ⟨d, _ | ⟨hi, _ | ⟨lo, ds⟩⟩⟩, rs, m, u, e⟩
+  refine ⟨fun s s' h => ?_, fun s fl h => ?_⟩ <;>
+    rcases s with ⟨_ | ⟨d, _ | ⟨hi, _ | ⟨lo, ds⟩⟩⟩, rs, m, u, e⟩
   all_goals simp only [umslashmod, S.fail] at h
   all_goals (repeat' split at h)
-  all_goals first | (cases h; done) | (cases h; exact ⟨rfl, fun _ _ => rfl⟩)
+  all_goals first | (cases h; done) | (cases h; exact ⟨rfl, fun _ _ => rfl⟩) | (cases h; exact fun _ _ => rfl)
 theorem current_frame : Frame W Words.«current» := pushConst_frame _ W
 theorem slash_pad_frame : Frame W Words.«/pad» := pushConst_frame _ W
 theorem slash_tib_frame : Frame W Words.«/tib» := pushConst_frame _ W
@@ -210,7 +227,13 @@ theorem num_end_frame : Frame W Words.«#>» :=
                      plus_frame, over_frame, minus_frame])
 
 theorem parse_frame : Frame toinCell Prim.parse := by
-  intro s s' h
+  refine ⟨fun s s' h => ?_, fun s fl h => ?_⟩
+  case refine_2 =>
+    rcases s with ⟨_ | ⟨c, ds⟩, rs, m, p, e⟩
+    · simp only [Prim.parse, S.fail, Except.error.injEq] at h
+      subst h
+      exact fun _ _ => rfl
+    · simp [Prim.parse] at h
   rcases s with ⟨_ | ⟨c, ds⟩, rs, m, p, e⟩
   · simp [forth, S.fail] at h
   · simp only [Prim.parse, Except.ok.injEq] at h
@@ -285,6 +308,24 @@ theorem hold_ok (c : Cell) (t rs : List Cell) (m : Mem) (p : Cell) (e : Nat) (s'
     exact ⟨by simpa [BitVec.ult] using hc, rfl⟩
   · exact absurd h (hold_throw _ _ _ _ _ _ _)
 
+/-- HOLD that fails: before writing, or after stepping `hld` down (when the
+stack is empty, so there is no character to store). -/
+theorem hold_err (ds rs : List Cell) (m : Mem) (p : Cell) (e : Nat) (fl : Fail)
+    (h : Words.«hold» ⟨ds, rs, m, p, e⟩ = .error fl) :
+    fl.mem = m ∨ fl.mem = wr m (184 + p) 8 (rd m (184 + p) 8 + 18446744073709551615) := by
+  rw [hold_run, hold_head] at h
+  split at h
+  · rcases ds with _ | ⟨c, t⟩
+    · simp only [run, Words.«hold».code, List.getElem?_cons_succ, List.getElem?_cons_zero, hld_eq,
+        plus_store_eq, Prim.fetch, Prim.cstore, rd_wr_same, S.fail, Except.error.injEq] at h
+      subst h
+      exact Or.inr rfl
+    · rw [hold_tail] at h
+      cases h
+  · simp [forth] at h
+    subst h
+    exact Or.inl rfl
+
 theorem hold_nil (rs : List Cell) (m : Mem) (p : Cell) (e : Nat) (s' : S)
     (h : Words.«hold» ⟨[], rs, m, p, e⟩ = .ok s') : False := by
   rw [hold_run, hold_head] at h
@@ -335,7 +376,18 @@ theorem begin_num_keeps : B.Keeps Words.«<#» := by
 /-- HOLD: one step down `hld`, and the byte there, which its range check keeps
 inside the task's `numbuf`, apart from the support (`Box.Ok.bufs`). -/
 theorem hold_keeps : B.Keeps Words.«hold» := by
-  intro s s' hu hI h
+  refine ⟨fun s s' hu hI h => ?_, fun s fl hu hI h => ?_⟩
+  case refine_2 =>
+    rcases s with ⟨ds, rs, m, p, e⟩
+    simp only at hu hI
+    subst hu
+    intro a ha
+    rcases hold_err ds rs m B.p e fl h with hm | hm <;> rw [hm]
+    · exact hI a ha
+    · rw [wr_far _ _ _ _ (by
+        have := Box.supp_apart hB (off := 184) (by decide) a ha
+        rw [BitVec.add_comm]; exact this)]
+      exact hI a ha
   rcases s with ⟨_ | ⟨c, t⟩, rs, m, p, e⟩
   · exact (hold_nil _ _ _ _ _ h).elim
   simp only at hu hI

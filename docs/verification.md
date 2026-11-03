@@ -168,7 +168,7 @@ dictionary", becomes a theorem.
     buffers. This is a footprint theorem: everything else is unchanged.
 - **Done when:** these hold for the sandbox as `sandbox.fs` builds it. Adding
   a word to `expose` must keep them true or fail the build.
-- **Status:** isolation proven for INTERPRET (#113, `Isolation.lean`), and for the sandbox as built (#114).
+- **Status:** done (#113, #114, #123-125). Isolation, number words, no arbitrary EXECUTE and bounded writes hold for the sandbox as built, for runs that return and runs that fail.
   - **The theorem:** EXECUTE replaced by anything that agrees on the
     sandbox's xts gives the same result, for any line.
   - **Its setting:** the search order is the sandbox alone, which is not the
@@ -219,10 +219,18 @@ dictionary", becomes a theorem.
     session its connection) that nothing else writes. So keeping the setting
     is bounded writes: `bounded_writes` for each exposed word, `line_bounded`
     for a whole line.
-  - **Not yet covered: runs that fail.** Keeping the setting, frames
-    included, speaks only of runs that return. A line that throws partway is
-    caught by the REPL, and the next line's isolation assumes the setting it
-    starts with (in progress).
+  - **Runs that fail** (#125): keeping the setting, frames and footprints
+    included, holds for runs that fail as well as those that return
+    (`run_err`, `KeepsE`). So a line that throws leaves the setting, and the
+    bytes outside the task's own memory, as they were (`interpret_fails`,
+    `line_bounded`), and the next line's isolation starts from it. A send
+    whose wait fails leaves the reset to the TCP task's sweep, so the
+    sandboxed task's failure writes only its connection.
+  - **No arbitrary EXECUTE:** the proofs account for every call of every
+    word a sandboxed line can reach, and the only xts run are INTERPRET's
+    (the sandbox's words, proven), TYPE's and BYE's (the setting's vectors,
+    `Box.Term`), and the network's literal xts (`Runs`). No exposed word runs
+    an xt from its stack.
   - **The tools it added** (`Steps.lean`):
     - `run_congr`: two threads that agree wherever an invariant holds give
       the same result;

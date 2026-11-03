@@ -209,57 +209,61 @@ def R (B : Box) : Nat → List Cell → Prop
   | 27, ds => At B 1 ds ∧ ∀ x, ds.head? = some x → x ≠ 0
   | 29, ds => ∃ xt t, ds = xt :: t ∧ B.Allowed xt
   | 31, _ | 32, _ | 44, _ => False
+  | 16, ds => ds.head? = some (B.p + 240)
   | 18, ds => ds.head? = some 18446744073709551602
   | 42, ds => ds.head? = some (B.p + 8)
   | 43, ds => ds.head? = some 0
   | _, _ => True
 
-/-- The invariant: the user area and the support as they were (except while
-throwing -14, at 17 and 18), and what `R` knows of the stack. -/
+/-- The invariant: the user area and the support as they were, and what `R`
+knows of the stack. -/
 def Q (B : Box) (pc : Nat) (s : S) : Prop :=
-  (pc ≠ 17 ∧ pc ≠ 18 → s.up = B.p ∧ B.Inv s.mem) ∧ R B pc s.ds
+  (s.up = B.p ∧ B.Inv s.mem) ∧ R B pc s.ds
+
+/-- f keeps the setting: when it returns, the same user area and the support
+as it was; when it fails, the support as it was. -/
+structure Box.Keeps (B : Box) (f : Sem) : Prop where
+  ok : ∀ s s', s.up = B.p → B.Inv s.mem → f s = .ok s' → s'.up = B.p ∧ B.Inv s'.mem
+  err : ∀ s fl, s.up = B.p → B.Inv s.mem → f s = .error fl → B.Inv fl.mem
 
 section
 variable {B : Box}
 
 theorem kf {pc : Nat} {f : Sem} {W : Cell → Cell → Prop} (hf : Frame W f) (hW : ∀ a, B.supp a → ¬ W B.p a)
-    (hpc : pc ≠ 17 ∧ pc ≠ 18)
     (hR : ∀ s s', s.up = B.p → B.Inv s.mem → R B pc s.ds → f s = .ok s' → R B (pc + 1) s'.ds) :
-    Keeps (Q B) pc (.call f) := by
-  intro s pc' s' ⟨hb, hr⟩ hs
-  cases hs with
-  | call h =>
-    obtain ⟨hu, hI⟩ := hb hpc
-    obtain ⟨hu', hm⟩ := hf _ _ h
-    exact ⟨fun _ => ⟨hu'.trans hu, B.inv_frame hW hI fun a ha => hm a (by rw [hu]; exact ha)⟩,
-      hR s s' hu hI hr h⟩
+    KeepsE (Q B) B.Inv pc (.call f) := by
+  refine ⟨fun s pc' s' ⟨⟨hu, hI⟩, hr⟩ hs => ?_, fun g hg s fl ⟨⟨hu, hI⟩, _⟩ hs => ?_⟩
+  · cases hs with
+    | call h =>
+      obtain ⟨hu', hm⟩ := hf.1 _ _ h
+      exact ⟨⟨hu'.trans hu, B.inv_frame hW hI fun a ha => hm a (by rw [hu]; exact ha)⟩, hR s s' hu hI hr h⟩
+  · cases hg
+    exact B.inv_frame hW hI fun a ha => hf.2 _ _ hs a (by rw [hu]; exact ha)
 
-theorem kl {pc : Nat} {v : Cell} (hpc : pc + 1 ≠ 17 ∧ pc + 1 ≠ 18 → pc ≠ 17 ∧ pc ≠ 18)
-    (hR : ∀ ds, R B pc ds → R B (pc + 1) (v :: ds)) : Keeps (Q B) pc (.lit v) := by
-  intro s pc' s' ⟨hb, hr⟩ hs
+theorem kl {pc : Nat} {v : Cell} (hR : ∀ ds, R B pc ds → R B (pc + 1) (v :: ds)) :
+    KeepsE (Q B) B.Inv pc (.lit v) := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' ⟨hb, hr⟩ hs => ?_
   cases hs with
-  | lit => exact ⟨fun h => hb (hpc h), hR _ hr⟩
+  | lit => exact ⟨hb, hR _ hr⟩
 
-theorem kb {pc t : Nat} (hpc : t ≠ 17 ∧ t ≠ 18 → pc ≠ 17 ∧ pc ≠ 18) (hR : ∀ ds, R B pc ds → R B t ds) :
-    Keeps (Q B) pc (.branch t) := by
-  intro s pc' s' ⟨hb, hr⟩ hs
+theorem kb {pc t : Nat} (hR : ∀ ds, R B pc ds → R B t ds) : KeepsE (Q B) B.Inv pc (.branch t) := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' ⟨hb, hr⟩ hs => ?_
   cases hs with
-  | branch => exact ⟨fun h => hb (hpc h), hR _ hr⟩
+  | branch => exact ⟨hb, hR _ hr⟩
 
-theorem kz {pc t : Nat} (hpc : pc ≠ 17 ∧ pc ≠ 18) (hj : ∀ ds, R B pc (0 :: ds) → R B t ds)
-    (hn : ∀ x ds, x ≠ 0 → R B pc (x :: ds) → R B (pc + 1) ds) : Keeps (Q B) pc (.zbranch t) := by
-  intro s pc' s' ⟨hb, hr⟩ hs
+theorem kz {pc t : Nat} (hj : ∀ ds, R B pc (0 :: ds) → R B t ds)
+    (hn : ∀ x ds, x ≠ 0 → R B pc (x :: ds) → R B (pc + 1) ds) : KeepsE (Q B) B.Inv pc (.zbranch t) := by
+  refine keepsE_of (fun _ h => by cases h) fun s pc' s' ⟨hb, hr⟩ hs => ?_
   cases hs with
-  | zjump hds => rw [hds] at hr; exact ⟨fun _ => hb hpc, hj _ hr⟩
-  | zfall hds hx => rw [hds] at hr; exact ⟨fun _ => hb hpc, hn _ _ hx hr⟩
+  | zjump hds => rw [hds] at hr; exact ⟨hb, hj _ hr⟩
+  | zfall hds hx => rw [hds] at hr; exact ⟨hb, hn _ _ hx hr⟩
 
-theorem ke {pc : Nat} : Keeps (Q B) pc .exit := by
-  intro s pc' s' _ hs
-  cases hs
+theorem ke {pc : Nat} : KeepsE (Q B) B.Inv pc .exit :=
+  keepsE_of (fun _ h => by cases h) fun _ _ _ _ hs => by cases hs
 
 /-- A point the thread never reaches. -/
-theorem kF {pc : Nat} {i : Ins} (h : ∀ ds, ¬ R B pc ds) : Keeps (Q B) pc i :=
-  fun _ _ _ ⟨_, hr⟩ _ => absurd hr (h _)
+theorem kF {pc : Nat} {i : Ins} (h : ∀ ds, ¬ R B pc ds) : KeepsE (Q B) B.Inv pc i :=
+  ⟨fun _ _ _ ⟨_, hr⟩ _ => absurd hr (h _), fun _ _ _ _ ⟨_, hr⟩ _ => absurd hr (h _)⟩
 
 set_option hygiene false in
 /-- `R` across a primitive, computed on each stack shape. -/
@@ -268,23 +272,31 @@ macro "rp" : tactic =>
              rcases ds with _ | ⟨a, _ | ⟨b, _ | ⟨c, t⟩⟩⟩ <;> simp [forth, S.fail] at h <;> subst h <;>
              simp_all [R, At]))
 
-theorem k4 (hB : B.Ok) : Keeps (Q B) 4 (.call Words.«find-name») := by
-  intro s _ s' ⟨hb, hr⟩ hs
-  cases hs with
-  | call h =>
-    obtain ⟨hu, hI⟩ := hb (by decide)
+theorem k4 (hB : B.Ok) : KeepsE (Q B) B.Inv 4 (.call Words.«find-name») := by
+  have run : ∀ s, Q B 4 s → ∃ x t, (x = 0 ∨ x ∈ B.hs) ∧
+      Words.«find-name» s = .ok { s with ds := x :: t } := by
+    intro s ⟨⟨hu, hI⟩, hr⟩
     obtain ⟨h1, h2, _, hcur, hc, _⟩ := B.facts hB hI
     rcases s with ⟨ds, rs, m, p, e⟩
     obtain ⟨u, a, t, hds⟩ := hr
     simp only at hds hu hI h1 h2 hcur hc
     subst hds hu
     obtain ⟨x, hx, hfn⟩ := find_name_one u a B.wid t rs m B.p e B.hs h1 h2 hcur hc
-    rw [hfn] at h
-    cases h
-    exact ⟨fun _ => ⟨rfl, hI⟩, ⟨x, t, rfl, hx⟩⟩
+    exact ⟨x, t, hx, hfn⟩
+  refine ⟨fun s _ s' hq hs => ?_, fun g hg s fl hq hs => ?_⟩
+  · cases hs with
+    | call h =>
+      obtain ⟨x, t, hx, hfn⟩ := run s hq
+      rw [hfn] at h
+      cases h
+      exact ⟨hq.1, x, t, rfl, hx⟩
+  · cases hg
+    obtain ⟨x, t, _, hfn⟩ := run s hq
+    rw [hfn] at hs
+    cases hs
 
-theorem k5 : Keeps (Q B) 5 (.call Words.«?dup») := by
-  refine kf (qdup_frame noCell) Box.supp_none (by decide) fun s s' _ _ hr h => ?_
+theorem k5 : KeepsE (Q B) B.Inv 5 (.call Words.«?dup») := by
+  refine kf (qdup_frame noCell) Box.supp_none fun s s' _ _ hr h => ?_
   obtain ⟨x, t, hds, hds'⟩ := qdup_shape s s' h
   obtain ⟨x', t', hds2, hx⟩ := hr
   rw [hds] at hds2
@@ -296,8 +308,8 @@ theorem k5 : Keeps (Q B) 5 (.call Words.«?dup») := by
   · simp only [hx0, if_false]
     exact Or.inr ⟨x, t, hx.resolve_left hx0, rfl⟩
 
-theorem k6 : Keeps (Q B) 6 (.zbranch 34) := by
-  refine kz (by decide) (fun _ _ => trivial) fun x ds hx hr => ?_
+theorem k6 : KeepsE (Q B) B.Inv 6 (.zbranch 34) := by
+  refine kz (fun _ _ => trivial) fun x ds hx hr => ?_
   rcases hr with ⟨t, ht⟩ | ⟨y, t, hy, ht⟩
   · exact absurd (List.cons.inj ht).1 hx
   · exact ⟨y, by simp [(List.cons.inj ht).2], hy⟩
@@ -315,8 +327,8 @@ theorem nip_at (s s' : S) (hr : At B 0 s.ds) (h : Words.«nip» s = .ok s') : At
   rw [h2]
   exact hr
 
-theorem k28 (hB : B.Ok) : Keeps (Q B) 28 (.call Words.«name>xt») := by
-  refine kf (name_xt_frame noCell) Box.supp_none (by decide) fun s s' _ hI hr h => ?_
+theorem k28 (hB : B.Ok) : KeepsE (Q B) B.Inv 28 (.call Words.«name>xt») := by
+  refine kf (name_xt_frame noCell) Box.supp_none fun s s' _ hI hr h => ?_
   obtain ⟨nt, t, h1, h2⟩ := name_xt_shape s s' h
   obtain ⟨x, hx, hm⟩ := hr
   rw [h1] at hx
@@ -324,111 +336,191 @@ theorem k28 (hB : B.Ok) : Keeps (Q B) 28 (.call Words.«name>xt») := by
   refine ⟨Box.xtOf s.mem nt, t, h2, nt, hm, ?_⟩
   simp only [Box.xtOf, (B.facts hB hI).2.2.2.2.2 nt hm]
 
-theorem k29 (hkeep : ∀ xt s s', B.Allowed xt → s.up = B.p → B.Inv s.mem → dispatch xt s = .ok s' →
-      s'.up = B.p ∧ B.Inv s'.mem) :
-    Keeps (Q B) 29 (.call executeM) := by
-  intro s _ s' ⟨hb, hr⟩ hs
-  cases hs with
-  | call h =>
-    obtain ⟨hu, hI⟩ := hb (by decide)
+theorem k29 (hkeep : ∀ xt, B.Allowed xt → B.Keeps (dispatch xt)) :
+    KeepsE (Q B) B.Inv 29 (.call executeM) := by
+  refine ⟨fun s _ s' ⟨⟨hu, hI⟩, hr⟩ hs => ?_, fun g hg s fl ⟨⟨hu, hI⟩, hr⟩ hs => ?_⟩
+  · cases hs with
+    | call h =>
+      rcases s with ⟨ds, rs, m, p, e⟩
+      obtain ⟨xt, t, hds, hA⟩ := hr
+      simp only at hds hu hI
+      subst hds
+      exact ⟨(hkeep xt hA).ok _ s' hu hI h, trivial⟩
+  · cases hg
     rcases s with ⟨ds, rs, m, p, e⟩
     obtain ⟨xt, t, hds, hA⟩ := hr
     simp only at hds hu hI
     subst hds
-    exact ⟨fun _ => hkeep xt _ s' hA hu hI h, trivial⟩
+    exact (hkeep xt hA).err _ fl hu hI hs
 
-theorem k18 : Keeps (Q B) 18 (.call throwM) := by
-  intro s _ s' ⟨_, hr⟩ hs
-  cases hs with
-  | call h =>
-    have := throw_shape _ _ h
+theorem k18 : KeepsE (Q B) B.Inv 18 (.call throwM) := by
+  refine ⟨fun s _ s' ⟨_, hr⟩ hs => ?_, fun g hg s fl ⟨⟨_, hI⟩, _⟩ hs => ?_⟩
+  · cases hs with
+    | call h =>
+      have := throw_shape _ _ h
+      simp only [R] at hr
+      rw [hr] at this
+      simp at this
+  · cases hg
+    intro a ha
+    rw [(throwM_frame noCell).2 s fl hs a id]
+    exact hI a ha
+
+/-- `2!` writes the 16 bytes at its address, whether it returns or fails. -/
+theorem two_store (s : S) (a : Cell) (t : List Cell) (hds : s.ds = a :: t) :
+    (∀ s', Words.«2!» s = .ok s' → s'.up = s.up ∧ ∀ x, 16 ≤ (x - a).toNat → s'.mem x = s.mem x) ∧
+    ∀ fl, Words.«2!» s = .error fl → ∀ x, 16 ≤ (x - a).toNat → fl.mem x = s.mem x := by
+  rcases s with ⟨ds, rs, m, u, e⟩
+  simp only at hds
+  subst hds
+  refine ⟨fun s' h => ?_, fun fl h => ?_⟩ <;>
+    rcases t with _ | ⟨y, _ | ⟨z, t⟩⟩ <;> simp [forth, S.fail] at h <;> subst h
+  · refine ⟨rfl, fun x hx => ?_⟩
+    simp only
+    rw [wr_far _ _ _ _ (by bv_omega), wr_far _ _ _ _ (by bv_omega)]
+  · exact fun _ _ => rfl
+  · intro x hx
+    simp only
+    rw [wr_far _ _ _ _ (by bv_omega)]
+
+/-- The support misses `errname`'s two cells. -/
+theorem Box.supp_errname (hB : B.Ok) : ∀ a, B.supp a → 16 ≤ (a - (B.p + 240)).toNat := by
+  intro a ha
+  rcases ha with h | h
+  · simp only [Box.userSupp] at h
+    bv_omega
+  · have := hB.apart a h
+    bv_omega
+
+theorem k16 (hB : B.Ok) : KeepsE (Q B) B.Inv 16 (.call Words.«2!») := by
+  have at16 : ∀ s : S, R B 16 s.ds → ∃ t, s.ds = (B.p + 240) :: t := by
+    intro s hr
     simp only [R] at hr
-    rw [hr] at this
-    simp at this
+    rcases hd : s.ds with _ | ⟨a, t⟩ <;> rw [hd] at hr <;> simp at hr
+    exact ⟨t, by rw [hr]; rfl⟩
+  refine ⟨fun s _ s' ⟨⟨hu, hI⟩, hr⟩ hs => ?_, fun g hg s fl ⟨⟨hu, hI⟩, hr⟩ hs => ?_⟩
+  · cases hs with
+    | call h =>
+      obtain ⟨t, ht⟩ := at16 s hr
+      obtain ⟨hu', hm⟩ := (two_store s _ t ht).1 s' h
+      exact ⟨⟨hu'.trans hu, fun a ha => (hm a (Box.supp_errname hB a ha)).trans (hI a ha)⟩, trivial⟩
+  · cases hg
+    obtain ⟨t, ht⟩ := at16 s hr
+    exact fun a ha => ((two_store s _ t ht).2 fl hs a (Box.supp_errname hB a ha)).trans (hI a ha)
 
-theorem k16 {f : Sem} : Keeps (Q B) 16 (.call f) := by
-  intro s _ s' _ hs
-  cases hs with
-  | call _ => exact ⟨fun h => absurd rfl h.1, trivial⟩
+/-- `errname` pushes its address. -/
+theorem errname_ok (s s' : S) (h : Words.«errname#2» s = .ok s') : s'.ds = (s.up + 240) :: s.ds := by
+  rcases s with ⟨ds, rs, m, u, e⟩
+  simp [forth] at h
+  subst h
+  simp [BitVec.add_comm]
 
-theorem k38 : Keeps (Q B) 38 (.call Words.«undefined») := by
-  intro s _ s' _ hs
-  cases hs with
-  | call h => exact (undefined_fails _ _ h).elim
+/-- UNDEFINED names the word in `errname` and throws -13. -/
+theorem k38 (hB : B.Ok) : KeepsE (Q B) B.Inv 38 (.call Words.«undefined») := by
+  refine ⟨fun s _ s' _ hs => ?_, fun g hg s fl ⟨⟨hu, hI⟩, _⟩ hs => ?_⟩
+  · cases hs with
+    | call h => exact (undefined_fails _ _ h).elim
+  · cases hg
+    rcases s with ⟨ds, rs, m, p, e⟩
+    simp only at hu hI
+    subst hu
+    rcases ds with _ | ⟨x, _ | ⟨y, t⟩⟩ <;> simp [forth, S.fail] at hs <;> subst hs <;> intro a ha <;>
+      simp only
+    · exact hI a ha
+    · rw [wr_far _ _ _ _ (by have := Box.supp_errname hB a ha; bv_omega)]
+      exact hI a ha
+    · rw [wr_far _ _ _ _ (by have := Box.supp_errname hB a ha; bv_omega),
+        wr_far _ _ _ _ (by have := Box.supp_errname hB a ha; bv_omega)]
+      exact hI a ha
 
-/-- Every step of INTERPRET keeps the invariant. -/
-theorem interpret_inv (hB : B.Ok)
-    (hkeep : ∀ xt s s', B.Allowed xt → s.up = B.p → B.Inv s.mem → dispatch xt s = .ok s' →
-      s'.up = B.p ∧ B.Inv s'.mem) :
-    Invariant Words.«interpret».code (Q B) := by
-  apply invariant_of_keeps
+/-- Every step of INTERPRET keeps the invariant, and fails only with the
+support as it was. -/
+theorem interpret_keeps (hB : B.Ok) (hkeep : ∀ xt, B.Allowed xt → B.Keeps (dispatch xt)) :
+    ∀ pc i, Words.«interpret».code[pc]? = some i → KeepsE (Q B) B.Inv pc i := by
   simp only [Words.«interpret».code, forall_getElem?_cons, forall_getElem?_nil, and_true]
   have st := fun {m} (hI : B.Inv m) => (B.facts hB hI).2.2.1
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   -- 0 PARSE-NAME, 1 DUP, 2 0BRANCH
-  · exact kf parse_name_frame (Box.supp_toin hB) (by decide) fun _ _ _ _ _ _ => trivial
-  · exact kf (Prim.dup_frame noCell) Box.supp_none (by decide) fun _ _ _ _ _ _ => trivial
-  · exact kz (by decide) (fun _ _ => trivial) fun _ _ _ _ => trivial
+  · exact kf parse_name_frame (Box.supp_toin hB) fun _ _ _ _ _ _ => trivial
+  · exact kf (Prim.dup_frame noCell) Box.supp_none fun _ _ _ _ _ _ => trivial
+  · exact kz (fun _ _ => trivial) fun _ _ _ _ => trivial
   -- 3 2DUP, 4 FIND-NAME, 5 ?DUP, 6 0BRANCH
-  · exact kf (twodup_frame noCell) Box.supp_none (by decide) fun s s' _ _ _ h => twodup_shape s s' h
+  · exact kf (twodup_frame noCell) Box.supp_none fun s s' _ _ _ h => twodup_shape s s' h
   · exact k4 hB
   · exact k5
   · exact k6
   -- 7 to 13: STATE @ 0= OVER COMPILE-ONLY? AND 0BRANCH
-  · exact kf (userAt_frame _ noCell) Box.supp_none (by decide) (by rp)
-  · exact kf (Prim.fetch_frame noCell) Box.supp_none (by decide) (by rp)
-  · exact kf (Prim.zequal_frame noCell) Box.supp_none (by decide) (by rp)
-  · exact kf (Prim.over_frame noCell) Box.supp_none (by decide) (by rp)
-  · exact kf (compile_only_frame noCell) Box.supp_none (by decide)
+  · exact kf (userAt_frame _ noCell) Box.supp_none (by rp)
+  · exact kf (Prim.fetch_frame noCell) Box.supp_none (by rp)
+  · exact kf (Prim.zequal_frame noCell) Box.supp_none (by rp)
+  · exact kf (Prim.over_frame noCell) Box.supp_none (by rp)
+  · exact kf (compile_only_frame noCell) Box.supp_none
       fun s s' _ _ hr h => top_at (i := 1) (compile_only_shape) s s' hr h
-  · exact kf (Prim.and_frame noCell) Box.supp_none (by decide) (by rp)
-  · exact kz (by decide) (fun ds hr => by simpa [R, At] using hr) fun _ _ _ _ => trivial
+  · exact kf (Prim.and_frame noCell) Box.supp_none (by rp)
+  · exact kz (fun ds hr => by simpa [R, At] using hr) fun _ _ _ _ => trivial
   -- 14 to 18: throw -14
-  · exact kf (Prim.drop_frame noCell) Box.supp_none (by decide) fun _ _ _ _ _ _ => trivial
-  · exact kf (errname_frame noCell) Box.supp_none (by decide) fun _ _ _ _ _ _ => trivial
-  · exact k16
-  · exact kl (by decide) fun _ _ => rfl
+  · exact kf (Prim.drop_frame noCell) Box.supp_none fun _ _ _ _ _ _ => trivial
+  · exact kf (errname_frame noCell) Box.supp_none fun s s' hu _ _ h => by
+      simp only [R, errname_ok s s' h, hu, List.head?_cons]
+  · exact k16 hB
+  · exact kl fun _ _ => rfl
   · exact k18
   -- 19 to 27: NIP NIP DUP IMMEDIATE? STATE @ 0= OR 0BRANCH
-  · exact kf (nip_frame noCell) Box.supp_none (by decide) fun s s' _ _ hr h => nip_at s s' hr h
-  · exact kf (nip_frame noCell) Box.supp_none (by decide) fun s s' _ _ hr h => nip_at s s' hr h
-  · exact kf (Prim.dup_frame noCell) Box.supp_none (by decide) (by rp)
-  · exact kf (immediate_frame noCell) Box.supp_none (by decide)
+  · exact kf (nip_frame noCell) Box.supp_none fun s s' _ _ hr h => nip_at s s' hr h
+  · exact kf (nip_frame noCell) Box.supp_none fun s s' _ _ hr h => nip_at s s' hr h
+  · exact kf (Prim.dup_frame noCell) Box.supp_none (by rp)
+  · exact kf (immediate_frame noCell) Box.supp_none
       fun s s' _ _ hr h => top_at (i := 0) (immediate_shape) s s' hr h
-  · exact kf (userAt_frame _ noCell) Box.supp_none (by decide) (by rp)
-  · exact kf (Prim.fetch_frame noCell) Box.supp_none (by decide) (by have := @st; rp)
-  · exact kf (Prim.zequal_frame noCell) Box.supp_none (by decide) (by rp)
-  · exact kf (Prim.or_frame noCell) Box.supp_none (by decide) (by have := or_ne_zero; rp)
-  · exact kz (by decide) (fun ds hr => absurd rfl (hr.2 0 rfl)) fun x ds _ hr => by
+  · exact kf (userAt_frame _ noCell) Box.supp_none (by rp)
+  · exact kf (Prim.fetch_frame noCell) Box.supp_none (by have := @st; rp)
+  · exact kf (Prim.zequal_frame noCell) Box.supp_none (by rp)
+  · exact kf (Prim.or_frame noCell) Box.supp_none (by have := or_ne_zero; rp)
+  · exact kz (fun ds hr => absurd rfl (hr.2 0 rfl)) fun x ds _ hr => by
       simpa [R, At] using hr.1
   -- 28 NAME>XT, 29 EXECUTE, 30 BRANCH, 31 and 32 compile, 33 BRANCH
   · exact k28 hB
   · exact k29 hkeep
-  · exact kb (by decide) fun _ _ => trivial
+  · exact kb fun _ _ => trivial
   · exact kF fun _ h => h
   · exact kF fun _ h => h
-  · exact kb (by decide) fun _ _ => trivial
+  · exact kb fun _ _ => trivial
   -- 34 to 40: a number
-  · exact kf (twodup_frame noCell) Box.supp_none (by decide) fun _ _ _ _ _ _ => trivial
-  · exact kf number_frame (Box.supp_base hB) (by decide) fun _ _ _ _ _ _ => trivial
-  · exact kf (Prim.zequal_frame noCell) Box.supp_none (by decide) fun _ _ _ _ _ _ => trivial
-  · exact kz (by decide) (fun _ _ => trivial) fun _ _ _ _ => trivial
-  · exact k38
-  · exact kf (nip_frame noCell) Box.supp_none (by decide) fun _ _ _ _ _ _ => trivial
-  · exact kf (nip_frame noCell) Box.supp_none (by decide) fun _ _ _ _ _ _ => trivial
+  · exact kf (twodup_frame noCell) Box.supp_none fun _ _ _ _ _ _ => trivial
+  · exact kf number_frame (Box.supp_base hB) fun _ _ _ _ _ _ => trivial
+  · exact kf (Prim.zequal_frame noCell) Box.supp_none fun _ _ _ _ _ _ => trivial
+  · exact kz (fun _ _ => trivial) fun _ _ _ _ => trivial
+  · exact k38 hB
+  · exact kf (nip_frame noCell) Box.supp_none fun _ _ _ _ _ _ => trivial
+  · exact kf (nip_frame noCell) Box.supp_none fun _ _ _ _ _ _ => trivial
   -- 41 to 44: STATE @ IF LITERAL
-  · exact kf (userAt_frame _ noCell) Box.supp_none (by decide) (by rp)
-  · exact kf (Prim.fetch_frame noCell) Box.supp_none (by decide) (by have := @st; rp)
-  · exact kz (by decide) (fun _ _ => trivial) fun x ds hx hr => absurd (by simpa [R] using hr) hx
+  · exact kf (userAt_frame _ noCell) Box.supp_none (by rp)
+  · exact kf (Prim.fetch_frame noCell) Box.supp_none (by have := @st; rp)
+  · exact kz (fun _ _ => trivial) fun x ds hx hr => absurd (by simpa [R] using hr) hx
   · exact kF fun _ h => h
   -- 45 ?STACK, 46 BRANCH, 47 2DROP, 48 EXIT
-  · exact kf (qstack_frame noCell) Box.supp_none (by decide) fun _ _ _ _ _ _ => trivial
-  · exact kb (by decide) fun _ _ => trivial
-  · exact kf (twodrop_frame noCell) Box.supp_none (by decide) fun _ _ _ _ _ _ => trivial
+  · exact kf (qstack_frame noCell) Box.supp_none fun _ _ _ _ _ _ => trivial
+  · exact kb fun _ _ => trivial
+  · exact kf (twodrop_frame noCell) Box.supp_none fun _ _ _ _ _ _ => trivial
   · exact ke
 end
+
+theorem interpret_inv {B : Box} (hB : B.Ok) (hkeep : ∀ xt, B.Allowed xt → B.Keeps (dispatch xt)) :
+    Invariant Words.«interpret».code (Q B) :=
+  invariant_of_keeps fun pc i hi => (interpret_keeps hB hkeep pc i hi).ok
+
+/-- A sandboxed INTERPRET that fails leaves the support as it was. -/
+theorem interpret_fails {B : Box} (hB : B.Ok) (hkeep : ∀ xt, B.Allowed xt → B.Keeps (dispatch xt))
+    (s : S) (fl : Fail) (hu : s.up = B.p) (hI : B.Inv s.mem) (h : Words.«interpret» s = .error fl) :
+    B.Inv fl.mem := by
+  unfold Words.«interpret» loopThread at h
+  split at h
+  · exact run_fails (interpret_keeps hB hkeep) (fun _ _ hq => hq.1.2) _ 0 s fl ⟨⟨hu, hI⟩, trivial⟩ h
+  · simp only [S.fail, Except.error.injEq] at h
+    subst h
+    exact hI
+
 
 /-! ## Isolation -/
 
@@ -442,14 +534,13 @@ def execWith (d : Cell → Sem) : Sem
 by any d that agrees with it on their xts gives the same result, for any
 line. Assumed: the sandbox's words keep the setting (`hkeep`). -/
 theorem interpret_isolated (B : Box) (hB : B.Ok)
-    (hkeep : ∀ xt s s', B.Allowed xt → s.up = B.p → B.Inv s.mem → dispatch xt s = .ok s' →
-      s'.up = B.p ∧ B.Inv s'.mem)
+    (hkeep : ∀ xt, B.Allowed xt → B.Keeps (dispatch xt))
     (d : Cell → Sem) (hd : ∀ xt, B.Allowed xt → d xt = dispatch xt)
     (s : S) (hu : s.up = B.p) (hm : s.mem = B.m0) :
     loopThread (Words.«interpret».code.set 29 (.call (execWith d))) s = Words.«interpret» s := by
   show _ = loopThread Words.«interpret».code s
   apply loopThread_congr _ _ (Q B) (interpret_inv hB hkeep) _ s
-    ⟨fun _ => ⟨hu, fun a _ => by rw [hm]⟩, trivial⟩
+    ⟨⟨hu, fun a _ => by rw [hm]⟩, trivial⟩
   intro pc st hq
   by_cases h29 : pc = 29
   · subst h29
@@ -472,15 +563,12 @@ EXIT. Those that compute keep the setting, proven here from their frames;
 those that print go through the task's output vectors, and are assumed to
 keep it for now (`outputWords`). -/
 
-/-- f keeps the setting: the same user area, and the support as it was. -/
-def Box.Keeps (B : Box) (f : Sem) : Prop :=
-  ∀ s s', s.up = B.p → B.Inv s.mem → f s = .ok s' → s'.up = B.p ∧ B.Inv s'.mem
-
 theorem keeps_of_frame {B : Box} {W : Cell → Cell → Prop} {f : Sem} (hf : Frame W f)
     (hW : ∀ a, B.supp a → ¬ W B.p a) : B.Keeps f := by
-  intro s s' hu hI h
-  obtain ⟨hu', hm⟩ := hf s s' h
-  exact ⟨hu'.trans hu, B.inv_frame hW hI fun a ha => hm a (by rw [hu]; exact ha)⟩
+  refine ⟨fun s s' hu hI h => ?_, fun s fl hu hI h => ?_⟩
+  · obtain ⟨hu', hm⟩ := hf.1 s s' h
+    exact ⟨hu'.trans hu, B.inv_frame hW hI fun a ha => hm a (by rw [hu]; exact ha)⟩
+  · exact B.inv_frame hW hI fun a ha => hf.2 s fl h a (by rw [hu]; exact ha)
 
 /-- The sandbox's words that print, through the task's `'type` and `'bye`. -/
 noncomputable def outputWords : List Sem :=
@@ -524,9 +612,9 @@ theorem sandbox_isolated (B : Box) (hB : B.Ok)
     (s : S) (hu : s.up = B.p) (hm : s.mem = B.m0) :
     loopThread (Words.«interpret».code.set 29 (.call (execWith d))) s = Words.«interpret» s := by
   refine interpret_isolated B hB ?_ d hd s hu hm
-  rintro xt s s' ⟨h, hh, rfl⟩ hu hI hx
+  rintro xt ⟨h, hh, rfl⟩
   obtain ⟨f, hf, heq⟩ := hdump h hh
-  rw [heq] at hx
-  exact sandbox_keeps hB hout f hf s s' hu hI hx
+  rw [heq]
+  exact sandbox_keeps hB hout f hf
 
 end OS4.Isolation

@@ -41,6 +41,22 @@ theorem type_ok (s s' : S) (h : Words.«type» s = .ok s') :
   rw [BitVec.add_comm 144 u] at h
   split at h <;> simp_all
 
+theorem type_err (s : S) (fl : Fail) (h : Words.«type» s = .error fl) :
+    dispatch (rd s.mem (s.up + 144) 8) s = .error fl := by
+  rcases s with ⟨ds, rs, m, u, e⟩
+  simp only [Words.«type», Words.«type».code, Words.«'type», Words.«'type».code, thread, run, forth,
+    List.getElem?_cons_succ, List.getElem?_cons_zero, List.length_cons, List.length_nil] at h
+  rw [BitVec.add_comm 144 u] at h
+  split at h <;> simp_all
+
+theorem bye_err (s : S) (fl : Fail) (h : Words.«bye#2» s = .error fl) :
+    dispatch (rd s.mem (s.up + 440) 8) s = .error fl := by
+  rcases s with ⟨ds, rs, m, u, e⟩
+  simp only [Words.«bye#2», Words.«bye#2».code, Words.«'bye», Words.«'bye».code, thread, run, forth,
+    List.getElem?_cons_succ, List.getElem?_cons_zero, List.length_cons, List.length_nil] at h
+  rw [BitVec.add_comm 440 u] at h
+  split at h <;> simp_all
+
 theorem bye_ok (s s' : S) (h : Words.«bye#2» s = .ok s') :
     dispatch (rd s.mem (s.up + 440) 8) s = .ok s' := by
   rcases s with ⟨ds, rs, m, u, e⟩
@@ -73,26 +89,38 @@ theorem end_session_keeps (hB : B.Ok) : B.Keeps Words.«end-session» := by
 
 /-- The kernel's BYE ends the run, so never returns. -/
 theorem kbye_keeps : B.Keeps Prim.bye := by
-  intro s s' _ _ h
-  simp [Prim.bye, S.fail] at h
+  refine ⟨fun s s' _ _ h => by simp [Prim.bye, S.fail] at h, fun s fl _ hI h => ?_⟩
+  simp only [Prim.bye, S.fail, Except.error.injEq] at h
+  subst h
+  exact hI
 
 /-! ## TYPE and BYE -/
 
 theorem type_keeps (hT : B.Term) (htt : B.Keeps Words.«telnet-type») : B.Keeps Words.«type» := by
-  intro s s' hu hI h
-  have hd := type_ok s s' h
-  rw [hu, B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by bv_omega))] at hd
-  rcases hT.type with h1 | h1 <;> rw [h1] at hd
-  · exact nk (console_type_frame _) s s' hu hI hd
-  · exact htt s s' hu hI hd
+  refine ⟨fun s s' hu hI h => ?_, fun s fl hu hI h => ?_⟩
+  · have hd := type_ok s s' h
+    rw [hu, B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by bv_omega))] at hd
+    rcases hT.type with h1 | h1 <;> rw [h1] at hd
+    · exact (nk (console_type_frame _)).ok s s' hu hI hd
+    · exact htt.ok s s' hu hI hd
+  · have hd := type_err s fl h
+    rw [hu, B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by bv_omega))] at hd
+    rcases hT.type with h1 | h1 <;> rw [h1] at hd
+    · exact (nk (console_type_frame _)).err s fl hu hI hd
+    · exact htt.err s fl hu hI hd
 
 theorem bye_keeps (hB : B.Ok) (hT : B.Term) : B.Keeps Words.«bye#2» := by
-  intro s s' hu hI h
-  have hd := bye_ok s s' h
-  rw [hu, B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by bv_omega))] at hd
-  rcases hT.bye with h1 | h1 <;> rw [h1] at hd
-  · exact kbye_keeps s s' hu hI hd
-  · exact end_session_keeps hB s s' hu hI hd
+  refine ⟨fun s s' hu hI h => ?_, fun s fl hu hI h => ?_⟩
+  · have hd := bye_ok s s' h
+    rw [hu, B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by bv_omega))] at hd
+    rcases hT.bye with h1 | h1 <;> rw [h1] at hd
+    · exact kbye_keeps.ok s s' hu hI hd
+    · exact (end_session_keeps hB).ok s s' hu hI hd
+  · have hd := bye_err s fl h
+    rw [hu, B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by bv_omega))] at hd
+    rcases hT.bye with h1 | h1 <;> rw [h1] at hd
+    · exact kbye_keeps.err s fl hu hI hd
+    · exact (end_session_keeps hB).err s fl hu hI hd
 
 end
 

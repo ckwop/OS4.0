@@ -59,7 +59,7 @@
       "file": "forth/net/tcp.fs",
       "pattern": ": close-connection  \\(",
       "title": "Closing",
-      "description": "Mark it closed by the application, give it `linger-ms` (60 s) to send what is queued, queue a FIN. `fin-in` and `fin-acked-in` move it through the closing states; `timed-out` ends TIME-WAIT and FIN-WAIT-2, or resets a connection that would not finish."
+      "description": "Mark it closed by the application, give it `linger-ms` (60 s) to send what is queued, queue a FIN. `fin-in` and `fin-acked-in` move it through the closing states; `timed-out` ends TIME-WAIT and FIN-WAIT-2, or resets a connection that would not finish. A send that timed out (`reset-soon`) has already set its timeout to now, so the sweep resets it within a tick, and frees it once the application has closed it: only one task ever releases it."
     },
     {
       "file": "forth/net/tcp.fs",
