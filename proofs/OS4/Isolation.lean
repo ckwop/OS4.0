@@ -1,4 +1,5 @@
 import OS4.Search
+import OS4.Footprint
 import OS4.Words.Sandbox
 
 /-!
@@ -28,12 +29,15 @@ open OS4
 /-! ## The setting -/
 
 /-- The task's user area p, the sandbox wordlist wid, its headers hs (newest
-first), and memory m0 when INTERPRET starts. -/
+first), memory m0 when INTERPRET starts, and the task's own memory: its user
+area and buffers (`Ok.apart`, `Ok.bufs`), and for a network session its
+connection (`Box.Net`). -/
 structure Box where
   p : Cell
   wid : Cell
   hs : List Cell
   m0 : Mem
+  own : Cell → Prop
 
 namespace Box
 variable (B : Box)
@@ -46,10 +50,13 @@ def userSupp (a : Cell) : Prop :=
   ((a - (B.p + 8)).toNat < 8 ∨ (a - (B.p + 352)).toNat < 16) ∨
     ((a - (B.p + 176)).toNat < 8 ∨ (a - (B.p + 144)).toNat < 8 ∨ (a - (B.p + 440)).toNat < 8 ∨
       (a - (B.p + 336)).toNat < 8)
-/-- The dictionary bytes it rests on: `current`, the wordlist's cell, and
-each header's link and length byte. -/
+/-- The bytes beyond the user area it rests on: `current`, the wordlist's
+cell, and each header's link and length byte; and every byte outside the
+task's own memory that nothing else writes, which is what makes keeping the
+setting also mean bounded writes (`bounded_writes`). -/
 def dictSupp (a : Cell) : Prop :=
-  (a - currentA).toNat < 8 ∨ (a - B.wid).toNat < 8 ∨ ∃ h ∈ B.hs, (a - h).toNat < 9
+  (a - currentA).toNat < 8 ∨ (a - B.wid).toNat < 8 ∨ (∃ h ∈ B.hs, (a - h).toNat < 9) ∨
+    (¬ B.own a ∧ Quiet a)
 def supp (a : Cell) : Prop := B.userSupp a ∨ B.dictSupp a
 
 /-- Memory still holds those bytes as they were. -/
@@ -104,9 +111,9 @@ theorem Box.facts (hB : B.Ok) (hI : B.Inv m) :
     exact hB.notCurrent
   · rw [B.rd_eq hI _ 8 fun i hi => Or.inr (Or.inr (Or.inl (by bv_omega)))]
     exact chain_congr hB.chain fun h hh =>
-      B.rd_eq hI h 8 fun i hi => Or.inr (Or.inr (Or.inr ⟨h, hh, by bv_omega⟩))
+      B.rd_eq hI h 8 fun i hi => Or.inr (Or.inr (Or.inr (Or.inl ⟨h, hh, by bv_omega⟩)))
   · intro h hh
-    exact B.rd_eq hI _ 1 fun i hi => Or.inr (Or.inr (Or.inr ⟨h, hh, by bv_omega⟩))
+    exact B.rd_eq hI _ 1 fun i hi => Or.inr (Or.inr (Or.inr (Or.inl ⟨h, hh, by bv_omega⟩)))
 
 /-- A word whose writes miss the support keeps the invariant. -/
 theorem Box.inv_frame {W : Cell → Cell → Prop} (hW : ∀ a, B.supp a → ¬ W B.p a) {m' : Mem}

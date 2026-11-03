@@ -214,9 +214,15 @@ dictionary", becomes a theorem.
     - **`Runs`** for the five words the network runs by xt: `io-wait` (under
       CATCH), `(tcp-output)`, `(segment-out)`, `(arp-request)` and
       `(free-conn)` (under LOCKED).
-  - **Not yet stated:** that the exposed words write only their task's own
-    buffers and user variables. Their frames show it word by word; one
-    theorem over the list would give the brief's "bounded writes".
+  - **Bounded writes** (#124): the setting includes every byte outside the
+    task's own memory (`Box.own`: its user area, its buffers, and for a
+    session its connection) that nothing else writes. So keeping the setting
+    is bounded writes: `bounded_writes` for each exposed word, `line_bounded`
+    for a whole line.
+  - **Not yet covered: runs that fail.** Keeping the setting, frames
+    included, speaks only of runs that return. A line that throws partway is
+    caught by the REPL, and the next line's isolation assumes the setting it
+    starts with (in progress).
   - **The tools it added** (`Steps.lean`):
     - `run_congr`: two threads that agree wherever an invariant holds give
       the same result;

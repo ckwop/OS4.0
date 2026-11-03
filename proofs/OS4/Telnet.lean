@@ -907,6 +907,83 @@ theorem telnet_type_keeps (hB : B.Ok) (hN : B.Net) [Runs "(arp-request)" Words.�
 
 end
 
+/-! ## Bounded writes
+
+The setting includes every byte outside the task's own memory that nothing
+else writes (`Box.dictSupp`), so keeping it is the brief's bounded writes. -/
+
+section
+variable {B : Box}
+
+/-- TYPE keeps the setting, on the console or a session. -/
+theorem type_keeps_net (hB : B.Ok) (hT : B.Term)
+    (hN : dispatch (rd B.m0 (B.p + 144) 8) = Words.«telnet-type» → B.Net)
+    [Runs "(arp-request)" Words.«(arp-request)»] [Runs "(segment-out)" Words.«(segment-out)»]
+    [Runs "(tcp-output)" Words.«(tcp-output)»] [Runs "(free-conn)" Words.«(free-conn)»]
+    [Runs "io-wait" Words.«io-wait»] : B.Keeps Words.«type» := by
+  intro s s' hu hI h
+  have hd := type_ok s s' h
+  rw [hu, B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by bv_omega))] at hd
+  rcases hT.type with h1 | h1 <;> rw [h1] at hd
+  · exact nk (console_type_frame _) s s' hu hI hd
+  · exact telnet_type_keeps hB (hN h1) s s' hu hI hd
+
+/-- Every word in the sandbox keeps the setting. -/
+theorem all_keep (hB : B.Ok) (hT : B.Term)
+    (hN : dispatch (rd B.m0 (B.p + 144) 8) = Words.«telnet-type» → B.Net)
+    [Runs "(arp-request)" Words.«(arp-request)»] [Runs "(segment-out)" Words.«(segment-out)»]
+    [Runs "(tcp-output)" Words.«(tcp-output)»] [Runs "(free-conn)" Words.«(free-conn)»]
+    [Runs "io-wait" Words.«io-wait»] : ∀ f ∈ Words.«sandbox-wordlist».words, B.Keeps f :=
+  sandbox_keeps hB (output_keeps hB (type_keeps_net hB hT hN) (bye_keeps hB hT))
+
+/-- **Bounded writes, word by word.** Each exposed word, run in the sandboxed
+task, leaves every byte outside the task's own memory that nothing else
+writes as it was. -/
+theorem bounded_writes (hB : B.Ok) (hT : B.Term)
+    (hN : dispatch (rd B.m0 (B.p + 144) 8) = Words.«telnet-type» → B.Net)
+    [Runs "(arp-request)" Words.«(arp-request)»] [Runs "(segment-out)" Words.«(segment-out)»]
+    [Runs "(tcp-output)" Words.«(tcp-output)»] [Runs "(free-conn)" Words.«(free-conn)»]
+    [Runs "io-wait" Words.«io-wait»] :
+    ∀ f ∈ Words.«sandbox-wordlist».words, ∀ s s', s.up = B.p → B.Inv s.mem → f s = .ok s' →
+      ∀ a, ¬ B.own a → Quiet a → s'.mem a = s.mem a := by
+  intro f hf s s' hu hI h a ha hq
+  have hs : B.supp a := Or.inr (Or.inr (Or.inr (Or.inr ⟨ha, hq⟩)))
+  rw [(all_keep hB hT hN f hf s s' hu hI h).2 a hs, hI a hs]
+
+/-- **Bounded writes, for a line.** A sandboxed INTERPRET that finishes leaves
+every byte outside the task's own memory that nothing else writes as it was
+when the line began. -/
+theorem line_bounded (hB : B.Ok) (hT : B.Term)
+    (hN : dispatch (rd B.m0 (B.p + 144) 8) = Words.«telnet-type» → B.Net)
+    [Runs "(arp-request)" Words.«(arp-request)»] [Runs "(segment-out)" Words.«(segment-out)»]
+    [Runs "(tcp-output)" Words.«(tcp-output)»] [Runs "(free-conn)" Words.«(free-conn)»]
+    [Runs "io-wait" Words.«io-wait»]
+    (hdump : ∀ h ∈ B.hs, ∃ f ∈ Words.«sandbox-wordlist».words, dispatch (Box.xtOf B.m0 h) = f)
+    (s s' : S) (hu : s.up = B.p) (hm : s.mem = B.m0) (h : Words.«interpret» s = .ok s') :
+    ∀ a, ¬ B.own a → Quiet a → s'.mem a = B.m0 a := by
+  have hkeep : ∀ xt s s', B.Allowed xt → s.up = B.p → B.Inv s.mem → dispatch xt s = .ok s' →
+      s'.up = B.p ∧ B.Inv s'.mem := by
+    rintro xt s s' ⟨hh, hhs, rfl⟩ hu hI hx
+    obtain ⟨f, hf, heq⟩ := hdump hh hhs
+    rw [heq] at hx
+    exact all_keep hB hT hN f hf s s' hu hI hx
+  have go : ∀ n, run Words.«interpret».code n 0 s = .ok s' → B.Inv s'.mem := by
+    intro n hr
+    obtain ⟨pe, hpe, hq, _⟩ := run_inv _ _ (interpret_inv hB hkeep) n 0 s s'
+      ⟨fun _ => ⟨hu, fun a _ => by rw [hm]⟩, trivial⟩ hr
+    have h17 : pe ≠ 17 ∧ pe ≠ 18 := by
+      constructor <;> rintro rfl <;> simp [Words.«interpret».code] at hpe
+    exact (hq h17).2
+  intro a ha hq
+  have hs : B.supp a := Or.inr (Or.inr (Or.inr (Or.inr ⟨ha, hq⟩)))
+  show s'.mem a = B.m0 a
+  unfold Words.«interpret» loopThread at h
+  split at h
+  · exact go _ h a hs
+  · simp [S.fail] at h
+
+end
+
 /-- **Sandbox isolation.** A task whose search order is the sandbox alone, on
 the console or a network session, executes only the sandbox's words, for any
 line. Assumed: the dump's headers (`hdump`); for a session, what its terminal
@@ -921,13 +998,6 @@ theorem isolated (B : Box) (hB : B.Ok) (hT : B.Term)
     (d : Cell → Sem) (hd : ∀ xt, B.Allowed xt → d xt = dispatch xt)
     (s : S) (hu : s.up = B.p) (hm : s.mem = B.m0) :
     loopThread (Words.«interpret».code.set 29 (.call (execWith d))) s = Words.«interpret» s := by
-  have htype : B.Keeps Words.«type» := by
-    intro s s' hu hI h
-    have hd := type_ok s s' h
-    rw [hu, B.rd_eq hI _ 8 fun i hi => Or.inl (Or.inr (by bv_omega))] at hd
-    rcases hT.type with h1 | h1 <;> rw [h1] at hd
-    · exact nk (console_type_frame _) s s' hu hI hd
-    · exact telnet_type_keeps hB (hN h1) s s' hu hI hd
-  exact isolated_given_terminal B hB hdump htype (bye_keeps hB hT) d hd s hu hm
+  exact isolated_given_terminal B hB hdump (type_keeps_net hB hT hN) (bye_keeps hB hT) d hd s hu hm
 
 end OS4.Isolation
