@@ -45,19 +45,23 @@ one now does.
 | 16 | 2026-10-31 | `session` set up the telnet terminal before its `catch`: a client that reset before its task ran made it throw past the cleanup | The door kept the place and the connection leaked; sixteen such clients (a port scan) shut port 4000 for good | Proof (V6, `Sessions.lean`) | No; repro in `tests/sessions` | #117 |
 | 17 | 2026-10-31 | The idle timeout was set only after that terminal setup, so its send waited with no timeout | A client that never opened its window held a place at the door for ever | Proof (V6, `Sessions.lean`, same change) | No | #117 |
 | 18 | 2026-10-31 | `record!` overwrote the older copy even when the newer one might not be durable: after a failed sync it could be only in a buffer | A failed disk write, a second `record!`, then a crash during its sync, lost the last durable record | Proof planning (reading `records.fs` against V3's durability property); proven in a model (`Records.lean`, `old_loses`) | No; repro in `tests/record-errors` (A's copy overwritten in the cache) | #118 |
+| 19 | 2026-11-02 | `(segment-out)` copied `o-len` bytes into `tx-frame` with no bound: the frame held the data only if every caller kept the length within `our-mss` | A wrong length (a caller's slip, or a connection record gone bad) would write past `tx-frame` into whatever follows it | Proof planning (V2: the footprint of `telnet-type`'s send path said "anywhere") | No; repro in `tests/tcp` (a fake connection, -24) | #119, #122 |
+| 20 | 2026-11-03 | After a failed wait, `(send)` reset the connection itself, which unlinks it from the shared connection lists | A sandboxed session whose send timed out wrote memory outside its task (other connections' links, the free list), so bounded writes failed on that path | Proof (V2, runs that fail: `Telnet.lean`) | No | #125 |
 
 ## Also shown
 
 - **Mutation:** a `u>` changed to compare signed passed all 36 hosted tests,
   and failed its proof (`docs/verification.md`).
-- **Stack comments:** of 272 stack comments checked against their code,
-  none disagreed (#107). The proofs found no defects there.
+- **Stack comments:** of 431 stack comments checked against their code
+  (272 at first, #107), none disagreed. The proofs found no defects there.
 
 ## What the log says so far
 
-Up to 2026-10-31: 18 defects. Tests found 1, the app 1, hardening 4, and
-the proofs 12 (6 directly, 5 by the audits they pointed to, 1 while
-planning a proof). No proof-found
+Up to 2026-11-03: 20 defects. Tests found 1, the app 1, hardening 4, and
+the proofs 14 (7 directly, 5 by the audits they pointed to, 2 while
+planning a proof). (A double free in the fix for 20 was caught by
+`tcp-attack` before it was committed, so it is not logged: the tests and
+the proofs find different things.) No proof-found
 defect would have failed the test suite as it stood. The tests had already
 passed over every one of them.
 
