@@ -347,4 +347,29 @@ theorem doesChild_foot {code : Sem} {k j rk rj : Nat} {regs : List Reg} {dout ro
     rintro ⟨h1, h2, h3, h4, h5, h6, h7⟩
     exact ⟨h1, h2, agree_subst (ρ := ρ) hD hDl hR hRl h3, h4, h5, agree_subst (ρ := ρ) hD hDl hR hRl h6, h7⟩
 
+/-- `( c offset -- )  mask and buf + c!`: a byte into a reserved buffer at an
+offset taken under a mask no bigger than the buffer, which bounds the store
+whatever the offset (`tx-c!`; DECISIONS.md #122). -/
+theorem masked_cstore_foot {code : List Ins} {buf : Sem} {mask n k : Cell}
+    (hc : code = [.lit mask, .call Prim.and, .call buf, .call Prim.plus, .call Prim.cstore, .exit])
+    (hb : buf = pushConst (dictTop - k)) (hm : mask.toNat < n.toNat) :
+    Foot (thread code) 2 0 0 0 [⟨.top k, .num n⟩] [] [] := by
+  subst hc hb
+  intro xs zs s r m u e hx hz
+  match xs, zs, hx, hz with
+  | [o, x], [], _, _ =>
+    simp only [thread, run, List.length_cons, List.length_nil, List.getElem?_cons_succ,
+      List.getElem?_cons_zero, List.cons_append, List.nil_append, Prim.and, Prim.plus, Prim.bin,
+      pushConst, Prim.cstore]
+    refine ⟨fun a _ hw => ?_, ?_⟩
+    · simp only [resMem, wr_one]
+      refine upd_other _ _ _ _ fun ha => hw ⟨_, List.mem_singleton_self _, fun b l hb hl => ?_⟩
+      simp only [Val.eval, Option.some.injEq] at hb hl
+      subst hb hl ha
+      have he : (o &&& mask) + (dictTop - k) - (dictTop - k) = o &&& mask := by
+        first | exact BitVec.add_sub_cancel _ _ | simp
+      rw [he, BitVec.toNat_and]
+      exact Nat.lt_of_le_of_lt Nat.and_le_right hm
+    · simp [FOut, agree_nil]
+
 end OS4

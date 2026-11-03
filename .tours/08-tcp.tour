@@ -47,7 +47,7 @@
       "file": "forth/net/tcp.fs",
       "pattern": ": \\(tcp-output\\)",
       "title": "Sending",
-      "description": "Segments while `sendable` (above) is positive, then the FIN once everything is out, then a bare ACK if owed. `(segment-out)` further up builds a segment in `tx-frame` from the ring, under `tx-lock`; it throws -24 rather than copy more than `our-mss` bytes, so the frame bounds the copy whatever its length variable holds."
+      "description": "Segments while `sendable` (above) is positive, then the FIN once everything is out, then a bare ACK if owed. `(segment-out)` further up builds a segment in `tx-frame` from the ring, under `tx-lock`; it throws -24 rather than copy more than `our-mss` bytes, so the frame bounds the copy whatever its length variable holds. Each byte goes in with `tx-c!`, which masks its offset to the frame's size, so the proofs can state that bound too."
     },
     {
       "file": "forth/net/tcp.fs",

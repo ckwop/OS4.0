@@ -362,8 +362,9 @@ theorem leL_agree {ρ : Env} : ∀ {vs ws : List Val} {xs : List Cell}, leL vs w
 
 /-- The symbolic stacks before one instruction; for a call, the callee's
 summary, or q for a `?dup` before a `0branch` (whose own entry is then
-dead; see `QDup`); for a literal, its value. Unreachable instructions are
-dead. -/
+dead; see `QDup`), or pk for `pick` of a known number, which copies the
+value that many items down; for a literal, its value. Unreachable
+instructions are dead. -/
 structure FCert where
   live : Bool
   ds : List Val
@@ -379,6 +380,7 @@ structure FCert where
   q : Bool
   z : Bool
   lk : Bool
+  pk : Bool
 
 /-- Instruction p's entry says it is `0=` (in `?dup 0= if`; see `ZEq`). -/
 def zAtF (cert : List FCert) (p : Nat) : Bool :=
@@ -415,7 +417,11 @@ def fstep (code : List Ins) (cert : List FCert) (regs : List Reg) (dout : List V
     | none => true
     | some (.call _) =>
       !c.lk && !c.z &&
-      if c.q then
+      if c.pk then
+        match c.ds with
+        | .num u :: ds => atF cert (pc + 1) ((ds[u.toNat]?.getD .any) :: ds) c.rs
+        | _ => false
+      else if c.q then
         match c.ds, code[pc + 1]?, code[pc + 2]? with
         | w :: ds, some (.zbranch t), _ => atF cert t ds c.rs && atF cert (pc + 2) (w :: ds) c.rs
         | w :: ds, some (.call _), some (.zbranch t) =>
@@ -458,12 +464,13 @@ def fcheck (code : List Ins) (cert : List FCert) (inp out : Nat) (regs : List Re
 /-- P writes nothing, whether it returns or fails. -/
 def NoWrite (P : Sem) : Prop := ∀ s, resMem (P s) = s.mem
 
-/-- Each call meets the Foot its certificate entry claims, or is `?dup` or
-`0=`; each literal is its value, but a literal with lk and the two calls
+/-- Each call meets the Foot its certificate entry claims, or is `?dup`,
+`0=` or `pick`; each literal is its value, but a literal with lk and the two calls
 after it meet the Foot its entry claims (`seg3`), the first call writing
 nothing. An instruction sees the ones after it. -/
 def InsFoot : Ins → List Ins → FCert → Prop
-  | .call f, _, c => cond c.lk True (cond c.z (ZEq f) (cond c.q (QDup f) (Foot f c.k c.j c.rk c.rj c.regs c.dout c.rout)))
+  | .call f, _, c => cond c.lk True (cond c.z (ZEq f) (cond c.pk (f = Prim.pick)
+      (cond c.q (QDup f) (Foot f c.k c.j c.rk c.rj c.regs c.dout c.rout))))
   | .lit v, next, c => cond c.lk (SegFoot v next c) (∀ ρ, c.lv.holds ρ v)
   | _, _, _ => True
 where
@@ -746,6 +753,40 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
         simp only [Bool.and_eq_true, Bool.not_eq_true'] at hs
         obtain ⟨⟨hcl, hcz⟩, hs⟩ := hs
         simp only [hcl, hcz, InsFoot, cond_false] at hi
+        cases hp : c.pk
+        case true =>
+          -- `pick` of a number the entry knows: the value that many items down
+          simp only [hp, cond_true] at hi
+          simp only [hp, if_true] at hs
+          subst hi
+          rcases hcd : c.ds with _ | ⟨w, ds⟩ <;> rw [hcd] at hs hys hay
+          · simp at hs
+          obtain ⟨u0, rfl⟩ : ∃ u0, w = .num u0 := by cases w <;> simp_all
+          simp only at hs
+          obtain ⟨x, ys', rfl⟩ : ∃ x ys', ys = x :: ys' := by
+            cases ys with
+            | nil => simp at hys
+            | cons x ys' => exact ⟨x, ys', rfl⟩
+          simp only [List.length_cons, Nat.add_right_cancel_iff] at hys
+          have hw := agree_cons.mp hay
+          have hx : x = u0 := hw.1 u0 (by simp [Val.eval])
+          subst hx
+          simp only [run, hcode, List.cons_append, Prim.pick]
+          cases hy : (ys' ++ s)[x.toNat]? with
+          | none => exact ⟨hk, trivial⟩
+          | some y =>
+            have hy' : (ds[x.toNat]?.getD .any).holds ⟨xs0, [], u⟩ y := by
+              cases hd : ds[x.toNat]? with
+              | none => exact holds_any _ _
+              | some w' =>
+                have hlt : x.toNat < ys'.length := by
+                  rw [hys]; exact (List.getElem?_eq_some_iff.mp hd).1
+                rw [List.getElem?_append_left hlt] at hy
+                exact hw.2 _ w' y hd hy
+            exact next (y :: ys') zs m e hs (by simp [hys]) hzs (agree_cons.mpr ⟨hy', hw.2⟩) haz hk
+        case false =>
+        simp only [hp, cond_false] at hi
+        simp only [hp, Bool.false_eq_true, if_false] at hs
         cases hq : c.q
         case true =>
           -- `?dup`, then `0branch t` or `0=` and `0branch t`: as one step

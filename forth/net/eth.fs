@@ -60,6 +60,9 @@ $0806 constant type-arp
 
 2048 reserve constant rx-frame         \ the frame being handled (reserved: TD-33)
 2048 reserve constant tx-frame         \ the frame being built
+\ A byte into tx-frame, at an offset taken modulo its size: a loop that fills
+\ the frame cannot write past it, whatever its count (masked_cstore_foot).
+: tx-c!  ( c offset -- )  $7ff and tx-frame + c! ;
 \ A task that builds and sends a packet holds TX-LOCK from start to finish, as
 \ every sending word below does: building in the shared frames (tx-frame and
 \ ARP's) and sending, which may pause while the device works.

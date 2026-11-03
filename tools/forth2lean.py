@@ -203,6 +203,11 @@ LOCKED = "«locked»"
 QUIET_SYSCALLS = {25, 56, 62, 64, 68, 82, 198, 200, 203}
 
 
+def picks(op, ds):
+    """`pick` of a number the symbolic stack knows (`FCert.pk`)."""
+    return op == ("call", "Prim.pick") and bool(ds) and ds[0][0] == "num"
+
+
 def in_seg(sg, pc):
     """Whether pc is one of the two calls of a `['] word sem locked` step."""
     return pc - 1 in sg or pc - 2 in sg
@@ -630,6 +635,11 @@ class Generator:
             self.prove(name, (k, j, 0, 0),
                        f"{runner}_spec (code := {name}.code) (cert := {name}.cert)\n"
                        f"    (by decide)\n    ({calls})")
+            store = self.masked_store(insns)
+            if store:
+                self.prove_foot(name, [store], [], [],
+                                f"masked_cstore_foot (code := {name}.code) rfl rfl (by decide)")
+                return name
             found = self.infer_foot(name, insns)
             if isinstance(found, str):
                 self.no_foot[name] = found
@@ -686,6 +696,9 @@ class Generator:
                     succ = [(insns[pc + 1][1], ds[1:], rs), (pc + 2, ds, rs)]
                 else:
                     succ = [(pc + 3, ds[1:], rs), (insns[pc + 2][1], ds, rs)]
+            elif picks(op, ds):                         # n pick: the value n items down
+                n = ds[0][1]
+                succ = [(pc + 1, [ds[1 + n] if 1 + n < len(ds) else ANY] + ds[1:], rs)]
             elif op[0] == "call":
                 ck, cj, crk, crj = self.specs[op[1]][:4]
                 _, dout, rout, _ = self.foot_at(op, ds)
@@ -730,6 +743,8 @@ class Generator:
                 proofs.append(f"{QDUP}.qdup")
             elif pc in zq:
                 proofs.append("Prim.zequal_zeq")
+            elif live and picks(op, ds):
+                proofs.append("rfl")
             elif op[0] == "call":
                 ck, cj, crk, crj = self.specs[op[1]][:4]
                 cregs, cdout, crout, proof = self.foot_at(op, ds)
@@ -743,9 +758,23 @@ class Generator:
                 proofs.append("True.intro")
             certs.append(f"⟨{self.bool(live)}, {vs_lean(ds)}, {vs_lean(rs)}, {ck}, {cj}, {crk}, {crj}, "
                          f"{rs_lean(cregs)}, {vs_lean(cdout)}, {vs_lean(crout)}, {v_lean(lv)}, {self.bool(pc in qd)}, {self.bool(pc in zq)}, "
-                         f"{self.bool(pc in seg or in_seg(sg, pc))}⟩")
+                         f"{self.bool(pc in seg or in_seg(sg, pc))}, {self.bool(live and picks(op, ds))}⟩")
         regs = [ALL] if any(ANY in r for r in regs) else list(dict.fromkeys(regs))
         return regs, dout, certs, proofs
+
+    def masked_store(self, insns):
+        """`( c offset -- )  mask and buf + c!`, buf a constant in reserved
+        memory: the region the mask bounds (`masked_cstore_foot`), or None."""
+        if len(insns) != 6 or insns[0][0] != "lit" or insns[5][0] != "exit":
+            return None
+        mask, buf = self.val(insns[0][1]), insns[2]
+        if (insns[1] != ("call", "Prim.and") or insns[3] != ("call", "Prim.plus")
+                or insns[4] != ("call", "Prim.cstore") or buf[0] != "call" or buf[1] not in self.consts):
+            return None
+        bv = self.foots[buf[1]][1]
+        if mask[0] != "num" or mask[1] + 1 >= M64 or len(bv) != 1 or bv[0][0] != "top":
+            return None
+        return (bv[0], ("num", mask[1] + 1))
 
     def segs(self, insns):
         """`['] word sem locked`, which certificates take as one step (`seg3`):

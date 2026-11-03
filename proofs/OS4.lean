@@ -19,6 +19,7 @@ import OS4.Search
 import OS4.Isolation
 import OS4.Printing
 import OS4.Terminal
+import OS4.Telnet
 import OS4.Semaphores
 import OS4.Sessions
 import OS4.Records
