@@ -203,6 +203,11 @@ LOCKED = "«locked»"
 QUIET_SYSCALLS = {25, 56, 62, 64, 68, 82, 198, 200, 203}
 
 
+# Words whose footprint's regions a hand proof names (`X.regs`), so that it
+# need not copy them: they hold offsets in reserved memory, which move.
+NAMED_REGS = {"«tcp-output»"}
+
+
 def picks(op, ds):
     """`pick` of a number the symbolic stack knows (`FCert.pk`)."""
     return op == ("call", "Prim.pick") and bool(ds) and ds[0][0] == "num"
@@ -658,8 +663,13 @@ class Generator:
         """State and prove a word's Foot; later words' proofs use it."""
         k, j, rk, rj = self.specs[name][:4]
         self.foots[name] = (regs, dout, rout, f"{name}.foot")
+        stated = rs_lean(regs)
+        if name in NAMED_REGS:
+            self.fthms.append(f"/-- {name}'s regions, by name for hand proofs. -/\n"
+                              f"def {name}.regs : List Reg := {stated}\n")
+            stated = f"{name}.regs"
         self.fthms.append(f"theorem {name}.foot{self.binders(name)} : Foot {name} {k} {j} {rk} {rj}\n"
-                          f"    {rs_lean(regs)} {vs_lean(dout)} {vs_lean(rout)} :=\n  {proof}\n")
+                          f"    {stated} {vs_lean(dout)} {vs_lean(rout)} :=\n  {proof}\n")
 
     def infer_foot(self, name, insns):
         """The symbolic stacks before each instruction, from the word's inputs

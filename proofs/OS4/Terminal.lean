@@ -13,7 +13,8 @@ kernel's BYE, or a network session's `telnet-type` and `end-session`
 (net/telnet.fs, net/repl.fs).
 
 Here `type` and `bye` are proven to keep the setting for each of those, but
-`telnet-type`, which sends through the connection, stays a hypothesis.
+`telnet-type`, which sends through the connection, is a hypothesis; it is
+proven in `Telnet.lean`, which gives the whole result (`isolated`).
 -/
 
 namespace OS4.Isolation
