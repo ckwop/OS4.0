@@ -381,6 +381,7 @@ structure FCert where
   z : Bool
   lk : Bool
   pk : Bool
+  th : Bool
 
 /-- Instruction p's entry says it is `0=` (in `?dup 0= if`; see `ZEq`). -/
 def zAtF (cert : List FCert) (p : Nat) : Bool :=
@@ -428,11 +429,15 @@ def fstep (code : List Ins) (cert : List FCert) (regs : List Reg) (dout : List V
           zAtF cert (pc + 1) && atF cert (pc + 3) ds c.rs && atF cert t (w :: ds) c.rs
         | _, _, _ => false
       else callOK cert regs c (pc + 1)
-    | some (.lit _) =>
+    | some (.lit v) =>
       if c.lk then
         match code[pc + 1]?, code[pc + 2]? with
         | some (.call _), some (.call _) => callOK cert regs c (pc + 3)
         | _, _ => false
+      else if c.th then
+        match code[pc + 1]? with
+        | some (.call _) => decide (v ≠ 0)
+        | _ => false
       else atF cert (pc + 1) (c.lv :: c.ds) c.rs
     | some (.branch t) => atF cert t c.ds c.rs
     | some (.zbranch t) =>
@@ -471,9 +476,13 @@ nothing. An instruction sees the ones after it. -/
 def InsFoot : Ins → List Ins → FCert → Prop
   | .call f, _, c => cond c.lk True (cond c.z (ZEq f) (cond c.pk (f = Prim.pick)
       (cond c.q (QDup f) (Foot f c.k c.j c.rk c.rj c.regs c.dout c.rout))))
-  | .lit v, next, c => cond c.lk (SegFoot v next c) (∀ ρ, c.lv.holds ρ v)
+  | .lit v, next, c => cond c.lk (SegFoot v next c) (cond c.th (ThFoot next) (∀ ρ, c.lv.holds ρ v))
   | _, _, _ => True
 where
+  ThFoot (next : List Ins) : Prop :=
+    match next with
+    | .call P :: _ => P = throwM
+    | _ => True
   SegFoot (v : Cell) (next : List Ins) (c : FCert) : Prop :=
     match next with
     | .call P :: .call L :: _ => NoWrite P ∧ Foot (seg3 v P L) c.k c.j c.rk c.rj c.regs c.dout c.rout
@@ -646,8 +655,37 @@ theorem run_foot {code : List Ins} {cert : List FCert} {regs : List Reg} {dout :
         case false =>
           simp only [hl, Bool.false_eq_true, if_false] at hs
           simp only [InsFoot, hl, cond_false] at hi
-          simp only [run, hcode]
-          exact next (v :: ys) zs m e hs (by simp [hys]) hzs (agree_cons.mpr ⟨hi _, hay⟩) haz hk
+          cases ht : c.th
+          case false =>
+            simp only [ht, Bool.false_eq_true, if_false] at hs
+            simp only [ht, cond_false] at hi
+            simp only [run, hcode]
+            exact next (v :: ys) zs m e hs (by simp [hys]) hzs (agree_cons.mpr ⟨hi _, hay⟩) haz hk
+          case true =>
+            -- `n throw`: fails with memory as it was, so nothing follows
+            simp only [ht, if_true] at hs
+            simp only [ht, cond_true] at hi
+            cases hz1 : code[pc + 1]? with
+            | none => simp [hz1] at hs
+            | some i1 =>
+            cases i1 with
+            | call P =>
+              simp only [hz1, decide_eq_true_eq] at hs
+              have htl : code.drop (pc + 1) = .call P :: code.drop (pc + 2) := by
+                rw [List.drop_eq_getElem_cons (List.getElem?_eq_some_iff.mp hz1).1]
+                simp [(List.getElem?_eq_some_iff.mp hz1).2]
+              rw [htl] at hi
+              simp only [InsFoot.ThFoot] at hi
+              subst hi
+              simp only [run, hcode]
+              cases n with
+              | zero => exact ⟨hk, trivial⟩
+              | succ n =>
+                have hv : ¬ (v = 0#64) := hs
+                simp only [run, hz1, List.cons_append]
+                simp [throwM, hv]
+                exact ⟨hk, trivial⟩
+            | _ => simp [hz1] at hs
         case true =>
           -- `['] word sem locked`: three steps as one
           simp only [hl, if_true] at hs

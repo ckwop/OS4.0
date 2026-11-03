@@ -50,6 +50,9 @@ Abstractions, which the proofs inherit:
 * The xt of each word the boot files hand to LOCKED as a literal runs that
   word (`Runs`, in `OS4.Runners`). A theorem that relies on it says so: it
   takes the fact as an instance argument.
+* TYPE, KEY, KEY? and BYE, which run what their task's vector holds, have the
+  effect every word a vector may hold has (`Vectored`, in `OS4.Runners`),
+  taken as an instance argument in the same way.
 -/
 
 namespace OS4

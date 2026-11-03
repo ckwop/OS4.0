@@ -24,7 +24,7 @@ From the repo root in PowerShell:
 ```powershell
 docker build -t os4 .                              # build the toolchain image, the kernel and the boot disk
 docker run --rm -it os4                            # boot the OS to its Forth prompt on the serial console
-docker run --rm -v "${PWD}:/src" os4 make test     # run the test suites against your working copy
+docker run --rm -v "${PWD}:/src" -v os4-lake:/src/proofs/.lake os4 make test   # the test suites and the proofs, against your working copy
 docker run --rm -it -v "${PWD}:/src" os4 make run  # boot your working copy without rebuilding the image
 docker run --rm -it -v "${PWD}:/src" os4 make run-hosted  # the same Forth as a Linux program; starts instantly
 ```

@@ -63,7 +63,7 @@
   <h2>Two builds, one suite</h2>
   <pre class="code" data-src="Makefile" data-step="1">TEST_HOSTED = --cmd "$(CONSOLE) $(call HOSTED_CMD,{disk}$(comma){appdisk},{port} {peerport})"
 TEST_VIRT   = --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST),{appdisk})"</pre>
-  <pre class="code below" data-src="Makefile" data-step="2">test: check-course test-hosted test-virt</pre>
+  <pre class="code below" data-src="Makefile" data-step="2">test: check-course test-hosted test-virt proofs</pre>
   <div class="src"><a href="../../Makefile">Makefile › test</a></div>
   <ul class="points below">
     <li data-step="2"><code>tests/</code> on both; <code>tests/hosted/</code> and <code>tests/baremetal/</code> on one each</li>
@@ -72,7 +72,7 @@ TEST_VIRT   = --cmd "$(CONSOLE) $(call VIRT_CMD,{disk},$(NET_TEST),{appdisk})"</
   </ul>
   <div class="talk">
     <p>The same tests run on both builds. The Makefile defines one command for each: the hosted binary under qemu-aarch64, or a full virtual machine booting through firmware and Limine. Each is given the test's disks and network ports.</p>
-    <p>Make test runs the course check, then the hosted suite, then the bare-metal suite. Tests in the tests folder run on both. A few that are about one platform, such as the register dump from a CPU fault, live in hosted or bare-metal folders of their own.</p>
+    <p>Make test runs the course check, then the hosted suite, then the bare-metal suite, and last the proofs, which take seconds when nothing they cover has changed. Tests in the tests folder run on both. A few that are about one platform, such as the register dump from a CPU fault, live in hosted or bare-metal folders of their own.</p>
     <p>The hosted suite takes seconds. The bare-metal suite boots one virtual machine per test, many at once, and takes under a minute. Because the transcripts are shared, the two platforms are held to exactly the same behaviour.</p>
   </div>
 </section>

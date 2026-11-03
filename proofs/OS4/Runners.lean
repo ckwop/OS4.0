@@ -25,6 +25,40 @@ the generator say of each word the boot files hand to LOCKED. Trusted. -/
 class Runs (n : String) (f : Sem) : Prop where
   runs : dispatch (wordAddr n) = f
 
+/-- f runs what its task's vector holds (TYPE, KEY, KEY?, BYE), and every
+word a vector may hold has effect ( k -- j ): the console's and a session's
+(`Terminal.lean` names them). Trusted, as `Runs` is, and stated by each
+theorem that rests on it. -/
+class Vectored (f : Sem) (k j : Nat) : Prop where
+  spec : Spec f k j 0 0
+
+/-- Any word with an effect may be said to write anywhere, leaving values
+not known. -/
+theorem foot_of_spec {f : Sem} {k j : Nat} (h : Spec f k j 0 0) :
+    Foot f k j 0 0 [Reg.all] (List.replicate j .any) [] := by
+  intro xs zs s r m u e hx hz
+  refine ⟨kept_all, ?_⟩
+  have ho := h xs zs s r m u e hx hz
+  have hz' : zs = [] := List.eq_nil_of_length_eq_zero hz
+  subst hz'
+  revert ho
+  cases f ⟨xs ++ s, [] ++ r, m, u, e⟩ with
+  | error _ => intro _; trivial
+  | ok st =>
+    rintro ⟨⟨ys, hyl, hys⟩, ⟨ws, hwl, hws⟩, hu⟩
+    have hw : ws = [] := List.eq_nil_of_length_eq_zero hwl
+    subst hw
+    refine ⟨by simp [hys, hyl], by simp [hys, hyl], ?_, by simp [hws], by simp [hws], agree_nil _ _, hu⟩
+    intro i v x h1 _
+    simp only [List.getElem?_replicate] at h1
+    split at h1 <;> simp at h1
+    subst h1
+    exact holds_any _ _
+
+theorem Vectored.foot {f : Sem} {k j : Nat} [h : Vectored f k j] :
+    Foot f k j 0 0 [Reg.all] (List.replicate j .any) [] :=
+  foot_of_spec h.spec
+
 /-- `['] word sem locked`, as one step, has word's stack effect. -/
 theorem locked_seg_spec {v : Cell} {g P : Sem} {k j : Nat}
     (hv : dispatch v = g) (hg : Spec g k j 0 0) (hP : Spec P 0 1 0 0) :

@@ -121,7 +121,7 @@ run: $(BOOT_IMG) $(DATA_IMG) $(APP_IMG)
 run-hosted: $(HOSTED) $(DATA_IMG) $(APP_IMG)
 	@$(call HOSTED_CMD,$(DATA_IMG)$(comma)$(APP_IMG))
 
-test: check-course test-hosted test-virt
+test: check-course test-hosted test-virt proofs
 
 # The course (docs/course) and code tours (.tours) still match the code.
 check-course:
@@ -151,11 +151,12 @@ $(WORDS_DUMP): $(HOSTED) tools/dump-words.fs | $(DATA_IMG)
 	$(CONSOLE) $(call HOSTED_CMD,$(DATA_IMG)) < tools/dump-words.fs | grep '^@@ ' > $@.tmp
 	mv $@.tmp $@
 
-$(GENERATED): $(WORDS_DUMP) tools/forth2lean.py proofs/roots.txt proofs/yields.txt
+$(GENERATED): $(WORDS_DUMP) tools/forth2lean.py proofs/roots.txt proofs/yields.txt proofs/coverage.txt
 	@rm -rf $@ $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS) $(COSTS_LEAN) $(YIELDS) $(FOOTS_LEAN) $(FOOTPRINTS) $(RUNS) \
 	  $(basename $(WORDS_LEAN) $(SPECS_LEAN) $(COSTS_LEAN) $(FOOTS_LEAN))
 	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt --specs $(SPECS_LEAN) --findings $(FINDINGS) \
-	  --foots $(FOOTS_LEAN) $(FOOTPRINTS) --yields proofs/yields.txt $(COSTS_LEAN) $(YIELDS) --runs $(RUNS)
+	  --foots $(FOOTS_LEAN) $(FOOTPRINTS) --yields proofs/yields.txt $(COSTS_LEAN) $(YIELDS) --runs $(RUNS) \
+	  --coverage proofs/coverage.txt
 	@touch $@
 
 proofs-extract: $(GENERATED)

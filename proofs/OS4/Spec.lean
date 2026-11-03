@@ -79,6 +79,7 @@ structure Cert where
   q : Bool
   z : Bool
   lk : Bool
+  th : Bool
 
 /-- Instruction p's entry says it is `0=`. -/
 def zAt (cert : List Cert) (p : Nat) : Bool :=
@@ -111,12 +112,17 @@ def stepOK (code : List Ins) (cert : List Cert) (out pc : Nat) : Bool :=
         | _, _ => false
       else
         decide (c.k ≤ c.d) && decide (c.rk ≤ c.r) && at? cert (pc + 1) (c.d - c.k + c.j) (c.r - c.rk + c.rj)
-    | some (.lit _) =>
+    | some (.lit v) =>
       if c.lk then
         match code[pc + 1]?, code[pc + 2]? with
         | some (.call _), some (.call _) =>
           decide (c.k ≤ c.d) && decide (c.rk ≤ c.r) && at? cert (pc + 3) (c.d - c.k + c.j) (c.r - c.rk + c.rj)
         | _, _ => false
+      else if c.th then
+        -- `n throw` with n not 0: the path ends here
+        match code[pc + 1]? with
+        | some (.call _) => decide (v ≠ 0)
+        | _ => false
       else at? cert (pc + 1) (c.d + 1) c.r
     | some (.branch t) => at? cert t c.d c.r
     | some (.zbranch t) =>
@@ -138,8 +144,16 @@ def check (code : List Ins) (cert : List Cert) (inp out : Nat) : Bool :=
 claims. An instruction sees the ones after it. -/
 def InsMeets : Ins → List Ins → Cert → Prop
   | .call f, _, c => cond c.lk True (cond c.z (ZEq f) (cond c.q (QDup f) (Spec f c.k c.j c.rk c.rj)))
-  | .lit v, .call P :: .call L :: _, c => cond c.lk (Spec (seg3 v P L) c.k c.j c.rk c.rj) True
+  | .lit v, .call P :: .call L :: _, c => cond c.lk (Spec (seg3 v P L) c.k c.j c.rk c.rj) (cond c.th (P = throwM) True)
+  | .lit _, .call P :: _, c => cond c.th (P = throwM) True
   | _, _, _ => True
+
+/-- A literal marked th is followed by THROW. -/
+theorem insMeets_th {v : Cell} {P : Sem} {t : List Ins} {c : Cert} (h : InsMeets (.lit v) (.call P :: t) c)
+    (hl : c.lk = false) (ht : c.th = true) : P = throwM := by
+  cases t with
+  | nil => simpa [InsMeets, ht] using h
+  | cons i t => cases i <;> simpa [InsMeets, hl, ht] using h
 
 def CallsMeet : List Ins → List Cert → Prop
   | [], _ => True
@@ -252,8 +266,35 @@ theorem run_sound {code : List Ins} {cert : List Cert} {out : Nat} {s r : List C
         cases hl : c.lk
         case false =>
           simp only [hl, Bool.false_eq_true, if_false] at hs
-          simp only [run, hcode]
-          exact next (v :: ys) zs m e hs (by simp; omega) hzs
+          cases ht : c.th
+          case false =>
+            simp only [ht, Bool.false_eq_true, if_false] at hs
+            simp only [run, hcode]
+            exact next (v :: ys) zs m e hs (by simp; omega) hzs
+          case true =>
+            -- `n throw`: fails, so nothing follows
+            simp only [ht, if_true] at hs
+            cases hz1 : code[pc + 1]? with
+            | none => simp [hz1] at hs
+            | some i1 =>
+            cases i1 with
+            | call P =>
+              simp only [hz1, decide_eq_true_eq] at hs
+              obtain ⟨t, htl⟩ : ∃ t, code.drop (pc + 1) = .call P :: t := by
+                refine ⟨code.drop (pc + 2), ?_⟩
+                rw [List.drop_eq_getElem_cons (List.getElem?_eq_some_iff.mp hz1).1]
+                simp [(List.getElem?_eq_some_iff.mp hz1).2]
+              rw [htl] at hm
+              have hP := insMeets_th hm hl ht
+              subst hP
+              simp only [run, hcode]
+              cases n with
+              | zero => simp [run, S.fail, Out]
+              | succ n =>
+                simp only [run, hz1, throwM, List.cons_append]
+                have hv : ¬ (v = 0#64) := hs
+                simp [hv, Out]
+            | _ => simp [hz1] at hs
         case true =>
           -- `['] word sem locked`: three steps as one
           simp only [hl, if_true] at hs

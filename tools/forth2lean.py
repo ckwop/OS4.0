@@ -203,6 +203,10 @@ LOCKED = "«locked»"
 QUIET_SYSCALLS = {25, 56, 62, 64, 68, 82, 198, 200, 203}
 
 
+# Words that run what their task's vector holds, with the effect every word a
+# vector may hold has: trusted, and stated where used (`Vectored`, Runners.lean).
+VECTORED = {"«type»": (2, 0), "«key#2»": (0, 1), "«key?#2»": (0, 1), "«bye#2»": (0, 0)}
+
 # Words whose footprint's regions a hand proof names (`X.regs`), so that it
 # need not copy them: they hold offsets in reserved memory, which move.
 NAMED_REGS = {"«tcp-output»"}
@@ -617,6 +621,12 @@ class Generator:
         for g, n, _ in sg.values():
             needs |= {(n, g)} | self.needs.get(g, set())
         self.needs[name] = needs
+        if name in VECTORED:                        # runs what its vector holds: trusted
+            k, j = VECTORED[name]
+            self.needs[name] = needs | {("vec", name, k, j)}
+            self.prove(name, (k, j, 0, 0), "Vectored.spec")
+            self.prove_foot(name, [ALL], [ANY] * j, [], "Vectored.foot")
+            return name
         found = self.infer(insns)
         if isinstance(found, str):
             self.no_spec[name] = found
@@ -624,6 +634,7 @@ class Generator:
             k, j, certs = found
             qd = qdups(insns)
             zq = zequals(qd)
+            th = self.throws(insns)
             calls = "True.intro"
             for pc in reversed(range(len(insns))):
                 op = insns[pc]
@@ -634,6 +645,7 @@ class Generator:
                     proof = "True.intro"
                 else:
                     proof = (f"{QDUP}.qdup" if pc in qd else "Prim.zequal_zeq" if pc in zq
+                             else "rfl" if pc in th
                              else self.specs[op[1]][4] if op[0] == "call" else "True.intro")
                 calls = f"And.intro {proof} ({calls})"
             self.thms.append(f"noncomputable def {name}.cert : List Cert := [{', '.join(certs)}]\n")
@@ -679,6 +691,7 @@ class Generator:
         qd = qdups(insns)
         zq = zequals(qd)
         sg = self.segs(insns)
+        th = self.throws(insns)
         for pc, op in enumerate(insns):
             if op[0] == "call" and op[1] not in self.foots and pc not in qd and not in_seg(sg, pc):
                 return "calls a word with no footprint"
@@ -715,6 +728,8 @@ class Generator:
                 DS, RS = ds[:ck], rs[:crk]
                 succ = [(pc + 1, [v_subst(v, DS, RS) for v in dout] + ds[ck:],
                          [v_subst(v, DS, RS) for v in rout] + rs[crk:])]
+            elif op[0] == "lit" and pc in th:        # n throw: never returns
+                succ = []
             elif op[0] == "lit":
                 succ = [(pc + 1, [self.val(op[1])] + ds, rs)]
             elif op[0] == "branch":
@@ -733,7 +748,7 @@ class Generator:
                 if new != old:
                     state[t] = new
                     work.append(t)
-        dout = exits[0]
+        dout = exits[0] if exits else [ANY] * j          # never returns: anything
         for ds in exits[1:]:
             dout = v_join(dout, ds)
         regs, certs, proofs = [], [], []
@@ -761,6 +776,8 @@ class Generator:
                 if live:
                     regs += [r_subst(r, ds[:ck], rs[:crk]) for r in cregs]
                 proofs.append(proof)
+            elif op[0] == "lit" and pc in th:
+                proofs.append("rfl")
             elif op[0] == "lit":
                 lv = self.val(op[1])
                 proofs.append(lit_proof(lv))
@@ -768,7 +785,8 @@ class Generator:
                 proofs.append("True.intro")
             certs.append(f"⟨{self.bool(live)}, {vs_lean(ds)}, {vs_lean(rs)}, {ck}, {cj}, {crk}, {crj}, "
                          f"{rs_lean(cregs)}, {vs_lean(cdout)}, {vs_lean(crout)}, {v_lean(lv)}, {self.bool(pc in qd)}, {self.bool(pc in zq)}, "
-                         f"{self.bool(pc in seg or in_seg(sg, pc))}, {self.bool(live and picks(op, ds))}⟩")
+                         f"{self.bool(pc in seg or in_seg(sg, pc))}, {self.bool(live and picks(op, ds))}, "
+                         f"{self.bool(pc in th)}⟩")
         regs = [ALL] if any(ANY in r for r in regs) else list(dict.fromkeys(regs))
         return regs, dout, certs, proofs
 
@@ -785,6 +803,13 @@ class Generator:
         if mask[0] != "num" or mask[1] + 1 >= M64 or len(bv) != 1 or bv[0][0] != "top":
             return None
         return (bv[0], ("num", mask[1] + 1))
+
+    def throws(self, insns):
+        """`n throw` with n a number other than 0: the literal's pc. THROW of
+        it always fails, so the path ends there (`Cert.th`)."""
+        return {pc for pc, op in enumerate(insns[:-1])
+                if op[0] == "lit" and insns[pc + 1] == ("call", "throwM")
+                and self.val(op[1])[0] == "num" and self.val(op[1])[1] != 0}
 
     def segs(self, insns):
         """`['] word sem locked`, which certificates take as one step (`seg3`):
@@ -810,8 +835,12 @@ class Generator:
         return self.foots[op[1]]
 
     def binders(self, name):
-        """The `Runs` facts a word's theorems rest on, as instance arguments."""
-        return "".join(f" [Runs {lean_str(n)} {g}]" for n, g in sorted(self.needs.get(name, ())))
+        """The `Runs` and `Vectored` facts a word's theorems rest on, as
+        instance arguments."""
+        out = []
+        for t in sorted(self.needs.get(name, ()), key=str):
+            out.append(f" [Vectored {t[1]} {t[2]} {t[3]}]" if t[0] == "vec" else f" [Runs {lean_str(t[0])} {t[1]}]")
+        return "".join(out)
 
     def emit(self, ident, what, body):
         self.defs.append(f"/-- {what} -/\n@[forth] noncomputable def {lean_name(ident)} : Sem := {body}\n")
@@ -833,6 +862,7 @@ class Generator:
         qd = qdups(insns)
         zq = zequals(qd)
         sg = self.segs(insns)
+        th = self.throws(insns)
         while work:
             pc = work.pop()
             d, r = state[pc]
@@ -861,6 +891,8 @@ class Generator:
                     return "takes return-stack items it did not push"
                 low = min(low, d - k)
                 succ = [(pc + 1, d - k + j, r - rk + rj)]
+            elif op[0] == "lit" and pc in th:        # n throw: never returns
+                succ = []
             elif op[0] == "lit":
                 succ = [(pc + 1, d + 1, r)]
             elif op[0] == "branch":
@@ -888,6 +920,8 @@ class Generator:
                     work.append(t)
                 elif state[t] != (nd, nr):
                     return "paths meet with different depths"
+        if not exits:                               # it never returns: any effect holds
+            exits = {(low, 0)}
         if len(exits) != 1:
             return "exits with different depths"
         dx, rx = exits.pop()
@@ -895,20 +929,23 @@ class Generator:
             return "leaves items on the return stack"
         certs = []
         for pc, op in enumerate(insns):
-            if pc not in state:
-                certs.append(f"⟨Bool.false, 0, 0, 0, 0, 0, 0, {self.bool(pc in qd)}, {self.bool(pc in zq)}, "
-                             f"{self.bool(in_seg(sg, pc))}⟩")
+            if pc not in state:                     # a dead call still names its callee's effect
+                dk, dj, drk, drj = (self.specs[op[1]][:4] if op[0] == "call" and op[1] in self.specs
+                                    and pc not in qd and pc not in zq and not in_seg(sg, pc) else (0, 0, 0, 0))
+                certs.append(f"⟨Bool.false, 0, 0, {dk}, {dj}, {drk}, {drj}, {self.bool(pc in qd)}, {self.bool(pc in zq)}, "
+                             f"{self.bool(in_seg(sg, pc))}, {self.bool(pc in th)}⟩")
                 continue
             d, r = state[pc]
             if pc in qd:
-                certs.append(f"⟨Bool.true, {d - low}, {r}, 0, 0, 0, 0, Bool.true, Bool.false, Bool.false⟩")
+                certs.append(f"⟨Bool.true, {d - low}, {r}, 0, 0, 0, 0, Bool.true, Bool.false, Bool.false, Bool.false⟩")
                 continue
             if pc in sg:
                 k, j = self.specs[sg[pc][0]][:2]
-                certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, 0, 0, Bool.false, Bool.false, Bool.true⟩")
+                certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, 0, 0, Bool.false, Bool.false, Bool.true, Bool.false⟩")
                 continue
             k, j, rk, rj = self.specs[op[1]][:4] if op[0] == "call" else (0, 0, 0, 0)
-            certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, {rk}, {rj}, Bool.false, Bool.false, Bool.false⟩")
+            certs.append(f"⟨Bool.true, {d - low}, {r}, {k}, {j}, {rk}, {rj}, Bool.false, Bool.false, Bool.false, "
+                         f"{self.bool(pc in th)}⟩")
         return -low, dx - low, certs
 
     # ---- Counted words (proofs/OS4/Yield.lean): steps between pauses
@@ -1385,6 +1422,25 @@ def footprints(gen, path, report_path):
         print(f"  no footprint: {n:4}  {why}")
 
 
+def coverage(path, found):
+    """The proofs' coverage, against the counts recorded in path: a drop fails
+    the build (lower the record, with a decision in DECISIONS.md, if it is
+    meant); a rise is reported, to be recorded."""
+    recorded = {}
+    for line in open(path, encoding="utf-8"):
+        line = line.split("#")[0].strip()
+        if line:
+            name, n = line.rsplit(":", 1)
+            recorded[name.strip()] = int(n)
+    drops = [f"{k}: {found.get(k, 0)}, recorded {n}" for k, n in recorded.items() if found.get(k, 0) < n]
+    rises = [f"{k}: {n}, recorded {recorded.get(k, 0)}" for k, n in found.items() if n > recorded.get(k, 0)]
+    print(f"{path}: " + ", ".join(f"{k} {n}" for k, n in found.items()))
+    for r in rises:
+        print(f"  up: {r} (record it in {path})")
+    if drops:
+        sys.exit(f"{path}: coverage dropped: " + "; ".join(drops))
+
+
 STACK_ROOM = 16                 # cells below a stack's limit (kernel.s STACK_MARGIN; tasks.fs)
 
 
@@ -1544,6 +1600,16 @@ def main():
         yields(gen, *args[i + 1:i + 4])
     if "--runs" in args:                            # pushes between stack checks (TD-13)
         stack_runs(gen, args[args.index("--runs") + 1])
+    if "--coverage" in args:                        # coverage only goes up
+        found = {"modelled colon words": done,
+                 "stack effects": sum(t.startswith("theorem") for t in gen.thms)}
+        if "--specs" in args:
+            found["agreeing stack comments"] = counts["agree"]
+        if "--foots" in args:
+            found["footprints"] = sum(t.startswith("theorem") for t in gen.fthms)
+        if "--yields" in args:
+            found["counted words"] = sum(".tcode :" in t for t in gen.tdefs)
+        coverage(args[args.index("--coverage") + 1], found)
     by_id = {w.id: w for w in gen.words}
     missing =[c for c in check if c not in by_id or isinstance(gen.memo.get(by_id[c].xt), Blocked)]
     if missing:
