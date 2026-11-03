@@ -1385,6 +1385,104 @@ def footprints(gen, path, report_path):
         print(f"  no footprint: {n:4}  {why}")
 
 
+STACK_ROOM = 16                 # cells below a stack's limit (kernel.s STACK_MARGIN; tasks.fs)
+
+
+def stack_runs(gen, report_path):
+    """TD-13: the stacks are checked on entering a colon word, at every branch
+    and loop step, and in PAUSE. Between checks, no path may push more than the
+    STACK_ROOM cells left below the limit, on either stack. A word's growth
+    since its last check carries into its caller; EXECUTE and CATCH of an xt
+    not known here get the worst any word leaves. (d, r): cells pushed on the
+    data and return stacks since the last check."""
+    threads = gen.threads
+    prim = [gen.specs[r][:4] for r in gen.specs if r.startswith("Prim.") and r not in ("catchM", "executeM")]
+    pd = max(j - k for k, j, _, _ in prim)
+    pr = max(rj - rk for _, _, rk, rj in prim)
+    tails = {name: (-STACK_ROOM, -STACK_ROOM) for name in threads}
+    unknown = set()
+
+    def analyse(insns, worst):
+        state, work = {0: (0, 1)}, [0]           # a colon word checks, then pushes its return address
+        peak, tail = (0, 1), None
+
+        def go(t, s):
+            nonlocal peak
+            peak = (max(peak[0], s[0]), max(peak[1], s[1]))
+            old = state.get(t)
+            new = s if old is None else (max(old[0], s[0]), max(old[1], s[1]))
+            if new != old:
+                state[t] = new
+                work.append(t)
+        while work:
+            pc = work.pop()
+            d, r = state[pc]
+            op = insns[pc]
+            if op[0] == "exit":
+                e = (d, r - 1)
+                tail = e if tail is None else (max(tail[0], e[0]), max(tail[1], e[1]))
+            elif op[0] == "lit":
+                go(pc + 1, (d + 1, r))
+            elif op[0] == "branch":
+                go(op[1], (0, 0))
+            elif op[0] == "zbranch":
+                go(op[1], (-1, 0))
+                go(pc + 1, (-1, 0))
+            elif op[0] == "loop":
+                go(op[1], (0, 0))
+                go(pc + 1, (0, -2))
+            elif op[0] == "ploop":
+                go(op[1], (-1, 0))
+                go(pc + 1, (-1, -2))
+            elif op[0] == "qdo":
+                go(op[1], (d - 2, r))
+                go(pc + 1, (d - 2, r + 2))
+            elif op[1] in threads:                  # its entry checks
+                go(pc + 1, tails[op[1]])
+            elif op[1] == "Prim.pause":
+                go(pc + 1, (0, 0))
+            elif op[1] == "executeM":               # a colon word's tail, or a primitive's push
+                go(pc + 1, (max(worst[0], d - 1 + pd), max(worst[1], r + pr)))
+            elif op[1] == "catchM":                 # CATCH is a colon word: it checks, frames, executes
+                go(pc + 1, (worst[0] + 1, worst[1]))
+            elif op[1] in gen.specs:
+                k, j, rk, rj = gen.specs[op[1]][:4]
+                go(pc + 1, (d - k + j, r - rk + rj))
+            else:
+                unknown.add(op[1])
+                go(pc + 1, (d + STACK_ROOM, r + STACK_ROOM))
+        return peak, tail if tail is not None else (-STACK_ROOM, -STACK_ROOM)
+
+    peaks = {}
+    for _ in range(10):                             # to a fixed point: tails only grow
+        worst = (max(max(t[0] for t in tails.values()), pd), max(max(t[1] for t in tails.values()), pr))
+        new = {}
+        for name, insns in threads.items():
+            peaks[name], new[name] = analyse(insns, worst)
+        if new == tails:
+            break
+        tails = new
+    over = sorted((n for n, p in peaks.items() if max(p) > STACK_ROOM), key=lambda n: -max(peaks[n]))
+    top = sorted(peaks, key=lambda n: -max(peaks[n]))[:10]
+    unchecked = sorted(w.id for w in gen.colon if isinstance(gen.memo.get(w.xt), Blocked))
+    with open(report_path, "w", newline="\n") as f:
+        f.write(f"# TD-13: the most each thread pushes between stack checks (room: {STACK_ROOM} cells)\n")
+        f.write(f"# {len(peaks)} threads checked; the deepest, as (data, return):\n")
+        for n in top:
+            f.write(f"{n}: {peaks[n]}\n")
+        for n in over:
+            f.write(f"OVER: {n}: {peaks[n]}\n")
+        for u in sorted(unknown):
+            f.write(f"UNKNOWN EFFECT: {u}\n")
+        for u in unchecked:
+            f.write(f"NOT CHECKED (not modelled): {u}\n")
+    print(f"{report_path}: {len(peaks)} threads; deepest run {max(max(p) for p in peaks.values())} cells "
+          f"of {STACK_ROOM}; {len(unchecked)} not modelled")
+    if over or unknown:
+        sys.exit(f"{report_path}: {len(over)} threads push past the stack's room, "
+                 f"{len(unknown)} callees of unknown effect")
+
+
 def main():
     args = sys.argv[1:]
     words_path, out_path = args[:2]
@@ -1444,6 +1542,8 @@ def main():
     if "--yields" in args:                          # steps between pauses
         i = args.index("--yields")
         yields(gen, *args[i + 1:i + 4])
+    if "--runs" in args:                            # pushes between stack checks (TD-13)
+        stack_runs(gen, args[args.index("--runs") + 1])
     by_id = {w.id: w for w in gen.words}
     missing =[c for c in check if c not in by_id or isinstance(gen.memo.get(by_id[c].xt), Blocked)]
     if missing:

@@ -145,10 +145,12 @@ debt marked **must fix before public**.
 - **Reference definitions:** each one proven equal to its primitive's model.
   These are `fill-ref`, `cmove-ref`, `cmove>-ref`, `pick-ref`, `um/mod-ref` and
   `search-list-ref`. Together they give the brief's "keep the Forth definition
-  as the reference" a check.
-- **TD-13 (stack overflow between checks):** replace the acceptance with a
-  check. A static pass over every thread shows that no straight run pushes more
-  than the 16 cells of headroom without a call, branch or loop in between.
+  as the reference" a check. Done: `fill-ref`, `cmove-ref`, `cmove>-ref`.
+  `pick-ref` reads the stack through `sp@`, and the model keeps the stacks as
+  lists, not in memory, so it stays checked by `tests/reference` (#126).
+- **TD-13 (stack overflow between checks):** done (#126). A static pass in
+  the proof build shows that no run between two stack checks pushes more than
+  the 16 cells of headroom, on either stack (deepest 7; `build/stack-runs.txt`).
 - **Done when:** proofs run in `make test`; the coverage numbers are recorded
   and checked; every reference word is proven.
 

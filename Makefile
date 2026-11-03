@@ -139,6 +139,7 @@ COSTS_LEAN := proofs/OS4/Costs.lean
 YIELDS := $(BUILD)/yields.txt
 FOOTS_LEAN := proofs/OS4/Foots.lean
 FOOTPRINTS := $(BUILD)/footprints.txt
+RUNS := $(BUILD)/stack-runs.txt
 GENERATED := $(BUILD)/proofs-generated
 
 # Each step runs only when its inputs change (#110). The dump changes only
@@ -151,10 +152,10 @@ $(WORDS_DUMP): $(HOSTED) tools/dump-words.fs | $(DATA_IMG)
 	mv $@.tmp $@
 
 $(GENERATED): $(WORDS_DUMP) tools/forth2lean.py proofs/roots.txt proofs/yields.txt
-	@rm -rf $@ $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS) $(COSTS_LEAN) $(YIELDS) $(FOOTS_LEAN) $(FOOTPRINTS) \
+	@rm -rf $@ $(WORDS_LEAN) $(SPECS_LEAN) $(FINDINGS) $(COSTS_LEAN) $(YIELDS) $(FOOTS_LEAN) $(FOOTPRINTS) $(RUNS) \
 	  $(basename $(WORDS_LEAN) $(SPECS_LEAN) $(COSTS_LEAN) $(FOOTS_LEAN))
 	python3 tools/forth2lean.py $(WORDS_DUMP) $(WORDS_LEAN) --require proofs/roots.txt --specs $(SPECS_LEAN) --findings $(FINDINGS) \
-	  --foots $(FOOTS_LEAN) $(FOOTPRINTS) --yields proofs/yields.txt $(COSTS_LEAN) $(YIELDS)
+	  --foots $(FOOTS_LEAN) $(FOOTPRINTS) --yields proofs/yields.txt $(COSTS_LEAN) $(YIELDS) --runs $(RUNS)
 	@touch $@
 
 proofs-extract: $(GENERATED)
