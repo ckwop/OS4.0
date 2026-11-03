@@ -159,10 +159,31 @@ $(GENERATED): $(WORDS_DUMP) tools/forth2lean.py proofs/roots.txt proofs/yields.t
 	  --coverage proofs/coverage.txt
 	@touch $@
 
-proofs-extract: $(GENERATED)
+# The bare-metal build's drivers (hal/virtio*.fs; V4): its dictionary, dumped
+# over the serial console, and only those files' modules generated, beside the
+# hosted build's, under a root of their own (OS4Virt).
+WORDS_VIRT := $(BUILD)/words-virt.txt
+VIRT_ROOT := proofs/OS4Virt.lean
+GENERATED_VIRT := $(BUILD)/proofs-generated-virt
 
+$(WORDS_VIRT): $(BOOT_IMG) tools/dump-words.fs tools/dump-virt.fs | $(DATA_IMG) $(APP_IMG)
+	@rm -f $@
+	cat tools/dump-virt.fs tools/dump-words.fs | $(CONSOLE) $(call VIRT_CMD,$(DATA_IMG),$(NET_USER),$(APP_IMG)) | grep '^@@ ' > $@.tmp
+	mv $@.tmp $@
+
+$(GENERATED_VIRT): $(WORDS_VIRT) $(GENERATED) tools/forth2lean.py
+	@rm -f $@ $(VIRT_ROOT)
+	python3 tools/forth2lean.py $(WORDS_VIRT) $(WORDS_LEAN) --specs $(SPECS_LEAN) --findings $(BUILD)/proof-findings-virt.txt \
+	  --foots $(FOOTS_LEAN) $(BUILD)/footprints-virt.txt --virt $(VIRT_ROOT)
+	@touch $@
+
+proofs-extract: $(GENERATED) $(GENERATED_VIRT)
+
+# Two modules at a time (Lake runs them in Lean's task pool, which
+# LEAN_NUM_THREADS sizes): the biggest need over a gigabyte each, and four at
+# once overloaded the VM (DECISIONS.md #130).
 proofs: proofs-extract
-	cd proofs && lake build
+	cd proofs && LEAN_NUM_THREADS=2 lake build OS4 OS4Virt
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)

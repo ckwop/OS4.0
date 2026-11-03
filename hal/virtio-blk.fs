@@ -15,25 +15,26 @@
 4 constant req-flush
 4 constant max-disks
 
-\ A disk: its transport, the features accepted, its size in blocks, its queue,
-\ then room for a request header (16 bytes) and the device's status reply.
-: d.base      ( d -- addr ) ;
-: d.features  ( d -- addr )  cell+ ;
-: d.blocks    ( d -- addr )  2 cells + ;
-: d.vq        ( d -- addr )  3 cells + ;
-: d.header    ( d -- addr )  4 cells + ;
-: d.status    ( d -- addr )  6 cells + ;
+\ A disk (dk in stack comments, as d is a double): its transport, the features
+\ accepted, its size in blocks, its queue, then room for a request header (16
+\ bytes) and the device's status reply.
+: d.base      ( dk -- addr ) ;
+: d.features  ( dk -- addr )  cell+ ;
+: d.blocks    ( dk -- addr )  2 cells + ;
+: d.vq        ( dk -- addr )  3 cells + ;
+: d.header    ( dk -- addr )  4 cells + ;
+: d.status    ( dk -- addr )  6 cells + ;
 7 cells constant /disk
 
 create disks  max-disks /disk * allot
 disks max-disks /disk * 0 fill
-: disk  ( n -- d )  /disk * disks + ;
+: disk  ( n -- dk )  /disk * disks + ;
 : make-queues  ( -- )  max-disks 0 do  8 new-vq i disk d.vq !  loop ;  \ 3 entries are enough
 make-queues
 
 variable #found   -1 #found !         \ disks started; -1 until the first look
 
-: disk-start  ( base d -- )
+: disk-start  ( base dk -- )
   over blk-f-flush virtio-start over d.features !
   over over d.vq @ 0 virtio-queue
   over virtio-ready
@@ -49,7 +50,7 @@ variable #found   -1 #found !         \ disks started; -1 until the first look
 : #disks     ( -- n )  disks-open #found @ ;
 : blk-count  ( n -- u )  dup #disks u< if disk d.blocks @ else drop 0 then ;
 
-: blk-request  ( buf type sector d -- status )
+: blk-request  ( buf type sector dk -- status )
   >r  r@ d.header 8 + !  dup r@ d.header l!  0 r@ d.header 4 + l!
   $ff r@ d.status c!
   r@ d.header 16 d-next 1 r@ d.vq @ 0 desc!

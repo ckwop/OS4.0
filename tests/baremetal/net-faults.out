@@ -1,0 +1,20 @@
+OS 4.0
+\ The network card misbehaving (V4): what the proofs assume the driver survives.  ok
+\ Each fault is made in one line, so the network task cannot run in between.  ok
+: used-entry  ( vq k -- addr )  over vq-size 1- and 8 * 4 +  swap vq-used + ;  ok
+: forge  ( id len -- )  \ the device hands back a chain it was never given  compiled
+  rx-vq dup vq-seen @ used-entry  tuck 4 + l!  l!  compiled
+  rx-vq vq-seen @ 1+ $ffff and  rx-vq vq-used 2 + w! ;  ok
+\ A buffer id the driver never posted: ignored, nothing copied.  ok
+pad 64 $aa fill  999 64 forge  pad net-poll .  pad c@ . 0 170  ok
+\ Wild ids with absurd lengths, five in turn: each ignored, and none left over.  ok
+: burst  ( -- )  5 0 do  65535 i - $7fffffff forge  pad net-poll .  loop ;  ok
+burst 0 0 0 0 0  ok
+rx-vq vq-used? . 0  ok
+\ A device that never completes a request: the wait gives up and throws.  ok
+8 new-vq constant dead-vq  ok
+: wait-dead  ( -- )  dead-vq vq-wait ;  ok
+' wait-dead catch . -263  ok
+\ And the system carries on.  ok
+2 3 + . 5  ok
+net-up? 0<> . -1  ok

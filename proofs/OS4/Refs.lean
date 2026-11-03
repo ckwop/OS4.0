@@ -1,4 +1,5 @@
 import OS4.Words.Core
+import OS4.Words.Interpreter
 import OS4.Loops
 import OS4.Memory
 import OS4.FootPrims
@@ -296,5 +297,201 @@ theorem umslashmod_ref (dv hi lo : Cell) (s r : List Cell) (m : Mem) (p : Cell) 
   rw [show Words.«um/mod-ref» ⟨dv :: hi :: lo :: s, r, m, p, e⟩ = _ from
     loopThread_eq _ _ _ _ run_all (by simp [outOfFuel])]
   simp only [Prim.umslashmod, if_neg hd, hlt, not_true_eq_false, if_false]
+
+section
+open Prim
+
+/-! ## SEARCH-LIST
+
+SEARCH-LIST-REF walks the list as `walk` does, testing each header with
+MATCH?: not hidden, the same length, and the same bytes ignoring case
+(NAME=, with LOWER on each byte). -/
+
+/-- LOWER on a byte read from memory: `lowerB`, checked for all 256. -/
+theorem lower_on_byte (b : BitVec 8) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    Words.«lower» ⟨b.setWidth 64 :: s, r, m, p, e⟩ = .ok ⟨(lowerB b).setWidth 64 :: s, r, m, p, e⟩ := by
+  have key : ∀ b : BitVec 8, (lowerB b).setWidth 64 =
+      if BitVec.ult (b.setWidth 64 - 65#64) 26#64 = false then b.setWidth 64 else b.setWidth 64 + 32#64 := by
+    decide
+  simp [forth]
+  rw [key]
+  split <;> rfl
+
+theorem setWidth_inj {a b : BitVec 8} (h : a.setWidth 64 = b.setWidth 64) : a = b := by
+  bv_omega
+
+/-- One pass of NAME='s loop: the bytes at a1 + i and a2 + i, lowered. -/
+theorem name_eq_loop (a1 a2 u : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    ∀ (d k n : Nat), k + d + 1 = u.toNat →
+      run Words.«name=».code (n + 16 * (d + 1) + 3) 2 ⟨a2 :: a1 :: s, BitVec.ofNat 64 k :: u :: r, m, p, e⟩ =
+        .ok ⟨flag (nameEq m (d + 1) (a1 + BitVec.ofNat 64 k) (a2 + BitVec.ofNat 64 k)) :: s, r, m, p, e⟩ := by
+  intro d
+  induction d with
+  | zero =>
+    intro k n hk
+    have hi : BitVec.ofNat 64 k + 1#64 = u := by bv_omega
+    rw [show n + 16 * (0 + 1) + 3 = n + 6 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+    generalize hN : n + 6 = N
+    simp only [run, Words.«name=».code, List.getElem?_cons_zero, List.getElem?_cons_succ, Prim.over, Prim.i,
+      Prim.plus, Prim.bin, Prim.cfetch, rd_one, lower_on_byte, Words.«<>», Words.«<>».code, thread,
+      Prim.equal, Prim.zequal, Prim.un, List.length_cons, List.length_nil]
+    subst hN
+    by_cases hb : lowerB (m (a1 + BitVec.ofNat 64 k)) = lowerB (m (a2 + BitVec.ofNat 64 k))
+    · simp [hb, hi, nameEq, flag, forth]
+    · have hb' : ¬ ((lowerB (m (a1 + BitVec.ofNat 64 k))).setWidth 64 =
+          (lowerB (m (a2 + BitVec.ofNat 64 k))).setWidth 64) := fun h => hb (setWidth_inj h)
+      simp [hb, hb', nameEq, flag, forth]
+  | succ d ih =>
+    intro k n hk
+    have hi : ¬ (BitVec.ofNat 64 k + 1#64 = u) := by bv_omega
+    have hk1 : BitVec.ofNat 64 k + 1#64 = BitVec.ofNat 64 (k + 1) := by bv_omega
+    rw [show n + 16 * (d + 1 + 1) + 3 = (n + 3 + 16 * (d + 1) + 3) + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
+      1 + 1 + 1 by omega]
+    generalize hN : n + 3 + 16 * (d + 1) + 3 = N
+    simp only [run, Words.«name=».code, List.getElem?_cons_zero, List.getElem?_cons_succ, Prim.over, Prim.i,
+      Prim.plus, Prim.bin, Prim.cfetch, rd_one, lower_on_byte, Words.«<>», Words.«<>».code, thread,
+      Prim.equal, Prim.zequal, Prim.un, List.length_cons, List.length_nil]
+    by_cases hb : lowerB (m (a1 + BitVec.ofNat 64 k)) = lowerB (m (a2 + BitVec.ofNat 64 k))
+    · have hi' : ¬ (BitVec.ofNat 64 (k + 1) = u) := by rw [← hk1]; exact hi
+      simp [hb, hi, hi', flag, hk1]
+      have hih := ih (k + 1) (n + 3) (by omega)
+      rw [hN] at hih
+      simp only [run, Words.«name=».code, List.getElem?_cons_zero, List.getElem?_cons_succ, Prim.over, Prim.i,
+      Prim.plus, Prim.bin, Prim.cfetch, rd_one, lower_on_byte, Words.«<>», Words.«<>».code, thread,
+      Prim.equal, Prim.zequal, Prim.un, List.length_cons, List.length_nil] at hih
+      simp [hb, hi, hi', flag, hk1] at hih
+      have e1 : a1 + BitVec.ofNat 64 (k + 1) = a1 + BitVec.ofNat 64 k + 1 := by
+        rw [← hk1, BitVec.add_assoc]; rfl
+      have e2 : a2 + BitVec.ofNat 64 (k + 1) = a2 + BitVec.ofNat 64 k + 1 := by
+        rw [← hk1, BitVec.add_assoc]; rfl
+      rw [hih, e1, e2]
+      simp only [nameEq, hb, beq_self_eq_true, Bool.true_and]
+    · subst hN
+      have hb' : ¬ ((lowerB (m (a1 + BitVec.ofNat 64 k))).setWidth 64 =
+          (lowerB (m (a2 + BitVec.ofNat 64 k))).setWidth 64) := fun h => hb (setWidth_inj h)
+      simp [hb, hb', nameEq, flag, forth]
+
+/-- NAME= compares u bytes at a1 and a2, ignoring case. -/
+theorem name_eq (a1 a2 u : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    Words.«name=» ⟨u :: a2 :: a1 :: s, r, m, p, e⟩ = .ok ⟨flag (nameEq m u.toNat a1 a2) :: s, r, m, p, e⟩ := by
+  by_cases h0 : u = 0
+  · subst h0
+    apply loopThread_eq _ _ 5 _ (by simp [forth, nameEq, flag]) (by simp [outOfFuel])
+  · have hN : u.toNat ≠ 0 := by intro h; apply h0; bv_omega
+    have start : ∀ x, run Words.«name=».code (x + 1 + 1) 0 ⟨u :: a2 :: a1 :: s, r, m, p, e⟩ =
+        run Words.«name=».code x 2 ⟨a2 :: a1 :: s, BitVec.ofNat 64 0 :: u :: r, m, p, e⟩ := by
+      intro x
+      simp only [run, Words.«name=».code, List.getElem?_cons_zero, List.getElem?_cons_succ, forth]
+      rw [if_neg h0]
+      rfl
+    apply loopThread_eq _ _ ((0 + 16 * ((u.toNat - 1) + 1) + 3) + 1 + 1) _ _ (by simp [outOfFuel])
+    rw [start, name_eq_loop a1 a2 u s r m p e (u.toNat - 1) 0 0 (by omega)]
+    simp [show u.toNat - 1 + 1 = u.toNat by omega]
+
+/-- The header's flags byte, as the two words read it. -/
+theorem hidden_bit (b : BitVec 8) : (b.setWidth 64 &&& 64#64 = 0#64) ↔ (b &&& 64#8 = 0#8) := by
+  revert b; decide
+theorem len_bits (b : BitVec 8) : b.setWidth 64 &&& 31 = (b &&& 0x1f).setWidth 64 := by
+  revert b; decide
+
+/-- MATCH? is `nameMatch`. -/
+theorem match_eq (nt u a : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    Words.«match?» ⟨nt :: u :: a :: s, r, m, p, e⟩ = .ok ⟨flag (nameMatch m a u nt) :: s, r, m, p, e⟩ := by
+  have h9 : nt + 8#64 + 1#64 = nt + 9#64 := by bv_omega
+  simp [forth, rd_one, name_eq, nameMatch, flag, h9]
+  by_cases hh : (m (nt + 8#64)).setWidth 64 &&& 64#64 = 0#64
+  · have hh8 : m (nt + 8#64) &&& 64#8 = 0#8 := (hidden_bit _).mp hh
+    by_cases hl : u = (m (nt + 8#64)).setWidth 64 &&& 31#64
+    · subst hl
+      simp [hh, hh8, BitVec.toNat_and]
+    · have hl' : ¬ ((m (nt + 8#64)).setWidth 64 &&& 31#64 = u) := fun h => hl h.symm
+      simp [hh, hh8, hl, hl']
+  · have hh8 : ¬ (m (nt + 8#64) &&& 64#8 = 0#8) := fun h => hh ((hidden_bit _).mpr h)
+    simp [hh, hh8]
+
+/-- One pass of SEARCH-LIST-REF's loop, at a header that is not 0. -/
+theorem search_step (k : Nat) (nt u a : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat)
+    (h0 : ¬ nt = 0#64) :
+    run Words.«search-list-ref».code (k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1) 0 ⟨nt :: u :: a :: s, r, m, p, e⟩ =
+      if nameMatch m a u nt = true then .ok ⟨nt :: s, r, m, p, e⟩
+      else run Words.«search-list-ref».code k 0 ⟨rd m nt 8 :: u :: a :: s, r, m, p, e⟩ := by
+  simp only [run, Words.«search-list-ref».code, List.getElem?_cons_zero, List.getElem?_cons_succ, Prim.dup,
+    Prim.tor, Words.«2dup», Words.«2dup».code, thread, Prim.over, Prim.rfetch, match_eq, Prim.rfrom, Prim.fetch,
+    Words.«2drop», Words.«2drop».code, Prim.drop, List.length_cons, List.length_nil, h0, if_false]
+  cases hm : nameMatch m a u nt <;> simp [flag, h0]
+
+/-- SEARCH-LIST-REF, over a list `walk` finishes within n headers. -/
+theorem search_walk (u a : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    ∀ (n : Nat) (nt x : Cell), walk m a u n nt = some x →
+      run Words.«search-list-ref».code (10 * n) 0 ⟨nt :: u :: a :: s, r, m, p, e⟩ = .ok ⟨x :: s, r, m, p, e⟩ := by
+  intro n
+  induction n with
+  | zero => intro nt x h; simp [walk] at h
+  | succ n ih =>
+    intro nt x h
+    by_cases h0 : nt = 0#64
+    · subst h0
+      simp [walk] at h
+      subst h
+      rw [show 10 * (n + 1) = 10 * n + 5 + 1 + 1 + 1 + 1 + 1 by omega]
+      simp [forth]
+    · rw [show 10 * (n + 1) = 10 * n + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega, search_step _ _ _ _ _ _ _ _ _ h0]
+      by_cases hm : nameMatch m a u nt = true
+      · simp [walk, h0, hm] at h
+        subst h
+        simp [hm]
+      · simp [walk, h0, hm] at h
+        simp only [hm, Bool.false_eq_true, if_false]
+        exact ih _ _ h
+
+/-- A run of SEARCH-LIST-REF that finishes means `walk` does. -/
+theorem search_ends (u a : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    ∀ (N : Nat) (nt : Cell), ¬ outOfFuel (run Words.«search-list-ref».code N 0 ⟨nt :: u :: a :: s, r, m, p, e⟩) →
+      ∃ n, (walk m a u n nt).isSome := by
+  intro N
+  induction N using Nat.strongRecOn with
+  | _ N ih =>
+  intro nt hN
+  by_cases h0 : nt = 0#64
+  · exact ⟨1, by simp [walk, h0]⟩
+  by_cases hm : nameMatch m a u nt = true
+  · exact ⟨1, by simp [walk, h0, hm]⟩
+  have step : ∀ k, run Words.«search-list-ref».code (k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1) 0
+      ⟨nt :: u :: a :: s, r, m, p, e⟩ = run Words.«search-list-ref».code k 0 ⟨rd m nt 8 :: u :: a :: s, r, m, p, e⟩ := by
+    intro k
+    rw [search_step _ _ _ _ _ _ _ _ _ h0]
+    simp [hm]
+  by_cases hbig : 10 ≤ N
+  · obtain ⟨k, rfl⟩ : ∃ k, N = k + 10 := ⟨N - 10, by omega⟩
+    rw [show k + 10 = k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega, step] at hN
+    obtain ⟨n, hn⟩ := ih k (by omega) _ hN
+    exact ⟨n + 1, by simp [walk, h0, hm, hn]⟩
+  · exfalso
+    have hmono := run_mono Words.«search-list-ref».code N (10 - N) 0 _ hN
+    rw [show N + (10 - N) = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega, step] at hmono
+    rw [← hmono] at hN
+    simp [run, S.fail, outOfFuel] at hN
+
+/-- SEARCH-LIST-REF does exactly what the SEARCH-LIST primitive does: the
+first header named addr u from nt back, or 0; and on a list that never ends,
+neither finishes. -/
+theorem search_list_ref (nt u a : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    Words.«search-list-ref» ⟨nt :: u :: a :: s, r, m, p, e⟩ = searchList ⟨nt :: u :: a :: s, r, m, p, e⟩ := by
+  by_cases h : ∃ n, (walk m a u n nt).isSome
+  · have hc := Classical.choose_spec h
+    obtain ⟨x, hx⟩ := Option.isSome_iff_exists.mp hc
+    rw [show searchList ⟨nt :: u :: a :: s, r, m, p, e⟩ = .ok ⟨x :: s, r, m, p, e⟩ by
+      simp only [searchList, dif_pos h, hx, Option.get_some]]
+    exact loopThread_eq _ _ _ _ (search_walk u a s r m p e _ nt x hx) (by simp [outOfFuel])
+  · rw [show searchList ⟨nt :: u :: a :: s, r, m, p, e⟩ = .error ⟨.fuel, m, e⟩ by
+      simp only [searchList, dif_neg h]]
+    have hno : ¬ ∃ N, ¬ outOfFuel (run Words.«search-list-ref».code N 0 ⟨nt :: u :: a :: s, r, m, p, e⟩) :=
+      fun ⟨N, hN⟩ => h (search_ends u a s r m p e N nt hN)
+    show loopThread _ _ = _
+    unfold loopThread
+    rw [dif_neg hno]
+    rfl
+
+end
 
 end OS4.Refs

@@ -147,7 +147,8 @@ debt marked **must fix before public**.
   These are `fill-ref`, `cmove-ref`, `cmove>-ref`, `pick-ref`, `um/mod-ref` and
   `search-list-ref`. Together they give the brief's "keep the Forth definition
   as the reference" a check. Done: `fill-ref`, `cmove-ref`, `cmove>-ref`,
-  `um/mod-ref` (wherever UM/MOD divides; #127).
+  `um/mod-ref` (wherever UM/MOD divides; #127), `search-list-ref` (#131), so
+  every reference word but `pick-ref`.
   `pick-ref` reads the stack through `sp@`, and the model keeps the stacks as
   lists, not in memory, so it stays checked by `tests/reference` (#126).
 - **TD-13 (stack overflow between checks):** done (#126). A static pass in
@@ -155,6 +156,9 @@ debt marked **must fix before public**.
   the 16 cells of headroom, on either stack (deepest 7; `build/stack-runs.txt`).
 - **Done when:** proofs run in `make test`; the coverage numbers are recorded
   and checked; every reference word is proven.
+- **Status:** done (#126-131). The one reference word left, `pick-ref`, cannot
+  be stated in the model (the stacks are lists, not memory) and stays checked
+  by `tests/reference`.
 
 ### V2: Sandbox isolation — M
 
@@ -309,6 +313,36 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   frames, and the proof covers all of them.
 - **Done when:** the invariant holds for the base's protocols, as one theorem
   about any sequence of frames.
+- **The HAL contract** the network stack rests on, which any driver must meet
+  (`virtio-net.fs` here; an ENA driver for EC2, TD-24, to the same contract):
+  - `net-poll ( addr -- len )` writes only the `len` bytes at `addr`, with
+    `len` at most 2036 (a frame without the virtio header), and its own rings
+    and buffers; it returns 0 when nothing (valid) has arrived; it never waits;
+  - `net-send ( addr len -- )` reads only the `len` bytes at `addr`, writes only
+    its own transmit buffer and ring, and either returns or throws -263 within
+    `device-timeout` (5 s), pausing while it waits;
+  - whatever the card writes into its rings and registers (ids, lengths, ring
+    indexes), both keep to the above: a fault ends in a 0 or a caught throw,
+    never in a write elsewhere or a wait without end.
+- **Status:** started (#132).
+  - **The bare-metal drivers are in the proofs:** the bare-metal dictionary is
+    dumped over the serial console (`tools/dump-virt.fs`) and `forth2lean.py
+    --virt` generates the `hal/virtio*.fs` modules beside the hosted ones,
+    under their own root (`OS4Virt`), which `make proofs` checks. Every value
+    the device supplies is plain memory, unknown to the proofs.
+  - **Generated so far:** the effects and footprints of the virtqueue words.
+    Reading the used ring (`vq-take`, `vq-wait`) writes only the queue's
+    "seen" cell; the register stores (`vm!`) and the descriptor and ring
+    stores say "anywhere", as their addresses are loaded from the queue's
+    record or are a sum of two inputs.
+  - **Tested** (`tests/baremetal/net-faults`): a used-ring entry naming a
+    buffer never posted, and wild ids with absurd lengths, are ignored and
+    copy nothing; a device that never completes a request ends in a caught
+    -263; the system and the network carry on.
+  - **Left:** hand proofs of the contract above for `net-poll` and `net-send`,
+    under an invariant on each queue's record (its ring addresses, as
+    `new-vq` set them); the bound on `vq-wait-len`'s loop. Not planned yet:
+    resetting a device that stops, which is a feature to decide on.
 
 ### V5: Primitives against the assembly — L
 
