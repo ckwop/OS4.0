@@ -170,6 +170,19 @@ structure RxQueue (m : Mem) (D AV : Cell) : Prop where
   gap : 40 ≤ (D - (wordAddr "#rx-bufs" + 16#64)).toNat ∧ (D - (wordAddr "#rx-bufs" + 16#64)).toNat ≤ 55
   after : AV = D + 1024#64
 
+/-- `RxQueue.gap` (and `TxQueue`'s, `BlkQueue`'s) is what `new-vq`'s
+arithmetic gives: after the record's five cells it moves `here` from
+Q + 40 up to a multiple of 16 (`here 15 + -16 and`), anywhere but the last
+bytes of the address space. That the code takes this path, and that nothing
+writes the record later, is not yet proven; `tests/baremetal/net-faults` and
+`blk-faults` check the layout on the running system. -/
+theorem new_vq_gap (Q : Cell) (h : Q ≤ 0xFFFFFFFFFFFFFF00#64) :
+    40 ≤ (((Q + 40#64 + 15#64) &&& 18446744073709551600#64) - Q).toNat ∧
+      (((Q + 40#64 + 15#64) &&& 18446744073709551600#64) - Q).toNat ≤ 55 := by
+  have : 40#64 ≤ ((Q + 40#64 + 15#64) &&& 18446744073709551600#64) - Q ∧
+      ((Q + 40#64 + 15#64) &&& 18446744073709551600#64) - Q ≤ 55#64 := by bv_decide
+  simpa [BitVec.le_def] using this
+
 set_option maxHeartbeats 400000 in
 /-- `rx-post`, giving buffer `id` back to the card (as `net-poll` does after
 every frame, with the id it checked is below 64): it writes only the receive

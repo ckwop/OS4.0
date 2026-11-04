@@ -177,7 +177,7 @@ The verification track ([docs/verification.md](docs/verification.md)) runs besid
 | 2 | V6 | Tasks: the system tasks pause within bounded steps (done); a stopped task leaves nothing broken; mutual exclusion, lock discipline | In progress |
 | 2 | V10 | Proofs for an app: the MUD's tasks yield and its commands stay isolated | Not started |
 | 2 | V3 | Crash-safe records: after a crash, `record@` gives the old record or the new one | Not started |
-| 3 | V4 | The network survives any input: the receive ring stays supplied, parsers read only the frame and write only their buffers, pools stay whole | Not started |
+| 3 | V4 | The network survives any input: the receive ring stays supplied, parsers read only the frame and write only their buffers, pools stay whole (the drivers' copies and ring stores done) | In progress |
 | 4 | V7 | TCP state machine invariants, off-path attacks | Not started |
 | 4 | V5 | Primitives proven against the assembly | Not started |
 | 4 | V8 | Cryptography against its standards | Not started |

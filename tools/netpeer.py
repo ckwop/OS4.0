@@ -336,10 +336,14 @@ class Peer:
             time.sleep(0.1)
         time.sleep(1)
         answered()
-        isns = [e[1] for c in flood for e in c.log[:1] if e[0] == SYN | ACK]
+        answers = [(c.sport, e[1]) for c in flood for e in c.log[:1] if e[0] == SYN | ACK]
+        isns = [isn for _, isn in answers]
         print(f"peer: syn flood: {len(isns)} of 40 answered", flush=True)
-        spread = all(min((a - b) % MOD32, (b - a) % MOD32) > 1 << 16 for a, b in zip(isns, isns[1:]))
-        print(f"peer: initial sequence numbers unrelated: {'yes' if spread else 'no'}", flush=True)
+        close = [(p, q) for p, q in zip(answers, answers[1:])
+                 if min((p[1] - q[1]) % MOD32, (q[1] - p[1]) % MOD32) <= 1 << 16]
+        print(f"peer: initial sequence numbers unrelated: {'no' if close else 'yes'}", flush=True)
+        for (sp, a), (sq, b) in close:      # TD-37: say which, to tell chance from a fault
+            print(f"peer: ports {sp} and {sq}: ISNs {a:#010x} and {b:#010x}", flush=True)
         time.sleep(4)                       # the half-open connections time out
 
         c = TcpClient(self, 53000, dport=5000)

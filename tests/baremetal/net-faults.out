@@ -23,6 +23,13 @@ mac. 82 84 0 18 52 86  ok
 pad 5000 net-send  mac. 82 84 0 18 52 86  ok
 pad -1 net-send  mac. 82 84 0 18 52 86  ok
 pad 0 net-send  pad 60 net-send  .( still sending) still sending ok
+\ The queue records the proofs assume (RxQueue, TxQueue in Drivers.lean):  ok
+\ the size, the descriptor table 40 to 55 bytes after the record, the  ok
+\ available ring right after the table.  ok
+: gap    ( vq -- n )  dup 2 cells + @ swap - ;  ok
+: table  ( vq -- n )  dup 3 cells + @ swap 2 cells + @ - ;  ok
+rx-vq vq-size .  rx-vq gap 40 56 within .  rx-vq table . 64 -1 1024  ok
+tx-vq vq-size .  tx-vq gap 40 56 within .  tx-vq table . 8 -1 128  ok
 \ And the system carries on.  ok
 2 3 + . 5  ok
 net-up? 0<> . -1  ok

@@ -375,9 +375,14 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     available ring, and the disk's register before it waits. These rest on
     an invariant on each queue's record (`RxQueue`, `TxQueue`, `BlkQueue`:
     the size, ring addresses and layout `new-vq` set), assumed, not yet
-    proven.
-  - **Left:** proving those invariants (`new-vq`, and that nothing else
-    writes the records); the bound on `vq-wait-len`'s loop. A request that times out stays
+    proven: `new_vq_gap` shows `new-vq`'s alignment gives the gap they
+    assume, and the fault tests check every queue's layout on the running
+    system.
+  - **Left:** proving those invariants: that `new-vq` takes that path
+    (through `claim`, `,` and `allot`, which needs the kernel cells `dp`
+    and `dict-owner` apart from the dictionary, today opaque), and that
+    nothing else writes the records afterwards; the bound on
+    `vq-wait-len`'s loop. A request that times out stays
     with the device (TD-36): only resetting the device fixes that, which is
     a feature still to decide on.
 

@@ -22,6 +22,13 @@ mac.
 pad 5000 net-send  mac.
 pad -1 net-send  mac.
 pad 0 net-send  pad 60 net-send  .( still sending)
+\ The queue records the proofs assume (RxQueue, TxQueue in Drivers.lean):
+\ the size, the descriptor table 40 to 55 bytes after the record, the
+\ available ring right after the table.
+: gap    ( vq -- n )  dup 2 cells + @ swap - ;
+: table  ( vq -- n )  dup 3 cells + @ swap 2 cells + @ - ;
+rx-vq vq-size .  rx-vq gap 40 56 within .  rx-vq table .
+tx-vq vq-size .  tx-vq gap 40 56 within .  tx-vq table .
 \ And the system carries on.
 2 3 + .
 net-up? 0<> .

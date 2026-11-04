@@ -12,5 +12,12 @@ deaf  9 ' block catch .  drop  hear
 65 9 block c!  update
 deaf  ' save-buffers catch .  hear
 save-buffers  empty-buffers  9 block c@ .
+\ The queue record the proofs assume (BlkQueue in Drivers.lean): 8 entries,
+\ the descriptor table 40 to 55 bytes after the record, the available ring
+\ right after the table, and the queue apart from the disk's own record.
+real-vq vq-size .
+real-vq dup 2 cells + @ swap - 40 56 within .
+real-vq dup 3 cells + @ swap 2 cells + @ - .
+real-vq data-disk @ disk - 56 u< 0= .  data-disk @ disk real-vq - 204 u< 0= .
 \ And the system carries on.
 2 3 + .
