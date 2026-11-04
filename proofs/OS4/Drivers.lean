@@ -1,4 +1,5 @@
 import OS4.Words.HalVirtioNet
+import OS4.Words.HalVirtioBlk
 import OS4.FootPrims
 import OS4.Memory
 
@@ -264,5 +265,217 @@ theorem net_send_offer (k : Nat) (n : Cell) (s r : List Cell) (m : Mem) (p : Cel
   · intro x hx1 hx2 hx3
     have hx2' : 2 * (8#64).toNat + 4 ≤ (x - AV).toNat := by simpa using hx2
     rw [f2 x hx2' hx3, f1 x (by simpa using hx1)]
+
+/-! ## The disk queue -/
+
+/-- A disk's record and its 8-entry queue as `make-queues` and `new-vq` leave
+them: the record (7 cells at dk) names the queue V; the queue's own record,
+descriptor table and available ring follow V, all apart from the disk's
+record. -/
+structure BlkQueue (m : Mem) (dk V D AV : Cell) : Prop where
+  vq : rd m (dk + 24#64) 8 = V
+  size : rd m V 8 = 8#64
+  desc : rd m (V + 16#64) 8 = D
+  avail : rd m (V + 24#64) 8 = AV
+  gap : 40 ≤ (D - V).toNat ∧ (D - V).toNat ≤ 55
+  after : AV = D + 128#64
+  apart : 204 ≤ (dk - V).toNat ∧ 56 ≤ (V - dk).toNat
+
+/-- Eight bytes that a step left alone read the same. -/
+theorem keep8 (m m' : Mem) (a : Cell) (P : Cell → Prop) (hf : ∀ x, P x → m' x = m x)
+    (hp : ∀ c : Cell, c.toNat < 8 → P (a + c)) : rd m' a 8 = rd m a 8 := by
+  apply rd_congr
+  intro i hi
+  exact hf _ (hp _ (by rw [ofNat_small i 8 hi (by omega)]; exact hi))
+
+set_option maxHeartbeats 4000000 in
+/-- The request header and status byte: 17 bytes from dk + 32. -/
+theorem blk_header (buf type sector dk : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    ∃ mh, (∀ k, run Words.«blk-request».code (k + 20) 0 ⟨dk :: sector :: type :: buf :: s, r, m, p, e⟩ =
+        run Words.«blk-request».code k 20 ⟨type :: buf :: s, dk :: r, mh, p, e⟩) ∧
+      ∀ x : Cell, 17 ≤ (x - (dk + 32#64)).toNat → mh x = m x := by
+  refine ⟨wr (wr (wr (wr m (dk + 32#64 + 8#64) 8 sector) (dk + 32#64) 4 type) (dk + 32#64 + 4#64) 4 0#64)
+    (dk + 48#64) 1 255#64, fun k => ?_, ?_⟩
+  · rw [show k + 20 = k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+    simp [forth]
+  · intro x hx
+    rw [wr_apply_other x 1 _ _ _ (fun j hj h => by have := ofNat_small j 1 hj (by omega); bv_omega),
+      wr_apply_other x 4 _ _ _ (fun j hj h => by have := ofNat_small j 4 hj (by omega); bv_omega),
+      wr_apply_other x 4 _ _ _ (fun j hj h => by have := ofNat_small j 4 hj (by omega); bv_omega),
+      wr_apply_other x 8 _ _ _ (fun j hj h => by have := ofNat_small j 8 hj (by omega); bv_omega)]
+
+set_option maxHeartbeats 4000000 in
+/-- Descriptor 0: the request header. -/
+theorem blk_desc0 (type buf dk : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) (V D : Cell)
+    (hV : rd m (dk + 24#64) 8 = V) (hD : rd m (V + 16#64) 8 = D) :
+    ∃ m1, (∀ k, run Words.«blk-request».code (k + 10) 20 ⟨type :: buf :: s, dk :: r, m, p, e⟩ =
+        run Words.«blk-request».code k 30 ⟨type :: buf :: s, dk :: r, m1, p, e⟩) ∧
+      ∀ x : Cell, 16 ≤ (x - (D + 0#64 * 16#64)).toNat → m1 x = m x := by
+  obtain ⟨m1, h1, f1⟩ := desc_store_frame (dk + 32#64) 16#64 1#64 1#64 V 0#64 (type :: buf :: s) (dk :: r)
+    m p e D hD
+  refine ⟨m1, fun k => ?_, f1⟩
+  rw [show k + 10 = k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+  simp only [Words.«blk-request».code]
+  generalize hd : Words.«desc!» = DS at h1 ⊢
+  simp [forth, hV]
+  rw [h1]
+
+set_option maxHeartbeats 4000000 in
+/-- The rest of the chain: for a flush, the status byte as descriptor 1; else
+the caller's buffer as descriptor 1 and the status byte as descriptor 2. -/
+theorem blk_chain (type buf dk : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) (V D : Cell)
+    (hV : rd m (dk + 24#64) 8 = V) (hD : rd m (V + 16#64) 8 = D)
+    (hV1 : ∀ m', (∀ x, 16 ≤ (x - (D + 1#64 * 16#64)).toNat → m' x = m x) →
+      rd m' (dk + 24#64) 8 = V ∧ rd m' (V + 16#64) 8 = D) :
+    ∃ j m2, (∀ k, run Words.«blk-request».code (k + j) 30 ⟨type :: buf :: s, dk :: r, m, p, e⟩ =
+        run Words.«blk-request».code k 72 ⟨s, dk :: r, m2, p, e⟩) ∧
+      ∀ x : Cell, 48 ≤ (x - (D + 16#64)).toNat → m2 x = m x := by
+  by_cases hf : type = 4#64
+  · subst hf
+    obtain ⟨m1, h1, f1⟩ := desc_store_frame (dk + 48#64) 1#64 2#64 0#64 V 1#64 s (dk :: r) m p e D hD
+    refine ⟨16, m1, fun k => ?_, fun x hx => f1 x (by bv_omega)⟩
+    rw [show k + 16 = k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+    simp only [Words.«blk-request».code]
+    generalize hd : Words.«desc!» = DS at h1 ⊢
+    simp [forth, hV]
+    rw [h1]
+  · have flags : ∃ fl : Cell, (type = 0#64 → fl = 3#64) ∧ (type ≠ 0#64 → fl = 1#64) :=
+      if h : type = 0#64 then ⟨3#64, fun _ => rfl, fun h' => absurd h h'⟩
+      else ⟨1#64, fun h' => absurd h' h, fun _ => rfl⟩
+    obtain ⟨fl, hfl0, hfl1⟩ := flags
+    obtain ⟨m1, h1, f1⟩ := desc_store_frame buf 1024#64 fl 2#64 V 1#64 s (dk :: r) m p e D hD
+    obtain ⟨hV', hD'⟩ := hV1 m1 f1
+    obtain ⟨m2, h2, f2⟩ := desc_store_frame (dk + 48#64) 1#64 2#64 0#64 V 2#64 s (dk :: r) m1 p e D hD'
+    by_cases hi : type = 0#64
+    · subst hi
+      refine ⟨29, m2, fun k => ?_, fun x hx => ?_⟩
+      · rw [show k + 29 = k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
+          1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+        rw [hfl0 rfl] at h1
+        simp only [Words.«blk-request».code]
+        generalize hd : Words.«desc!» = DS at h1 h2 ⊢
+        simp [forth, hV]
+        rw [h1]
+        dsimp only
+        simp [forth, hV']
+        rw [h2]
+      · rw [f2 x (by bv_omega), f1 x (by bv_omega)]
+    · refine ⟨28, m2, fun k => ?_, fun x hx => ?_⟩
+      · rw [show k + 28 = k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
+          1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+        rw [hfl1 hi] at h1
+        simp only [Words.«blk-request».code]
+        generalize hd : Words.«desc!» = DS at h1 h2 ⊢
+        simp [forth, hV, hf, hi]
+        rw [h1]
+        dsimp only
+        simp [forth, hV']
+        rw [h2]
+      · rw [f2 x (by bv_omega), f1 x (by bv_omega)]
+
+set_option maxHeartbeats 4000000 in
+/-- Offering the chain: the available ring and the disk's notify register. -/
+theorem blk_offer (dk : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) (V AV : Cell)
+    (hV : rd m (dk + 24#64) 8 = V) (hsz : rd m V 8 = 8#64) (hAV : rd m (V + 24#64) 8 = AV)
+    (hsep1 : 20 ≤ (V + 24#64 - AV).toNat) (hsep2 : 8 ≤ (AV - (V + 24#64)).toNat) :
+    ∃ m', (∀ k, run Words.«blk-request».code (k + 9) 72 ⟨s, dk :: r, m, p, e⟩ =
+        run Words.«blk-request».code k 81 ⟨s, dk :: r, m', p, e⟩) ∧
+      ∀ x : Cell, 20 ≤ (x - AV).toNat → 4 ≤ (x - (rd m dk 8 + 80#64)).toNat → m' x = m x := by
+  have hs1 : 2 * (8#64).toNat + 4 ≤ (V + 24#64 - AV).toNat := by simpa using hsep1
+  obtain ⟨m', h, f⟩ := vq_submit_frame 0#64 V (rd m dk 8) 0#64 s (dk :: r) m p e 8#64 AV hsz
+    (by decide) (by decide) hAV hs1 hsep2
+  refine ⟨m', fun k => ?_, fun x hx hb => f x (by simpa using hx) hb⟩
+  rw [show k + 9 = k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+  simp only [Words.«blk-request».code]
+  generalize hv : Words.«vq-submit» = VS at h ⊢
+  simp [forth, hV]
+  rw [h]
+
+/-! Where the steps' stores fall, against the cells read afterwards. -/
+
+theorem hdr_dk (dk c : Cell) (hc : c.toNat < 8) : 17 ≤ (dk + 24#64 + c - (dk + 32#64)).toNat := by
+  bv_omega
+
+theorem hdr_V (dk V o c : Cell) (hc : c.toNat < 8) (ho : o.toNat ≤ 24) (a2 : 56 ≤ (V - dk).toNat) :
+    17 ≤ (V + o + c - (dk + 32#64)).toNat := by
+  bv_omega
+
+theorem desc_dk (dk V D c i : Cell) (hc : c.toNat < 8) (hi : i.toNat < 8)
+    (g1 : 40 ≤ (D - V).toNat) (g2 : (D - V).toNat ≤ 55)
+    (a1 : 204 ≤ (dk - V).toNat) :
+    16 ≤ (dk + 24#64 + c - (D + i * 16#64)).toNat := by
+  bv_omega
+
+theorem desc_V (V D o c i : Cell) (hc : c.toNat < 8) (ho : o.toNat ≤ 24) (hi : i.toNat < 8)
+    (g1 : 40 ≤ (D - V).toNat) (g2 : (D - V).toNat ≤ 55) :
+    16 ≤ (V + o + c - (D + i * 16#64)).toNat := by
+  bv_omega
+
+theorem chain_dk (dk V D c : Cell) (hc : c.toNat < 8)
+    (g1 : 40 ≤ (D - V).toNat) (g2 : (D - V).toNat ≤ 55)
+    (a1 : 204 ≤ (dk - V).toNat) :
+    48 ≤ (dk + 24#64 + c - (D + 16#64)).toNat := by
+  bv_omega
+
+theorem chain_V (V D o c : Cell) (hc : c.toNat < 8) (ho : o.toNat ≤ 24)
+    (g1 : 40 ≤ (D - V).toNat) (g2 : (D - V).toNat ≤ 55) :
+    48 ≤ (V + o + c - (D + 16#64)).toNat := by
+  bv_omega
+
+theorem table_rest (x D : Cell) (h : 128 ≤ (x - D).toNat) : 48 ≤ (x - (D + 16#64)).toNat := by
+  bv_omega
+
+theorem table_first (x D : Cell) (h : 128 ≤ (x - D).toNat) : 16 ≤ (x - (D + 0#64 * 16#64)).toNat := by
+  bv_omega
+
+set_option maxHeartbeats 4000000 in
+/-- `blk-request`, up to its wait: whatever the request, it writes only the
+disk's request header and status byte (17 bytes at dk + 32), the disk
+queue's descriptor table and available ring, and the disk's notify
+register. -/
+theorem blk_request_offer (buf type sector dk : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat)
+    (V D AV : Cell) (hq : BlkQueue m dk V D AV) :
+    ∃ j m' b, (∀ k, run Words.«blk-request».code (k + j) 0 ⟨dk :: sector :: type :: buf :: s, r, m, p, e⟩ =
+        run Words.«blk-request».code k 81 ⟨s, dk :: r, m', p, e⟩) ∧
+      ∀ x : Cell, 17 ≤ (x - (dk + 32#64)).toNat → 128 ≤ (x - D).toNat → 20 ≤ (x - AV).toNat →
+        4 ≤ (x - (b + 80#64)).toNat → m' x = m x := by
+  obtain ⟨hV, hsz, hD, hAV, ⟨g1, g2⟩, hAD, ⟨a1, a2⟩⟩ := hq
+  have hsep1 : 20 ≤ (V + 24#64 - AV).toNat := by subst hAD; bv_omega
+  have hsep2 : 8 ≤ (AV - (V + 24#64)).toNat := by subst hAD; bv_omega
+  -- the header
+  obtain ⟨mh, hA, fA⟩ := blk_header buf type sector dk s r m p e
+  have kA : ∀ o : Cell, o.toNat ≤ 24 → rd mh (V + o) 8 = rd m (V + o) 8 := fun o ho =>
+    keep8 m mh _ _ fA fun c hc => hdr_V dk V o c hc ho a2
+  have hVh : rd mh (dk + 24#64) 8 = V := by
+    rw [← hV]; exact keep8 m mh _ _ fA fun c hc => hdr_dk dk c hc
+  have hszh : rd mh V 8 = 8#64 := by
+    rw [← hsz, show V = V + 0#64 by simp]; exact kA _ (by decide)
+  have hDh : rd mh (V + 16#64) 8 = D := by rw [← hD]; exact kA _ (by decide)
+  have hAVh : rd mh (V + 24#64) 8 = AV := by rw [← hAV]; exact kA _ (by decide)
+  -- descriptor 0
+  obtain ⟨m1, hB, fB⟩ := blk_desc0 type buf dk s r mh p e V D hVh hDh
+  have kB : ∀ o : Cell, o.toNat ≤ 24 → rd m1 (V + o) 8 = rd mh (V + o) 8 := fun o ho =>
+    keep8 mh m1 _ _ fB fun c hc => desc_V V D o c 0#64 hc ho (by decide) g1 g2
+  have hV1 : rd m1 (dk + 24#64) 8 = V := by
+    rw [← hVh]; exact keep8 mh m1 _ _ fB fun c hc => desc_dk dk V D c 0#64 hc (by decide) g1 g2 a1
+  have hD1 : rd m1 (V + 16#64) 8 = D := by rw [← hDh]; exact kB _ (by decide)
+  -- the rest of the chain
+  obtain ⟨j, m2, hC, fC⟩ := blk_chain type buf dk s r m1 p e V D hV1 hD1 fun m' f =>
+    ⟨by rw [← hV1]; exact keep8 m1 m' _ _ f fun c hc => desc_dk dk V D c 1#64 hc (by decide) g1 g2 a1,
+     by rw [← hD1]; exact keep8 m1 m' _ _ f fun c hc => desc_V V D 16#64 c 1#64 hc (by decide) (by decide) g1 g2⟩
+  have kC : ∀ o : Cell, o.toNat ≤ 24 → rd m2 (V + o) 8 = rd m1 (V + o) 8 := fun o ho =>
+    keep8 m1 m2 _ _ fC fun c hc => chain_V V D o c hc ho g1 g2
+  have hV2 : rd m2 (dk + 24#64) 8 = V := by
+    rw [← hV1]; exact keep8 m1 m2 _ _ fC fun c hc => chain_dk dk V D c hc g1 g2 a1
+  have hsz2 : rd m2 V 8 = 8#64 := by
+    rw [show V = V + 0#64 by simp, kC _ (by decide), kB _ (by decide), ← show V = V + 0#64 by simp]
+    exact hszh
+  have hAV2 : rd m2 (V + 24#64) 8 = AV := by
+    rw [kC _ (by decide), kB _ (by decide)]; exact hAVh
+  -- the offer
+  obtain ⟨m3, hD', fD⟩ := blk_offer dk s r m2 p e V AV hV2 hsz2 hAV2 hsep1 hsep2
+  refine ⟨j + 39, m3, rd m2 dk 8, fun k => ?_, fun x hx1 hx2 hx3 hx4 => ?_⟩
+  · rw [show k + (j + 39) = k + 9 + j + 10 + 20 by omega, hA, hB, hC, hD']
+  · rw [fD x hx3 hx4, fC x (table_rest x D hx2), fB x (table_first x D hx2), fA x hx1]
 
 end OS4.Drivers
