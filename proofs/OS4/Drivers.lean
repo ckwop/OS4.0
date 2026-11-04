@@ -210,4 +210,59 @@ theorem rx_post_frame (id : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Na
     have hx2' : 2 * (64#64).toNat + 4 ≤ (x - AV).toNat := by simpa using hx2
     rw [f2 x hx2' hx3, f1 x (entry_in x D id hid hx1)]
 
+/-- The transmit queue's record as `new-vq` leaves it: 8 entries, laid out
+like the receive queue's. -/
+structure TxQueue (m : Mem) (D AV : Cell) : Prop where
+  size : rd m (wordAddr "rx-vq" + 16#64) 8 = 8#64
+  desc : rd m (wordAddr "rx-vq" + 16#64 + 16#64) 8 = D
+  avail : rd m (wordAddr "rx-vq" + 16#64 + 24#64) 8 = AV
+  gap : 40 ≤ (D - (wordAddr "rx-vq" + 16#64)).toNat ∧ (D - (wordAddr "rx-vq" + 16#64)).toNat ≤ 55
+  after : AV = D + 128#64
+
+/-- A byte of an 8-entry queue's record is not in descriptor 0. -/
+theorem record_apart0 (Q D c : Cell) (hc : c.toNat < 40) (h1 : 40 ≤ (D - Q).toNat) (h2 : 128 ≤ (Q - D).toNat) :
+    16 ≤ (Q + c - (D + 0#64 * 16#64)).toNat := by
+  bv_omega
+
+set_option maxHeartbeats 400000 in
+/-- `net-send` after the copy: it fills in descriptor 0 and offers it, writing
+only the transmit queue's first descriptor, its available ring and the
+card's notify register, before it waits. -/
+theorem net_send_offer (k : Nat) (n : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) (D AV : Cell)
+    (hq : TxQueue m D AV) :
+    ∃ m' b, run Words.«net-send».code (k + 15) 26 ⟨s, n :: r, m, p, e⟩ =
+        run Words.«net-send».code k 41 ⟨s, r, m', p, e⟩ ∧
+      ∀ x : Cell, 16 ≤ (x - D).toNat → 20 ≤ (x - AV).toNat → 4 ≤ (x - (b + 80#64)).toNat →
+        m' x = m x := by
+  obtain ⟨hsz, hD, hAV, ⟨g1, g2⟩, hAD⟩ := hq
+  generalize hQ : wordAddr "rx-vq" + 16#64 = Q at hsz hD hAV g1 g2
+  have hsepD2 : 128 ≤ (Q - D).toNat := by bv_omega
+  have hsep1 : 20 ≤ (Q + 24#64 - AV).toNat := by subst hAD; bv_omega
+  have hsep2 : 8 ≤ (AV - (Q + 24#64)).toNat := by subst hAD; bv_omega
+  obtain ⟨m1, h1, f1⟩ := desc_store_frame (wordAddr "tx-buf" + 8#64) (n + 12#64) 0#64 0#64
+    Q 0#64 s r m p e D hD
+  have e1 : rd m1 Q 8 = 8#64 := by
+    rw [← hsz]; apply rd_congr; intro i hi; apply f1
+    have := ofNat_small i 8 hi (by omega)
+    exact record_apart0 Q D _ (by omega) g1 hsepD2
+  have e2 : rd m1 (Q + 24#64) 8 = AV := by
+    rw [← hAV]; apply rd_congr; intro i hi; apply f1
+    rw [BitVec.add_assoc]
+    exact record_apart0 Q D _ (avail_cell i hi) g1 hsepD2
+  have hs1 : 2 * (8#64).toNat + 4 ≤ (Q + 24#64 - AV).toNat := by simpa using hsep1
+  obtain ⟨m2, h2, f2⟩ := vq_submit_frame 0#64 Q (rd m1 (wordAddr "net-base" + 8#64) 8) 1#64 s r m1 p e
+    8#64 AV e1 (by decide) (by decide) e2 hs1 hsep2
+  refine ⟨m2, rd m1 (wordAddr "net-base" + 8#64) 8, ?_, ?_⟩
+  · rw [show k + 15 = k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+    simp only [Words.«net-send».code]
+    generalize hd : Words.«desc!» = DS at h1 ⊢
+    generalize hv : Words.«vq-submit» = VS at h2 ⊢
+    simp [forth]
+    rw [hQ, h1]
+    dsimp only
+    rw [h2]
+  · intro x hx1 hx2 hx3
+    have hx2' : 2 * (8#64).toNat + 4 ≤ (x - AV).toNat := by simpa using hx2
+    rw [f2 x hx2' hx3, f1 x (by simpa using hx1)]
+
 end OS4.Drivers

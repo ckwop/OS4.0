@@ -367,12 +367,13 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     `vq-submit` writes only the available ring (the entry is masked into
     range, whatever index the ring holds) and the notify register; so
     `rx-post`, which hands each buffer back, writes only the receive queue's
-    descriptor table and available ring and the card's register. These rest
-    on an invariant on the queue's record (`RxQueue`: the size, ring
-    addresses and layout `new-vq` set), which is assumed, not yet proven.
-  - **Left:** proving that invariant (`new-vq`, and that nothing else writes
-    the record); the same for the transmit and disk queues; the bound on
-    `vq-wait-len`'s loop. A request that times out stays
+    descriptor table and available ring and the card's register; and
+    `net-send`, after its copy, writes only the transmit queue's first
+    descriptor, its available ring and the register before it waits. These
+    rest on an invariant on each queue's record (`RxQueue`, `TxQueue`: the
+    size, ring addresses and layout `new-vq` set), assumed, not yet proven.
+  - **Left:** proving those invariants (`new-vq`, and that nothing else
+    writes the records); the disk queues; the bound on `vq-wait-len`'s loop. A request that times out stays
     with the device (TD-36): only resetting the device fixes that, which is
     a feature still to decide on.
 
