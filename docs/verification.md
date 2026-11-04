@@ -77,6 +77,7 @@ Trusted today:
 - **The primitive models:** each is written to mirror its assembly.
 - **The CATCH and THROW specifications.** A failure with code 0, which THROW never makes, is not caught (#121).
 - **The dumper and the generator.** In particular, `Runs`: the literal xt of each word handed to LOCKED runs that word (#121); and `Vectored`: TYPE, KEY, KEY? and BYE have the effect every word their vector may hold has (#128).
+- **`>phys`** (bare metal): a fixed but unknown function of its input (#133).
 - **Lean's kernel.**
 - **One abstraction:** the outside world (other tasks, devices, the clock) is unknown, and theorems hold whatever it does.
 - **For step counts (`Yield.lean`):**
@@ -314,35 +315,59 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
 - **Done when:** the invariant holds for the base's protocols, as one theorem
   about any sequence of frames.
 - **The HAL contract** the network stack rests on, which any driver must meet
-  (`virtio-net.fs` here; an ENA driver for EC2, TD-24, to the same contract):
+  (`virtio-net.fs` here; an ENA driver for EC2 at milestone 12, to the same contract):
   - `net-poll ( addr -- len )` writes only the `len` bytes at `addr`, with
     `len` at most 2036 (a frame without the virtio header), and its own rings
     and buffers; it returns 0 when nothing (valid) has arrived; it never waits;
-  - `net-send ( addr len -- )` reads only the `len` bytes at `addr`, writes only
+  - `net-send ( addr len -- )` sends nothing when `len` is 0 or less, and at
+    most 2036 bytes otherwise; it reads only the bytes at `addr` it sends, writes only
     its own transmit buffer and ring, and either returns or throws -263 within
     `device-timeout` (5 s), pausing while it waits;
   - whatever the card writes into its rings and registers (ids, lengths, ring
     indexes), both keep to the above: a fault ends in a 0 or a caught throw,
     never in a write elsewhere or a wait without end.
+- **The block contract**, likewise (`virtio-blk.fs`; NVMe on EC2 at milestone 12):
+  - `blk-read ( addr u n -- )` fills the 1024 bytes at `addr` with block `u`
+    of disk `n` and writes nothing else but the disk's own request header,
+    status byte and ring; `blk-write ( addr u n -- )` reads only those 1024
+    bytes; `blk-flush ( n -- )` returns only once the disk has made every
+    completed write durable (or the disk has no write cache);
+  - a disk number not below `#disks`, or a status other than success, throws
+    (-33 for a read, -34 for a write or flush); a disk that does not answer
+    throws -263 within `device-timeout`, pausing while it waits;
+  - `blk-count` reads the size from the device: callers take it as a claim,
+    and the block layer checks block numbers against it.
 - **Status:** started (#132).
   - **The bare-metal drivers are in the proofs:** the bare-metal dictionary is
     dumped over the serial console (`tools/dump-virt.fs`) and `forth2lean.py
     --virt` generates the `hal/virtio*.fs` modules beside the hosted ones,
     under their own root (`OS4Virt`), which `make proofs` checks. Every value
     the device supplies is plain memory, unknown to the proofs.
-  - **Generated so far:** the effects and footprints of the virtqueue words.
+  - **Generated so far:** the effects and footprints of every driver word,
+    once `>phys` was modelled (#133).
     Reading the used ring (`vq-take`, `vq-wait`) writes only the queue's
     "seen" cell; the register stores (`vm!`) and the descriptor and ring
     stores say "anywhere", as their addresses are loaded from the queue's
     record or are a sum of two inputs.
+  - **Proven** (`proofs/OS4/Drivers.lean`, #134): whatever id and length the
+    card reports, `net-poll` either returns 0 and changes nothing (an id it
+    never posted) or copies at most 2036 bytes, into the caller's buffer and
+    nowhere else. Whatever length its caller asks for, `net-send` copies at
+    most 2036 bytes, into its own transmit buffer and nowhere else. Writing
+    this contract found two defects (21, 22 in `docs/defects.md`), and the
+    test for one of them a third (23).
   - **Tested** (`tests/baremetal/net-faults`): a used-ring entry naming a
     buffer never posted, and wild ids with absurd lengths, are ignored and
     copy nothing; a device that never completes a request ends in a caught
-    -263; the system and the network carry on.
-  - **Left:** hand proofs of the contract above for `net-poll` and `net-send`,
-    under an invariant on each queue's record (its ring addresses, as
-    `new-vq` set them); the bound on `vq-wait-len`'s loop. Not planned yet:
-    resetting a device that stops, which is a feature to decide on.
+    -263; a send longer than the buffer, or of negative length, leaves the
+    memory after the buffer alone; an empty frame is not sent, as QEMU's card
+    stops for good when given one (defect 23); the system and the network
+    carry on.
+  - **Left:** the ring and register stores (`desc!`, `vq-submit`) under an
+    invariant on each queue's record (its ring addresses, as `new-vq` set
+    them); the bound on `vq-wait-len`'s loop. A request that times out stays
+    with the device (TD-36): only resetting the device fixes that, which is
+    a feature still to decide on.
 
 ### V5: Primitives against the assembly — L
 

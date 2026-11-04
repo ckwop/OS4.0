@@ -50,7 +50,7 @@ PRIMS = {
     # The outside world.
     "pause": "Prim.pause", "counter": "Prim.ask", "key": "Prim.ask", "key?": "Prim.ask",
     "emit": "Prim.emit", "syscall": "Prim.syscall", "bye": "Prim.bye",
-    "dmb": "Prim.barrier", "dsb": "Prim.barrier", "execute": "executeM",
+    "dmb": "Prim.barrier", "dsb": "Prim.barrier", ">phys": "Prim.phys", "execute": "executeM",
     "sha256-block": "Prim.sha256block", "sha256-out": "Prim.sha256out",
     # The compiler and the interpreter.
     ",": "Prim.comma", "search-list": "Prim.searchList", "parse-name": "Prim.parseName",
@@ -80,7 +80,7 @@ EFFECTS = {
     "cmove": (3, 0, 0, 0), "cmoveUp": (3, 0, 0, 0), "fill": (3, 0, 0, 0), "upfetch": (0, 1, 0, 0),
     "pdo": (2, 0, 0, 2), "i": (0, 1, 1, 1), "j": (0, 1, 3, 3), "unloop": (0, 0, 2, 0),
     "pause": (0, 0, 0, 0), "ask": (0, 1, 0, 0), "emit": (1, 0, 0, 0), "syscall": (5, 1, 0, 0),
-    "bye": (0, 0, 0, 0), "barrier": (0, 0, 0, 0), "sha256block": (4, 0, 0, 0), "sha256out": (2, 0, 0, 0),
+    "bye": (0, 0, 0, 0), "barrier": (0, 0, 0, 0), "phys": (1, 1, 0, 0), "sha256block": (4, 0, 0, 0), "sha256out": (2, 0, 0, 0),
     "comma": (1, 0, 0, 0), "searchList": (3, 1, 0, 0), "parseName": (0, 2, 0, 0), "parse": (1, 2, 0, 0), "paren": (0, 0, 0, 0),
     "header": (2, 0, 0, 0),
 }

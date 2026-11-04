@@ -47,6 +47,9 @@ one now does.
 | 18 | 2026-10-31 | `record!` overwrote the older copy even when the newer one might not be durable: after a failed sync it could be only in a buffer | A failed disk write, a second `record!`, then a crash during its sync, lost the last durable record | Proof planning (reading `records.fs` against V3's durability property); proven in a model (`Records.lean`, `old_loses`) | No; repro in `tests/record-errors` (A's copy overwritten in the cache) | #118 |
 | 19 | 2026-11-02 | `(segment-out)` copied `o-len` bytes into `tx-frame` with no bound: the frame held the data only if every caller kept the length within `our-mss` | A wrong length (a caller's slip, or a connection record gone bad) would write past `tx-frame` into whatever follows it | Proof planning (V2: the footprint of `telnet-type`'s send path said "anywhere") | No; repro in `tests/tcp` (a fake connection, -24) | #119, #122 |
 | 20 | 2026-11-03 | After a failed wait, `(send)` reset the connection itself, which unlinks it from the shared connection lists | A sandboxed session whose send timed out wrote memory outside its task (other connections' links, the free list), so bounded writes failed on that path | Proof (V2, runs that fail: `Telnet.lean`) | No | #125 |
+| 21 | 2026-11-04 | A virtio request that timed out stayed with the device; when it completed late, its used-ring entry was taken by the next request on that queue, and its buffer was still written | After one disk timeout, a later read could return before its data arrived, with the wrong request's status; the late write could land in a reused block buffer | Proof planning (writing the HAL contract, V4) | No: QEMU completes requests at once | Open: TD-36 (needs a device reset, the user's call) |
+| 22 | 2026-11-04 | `net-send` (bare metal) copied `len` bytes into its 2 KiB transmit buffer with no bound, relying on every caller to keep frames short | A length over 2036, or a negative one, would write past `tx-buf` into the driver's other data and beyond | Proof planning (writing the HAL contract, V4) | No: the network stack never sends a frame that long | Length held to the buffer; proven (`Drivers.lean`) |
+| 23 | 2026-11-04 | `net-send` (bare metal) offered the card an empty frame, header only, when asked to send 0 bytes | QEMU's virtio-net never completes such a request and marks the device broken: the send throws -263 and the network is gone until reboot | Test (`net-faults`, written for defect 22's fix: its negative length became 0) | Only once that test was written | Empty frames are not sent; the test sends again after one |
 
 ## Also shown
 
@@ -57,8 +60,8 @@ one now does.
 
 ## What the log says so far
 
-Up to 2026-11-03: 20 defects. Tests found 1, the app 1, hardening 4, and
-the proofs 14 (7 directly, 5 by the audits they pointed to, 2 while
+Up to 2026-11-04: 23 defects. Tests found 2, the app 1, hardening 4, and
+the proofs 16 (7 directly, 5 by the audits they pointed to, 4 while
 planning a proof). (A double free in the fix for 20 was caught by
 `tcp-attack` before it was committed, so it is not logged: the tests and
 the proofs find different things.) No proof-found

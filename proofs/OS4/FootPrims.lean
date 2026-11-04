@@ -219,6 +219,7 @@ theorem syscall_quiet_foot : Foot syscall 5 1 0 0 [] [.any] [] := by
     exact ⟨fun a hq _ => hq _ _, by simp [syscall, FOut, agree_cons, agree_nil, holds_any]; omega⟩
 theorem bye_foot : Foot bye 0 0 0 0 [] [] [] := by prim_foot
 theorem barrier_foot : Foot barrier 0 0 0 0 [] [] [] := by prim_foot
+theorem phys_foot : Foot phys 1 1 0 0 [] [.any] [] := by prim_foot
 theorem sha256block_foot : Foot sha256block 4 0 0 0 [Reg.all] [] [] := by
   intro xs zs s r m u e hx hz
   match xs, zs, hx, hz with

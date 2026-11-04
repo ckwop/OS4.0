@@ -41,6 +41,8 @@ create mac 6 allot
 
 : net-send  ( addr len -- )
   net-up? 0= if 2drop exit then
+  0 max  /net-buf /net-header - min           \ held to the buffer, whatever the caller asks
+  dup 0= if 2drop exit then                   \ an empty frame would break the device
   tx-buf /net-header 0 fill
   >r  tx-buf /net-header + r@ cmove
   tx-buf r> /net-header + 0 0 tx-vq 0 desc!

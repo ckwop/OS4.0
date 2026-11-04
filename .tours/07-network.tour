@@ -17,7 +17,7 @@
       "file": "hal/virtio-net.fs",
       "pattern": ": net-poll  \\(",
       "title": "The network HAL",
-      "description": "64 receive buffers on queue 0, posted at start-up by `net-open`; `net-poll` copies a used one out and posts it again. `net-send` above sends one frame on queue 1 and waits. Hosted: `hal/linux-net.fs` carries frames as UDP datagrams."
+      "description": "64 receive buffers on queue 0, posted at start-up by `net-open`; `net-poll` copies a used one out and posts it again. `net-send` above holds the length to its buffer, sends one frame on queue 1 and waits. Both are proven to write only their own buffers and the caller's, whatever the device or the caller hands them (`proofs/OS4/Drivers.lean`). Hosted: `hal/linux-net.fs` carries frames as UDP datagrams."
     },
     {
       "file": "forth/net/net.fs",

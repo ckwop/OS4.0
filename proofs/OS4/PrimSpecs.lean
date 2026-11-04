@@ -89,6 +89,7 @@ theorem emit_spec : Spec emit 1 0 0 0 := by prim_spec
 theorem syscall_spec : Spec syscall 5 1 0 0 := by prim_spec
 theorem bye_spec : Spec bye 0 0 0 0 := by prim_spec
 theorem barrier_spec : Spec barrier 0 0 0 0 := by prim_spec
+theorem phys_spec : Spec phys 1 1 0 0 := by prim_spec
 theorem sha256block_spec : Spec sha256block 4 0 0 0 := by prim_spec
 theorem sha256out_spec : Spec sha256out 2 0 0 0 := by prim_spec
 theorem comma_spec : Spec comma 1 0 0 0 := by

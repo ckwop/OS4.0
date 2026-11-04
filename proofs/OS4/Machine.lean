@@ -50,6 +50,8 @@ Abstractions, which the proofs inherit:
 * The xt of each word the boot files hand to LOCKED as a literal runs that
   word (`Runs`, in `OS4.Runners`). A theorem that relies on it says so: it
   takes the fact as an instance argument.
+* `>phys` (bare metal) gives a fixed but unknown function of its input
+  (`physOf`): the translation the MMU does, which the model leaves out.
 * TYPE, KEY, KEY? and BYE, which run what their task's vector holds, have the
   effect every word a vector may hold has (`Vectored`, in `OS4.Runners`),
   taken as an instance argument in the same way.
@@ -383,6 +385,14 @@ opaque worldVal : Nat → S → Cell
 @[forth] def bye : Sem := fun s => s.fail .bye
 /-- DMB, DSB: order memory accesses; nothing to the single task modelled. -/
 @[forth] def barrier : Sem := fun s => .ok s
+
+/-- The physical address of a kernel address (bare metal: what a device
+must be given for DMA). A fixed function, unknown here. -/
+opaque physOf : Cell → Cell
+/-- `>phys` ( addr -- paddr ). -/
+@[forth] def phys : Sem
+  | ⟨a :: s, r, m, u, e⟩ => .ok ⟨physOf a :: s, r, m, u, e⟩
+  | s => s.fail .underflow
 
 /-- SHA-256's compression and output: pure functions of memory, unknown here. -/
 opaque sha256Block : Mem → Cell → Cell → Cell → Cell → Mem

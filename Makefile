@@ -183,7 +183,7 @@ proofs-extract: $(GENERATED) $(GENERATED_VIRT)
 # LEAN_NUM_THREADS sizes): the biggest need over a gigabyte each, and four at
 # once overloaded the VM (DECISIONS.md #130).
 proofs: proofs-extract
-	cd proofs && LEAN_NUM_THREADS=2 lake build OS4 OS4Virt
+	cd proofs && LEAN_NUM_THREADS=2 lake build OS4 OS4Virt OS4.Drivers
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)

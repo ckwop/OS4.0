@@ -14,6 +14,14 @@ rx-vq vq-used? .
 8 new-vq constant dead-vq
 : wait-dead  ( -- )  dead-vq vq-wait ;
 ' wait-dead catch .
+\ A caller asking to send more than the buffer holds, or a negative length:
+\ the copy stops at the buffer's end, so the MAC address after it is intact.
+\ An empty frame is not sent: QEMU's card stops working if given one.
+: mac.  ( -- )  6 0 do  net-mac i + c@ .  loop ;
+mac.
+pad 5000 net-send  mac.
+pad -1 net-send  mac.
+pad 0 net-send  pad 60 net-send  .( still sending)
 \ And the system carries on.
 2 3 + .
 net-up? 0<> .

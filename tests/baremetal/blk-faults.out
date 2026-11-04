@@ -1,0 +1,17 @@
+OS 4.0
+\ The disk misbehaving (V4): a disk that stops answering, then answers again.  ok
+\ Its requests go to a queue the device was never given, so none completes.  ok
+7 block drop  ok
+data-disk @ disk d.vq @ constant real-vq  ok
+8 new-vq constant dead-vq  ok
+: deaf  ( -- )  dead-vq data-disk @ disk d.vq ! ;  ok
+: hear  ( -- )  real-vq data-disk @ disk d.vq ! ;  ok
+\ A read the disk never answers: -263, and no buffer claims the block.  ok
+deaf  9 ' block catch .  drop  hear -263  ok
+9 block c@ . 0  ok
+\ A write the disk never answers: -263, and the change waits to be written.  ok
+65 9 block c!  update  ok
+deaf  ' save-buffers catch .  hear -263  ok
+save-buffers  empty-buffers  9 block c@ . 65  ok
+\ And the system carries on.  ok
+2 3 + . 5  ok
