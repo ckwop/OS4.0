@@ -363,9 +363,16 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     memory after the buffer alone; an empty frame is not sent, as QEMU's card
     stops for good when given one (defect 23); the system and the network
     carry on.
-  - **Left:** the ring and register stores (`desc!`, `vq-submit`) under an
-    invariant on each queue's record (its ring addresses, as `new-vq` set
-    them); the bound on `vq-wait-len`'s loop. A request that times out stays
+  - **Proven, the rings:** `desc!` writes only its 16-byte descriptor;
+    `vq-submit` writes only the available ring (the entry is masked into
+    range, whatever index the ring holds) and the notify register; so
+    `rx-post`, which hands each buffer back, writes only the receive queue's
+    descriptor table and available ring and the card's register. These rest
+    on an invariant on the queue's record (`RxQueue`: the size, ring
+    addresses and layout `new-vq` set), which is assumed, not yet proven.
+  - **Left:** proving that invariant (`new-vq`, and that nothing else writes
+    the record); the same for the transmit and disk queues; the bound on
+    `vq-wait-len`'s loop. A request that times out stays
     with the device (TD-36): only resetting the device fixes that, which is
     a feature still to decide on.
 
