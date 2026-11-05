@@ -299,7 +299,11 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   extraction-only build with its registers as plain memory.
 - **Reads:** for any frame of length n, a parser reads only bytes inside the
   frame and its own state. Stated as noninterference: two memories that agree
-  on those bytes give the same result.
+  on those bytes give the same result. Proven so far, the front
+  (`proofs/OS4/Parsers.lean`, `frame_in_dispatch`): `frame-in` drops a frame
+  under 14 bytes without reading it; otherwise it reads only bytes 12 and 13
+  (the type), and hands ARP or IPv4 the rest of the frame with its length
+  less 14, or drops it.
 - **Writes:** a parser writes only its designated buffers and connection state
   (V9's footprints).
 - **Overflow:** no length or offset computation wraps into a valid-looking
