@@ -1,4 +1,5 @@
 import OS4.Words.NetIp
+import OS4.Words.NetUdp
 import OS4.Specs.NetEth
 
 /-!
@@ -128,5 +129,29 @@ theorem ip_check_bounds (len : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e :
         · simp only [Except.ok.injEq] at h; subst h; simp
       · simp only [Except.ok.injEq] at h; subst h; simp
   · simp only [Except.ok.injEq] at h; subst h; simp
+
+set_option maxHeartbeats 4000000 in
+/-- UDP likewise: `udp-in` goes past its length check only when the
+datagram's length field (ul) is at least its 8-byte header and within the
+IP payload: 8 ≤ ul ≤ len. From there on it works with ul, not the IP
+length, so the data it hands a port's handler (`ul - 8` bytes after the
+header) lies inside the payload. -/
+theorem udp_in_head (k : Nat) (len seg : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    run Words.«udp-in».code (k + 19) 0 ⟨len :: seg :: s, r, m, p, e⟩ =
+      if BitVec.slt (n16 (wr m (wordAddr "rx-udp" + 8#64) 8 seg) (seg + 4#64)) 8#64 = false ∧
+         BitVec.slt len (n16 (wr m (wordAddr "rx-udp" + 8#64) 8 seg) (seg + 4#64)) = false
+      then run Words.«udp-in».code (k + 2) 20
+        ⟨n16 (wr m (wordAddr "rx-udp" + 8#64) 8 seg) (seg + 4#64) :: seg :: s, r,
+          wr m (wordAddr "rx-udp" + 8#64) 8 seg, p, e⟩
+      else .ok ⟨s, r, wr m (wordAddr "rx-udp" + 8#64) 8 seg, p, e⟩ := by
+  rw [show k + 19 = k + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+  simp only [Words.«udp-in».code, n16]
+  generalize Words.«sum16» = S16
+  generalize Words.«fold» = FD
+  generalize ht : rd (wr m (wordAddr "rx-udp" + 8#64) 8 seg) (seg + 4#64) 1 <<< 8 |||
+    rd (wr m (wordAddr "rx-udp" + 8#64) 8 seg) (seg + 4#64 + 1#64) 1 = t
+  by_cases h1 : BitVec.slt t 8#64 = false <;>
+  by_cases h2 : BitVec.slt len t = false <;>
+  simp_all [forth]
 
 end OS4.Parsers

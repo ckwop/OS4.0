@@ -307,7 +307,9 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   `ip_check_bounds`): `ip-check` accepts a packet only with
   20 ≤ ihl ≤ total ≤ len, so the payload `ip-in` hands on (`total - ihl`
   bytes at `ihl`) lies inside the frame, whatever the header claims; the
-  checksum's reads are taken from its generated stack effect. The `hostile`
+  checksum's reads are taken from its generated stack effect. UDP likewise
+  (`udp_in_head`): `udp-in` goes on only with 8 ≤ ul ≤ len for the
+  datagram's own length field, and works with ul from then on. The `hostile`
   peer already sends each of those edges (ihl 0 to 4 and 15, totals 0, 10,
   19, 200 and 65535).
 - **Writes:** a parser writes only its designated buffers and connection state
