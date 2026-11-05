@@ -1,5 +1,6 @@
 import OS4.Words.NetIp
 import OS4.Words.NetUdp
+import OS4.Words.NetTcp
 import OS4.Specs.NetEth
 
 /-!
@@ -152,6 +153,37 @@ theorem udp_in_head (k : Nat) (len seg : Cell) (s r : List Cell) (m : Mem) (p : 
     rd (wr m (wordAddr "rx-udp" + 8#64) 8 seg) (seg + 4#64 + 1#64) 1 = t
   by_cases h1 : BitVec.slt t 8#64 = false <;>
   by_cases h2 : BitVec.slt len t = false <;>
+  simp_all [forth]
+
+set_option maxHeartbeats 4000000 in
+/-- TCP likewise, after the checksum: the header length (from the data
+offset, at most 60) must be at least 20 and within the segment; then the
+data length `i-len` is `len - hlen` and the data `i-data` starts at
+`seg + hlen`, inside the segment. -/
+theorem tcp_in_head (k : Nat) (len seg : Cell) (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
+    let F := n16 m (seg + 12#64)
+    let H := (F >>> 12) * 4#64
+    let m1 := wr m (wordAddr "i-flags" + 8#64) 8 (F &&& 63#64)
+    run Words.«tcp-in».code (k + 30) 21 ⟨len :: seg :: s, r, m, p, e⟩ =
+      if BitVec.slt len H = false ∧ BitVec.slt H 20#64 = false
+      then run Words.«tcp-in».code k 54 ⟨seg :: s, H :: r,
+        wr (wr m1 (wordAddr "i-len" + 8#64) 8 (len - H)) (wordAddr "i-data" + 8#64) 8 (seg + H), p, e⟩
+      else .ok ⟨s, r, m1, p, e⟩ := by
+  intro F H m1
+  rw [show k + 30 = k + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +
+    1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 by omega]
+  simp only [Words.«tcp-in».code, F, H, m1, n16]
+  generalize Words.«sum16» = S16
+  generalize Words.«fold» = FD
+  generalize Words.«segment-in» = SI
+  generalize Words.«find-conn» = FC
+  generalize Words.«options-mss» = OM
+  generalize Words.«room?» = RM
+  generalize Words.«open-conn» = OC
+  generalize Words.«refuse» = RF
+  generalize hf : rd m (seg + 12#64) 1 <<< 8 ||| rd m (seg + 12#64 + 1#64) 1 = f
+  by_cases h1 : BitVec.slt len ((f >>> 12) * 4#64) = false <;>
+  by_cases h2 : BitVec.slt ((f >>> 12) * 4#64) 20#64 = false <;>
   simp_all [forth]
 
 end OS4.Parsers
