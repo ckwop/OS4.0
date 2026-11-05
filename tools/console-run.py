@@ -13,8 +13,9 @@ Writes the console output from each banner onwards to stdout with CRs removed,
 so transcripts are the same for every platform.
 
 If OS4_PEER is set, it is a command (a network peer, tools/netpeer.py) started
-once the first banner appears and stopped when the OS has shut down; what it
-printed is added to the end of the transcript.
+once the first banner appears, before the input is typed (once it has bound
+its port), and stopped when the OS has shut down; what it printed is added to
+the end of the transcript.
 
 Usage: console-run.py command [args ...]
 """
@@ -22,9 +23,11 @@ Usage: console-run.py command [args ...]
 import os
 import shlex
 import signal
+import socket
 import subprocess
 import sys
 import threading
+import time
 
 BANNER = b"OS 4.0\n"
 CTRL_D = b"\x04"
@@ -92,9 +95,27 @@ def main():
     def start_peer():
         nonlocal peer
         if peer is None and os.environ.get("OS4_PEER"):
-            peer = subprocess.Popen(shlex.split(os.environ["OS4_PEER"]),
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            command = shlex.split(os.environ["OS4_PEER"])
+            peer = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             peers.append(peer)
+            wait_until_bound(peer, command)
+
+    def wait_until_bound(peer, command):
+        """Hold the input until the peer has bound its port (--port N), so a
+        peer slow to start under load misses nothing the OS sends."""
+        if "--port" not in command:
+            return
+        port = int(command[command.index("--port") + 1])
+        deadline = time.time() + 30
+        while time.time() < deadline and peer.poll() is None:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                probe.bind(("127.0.0.1", port))
+            except OSError:
+                return                  # taken: the peer has it
+            finally:
+                probe.close()
+            time.sleep(0.05)
 
     status = 0
     for part in parts:

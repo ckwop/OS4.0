@@ -196,10 +196,16 @@ variable o-conn  variable o-seq  variable o-flags  variable o-pos  variable o-le
 \ then a bare ACK if one is owed and nothing else carried it. If data waits on
 \ a closed window, the retransmission timer is armed to probe it.
 variable went                  \ something went out (only used under tx-lock)
+\ At most 16 segments a call, written out rather than looped, so the steps
+\ between pauses stay bounded (proofs/yields.txt). The rest go when the next
+\ ACK or the retransmission timer calls TCP-OUTPUT again.
+: send-1   ( conn -- conn )  dup sendable ?dup if  send-data true went !  then ;
+: send-4   ( conn -- conn )  send-1 send-1 send-1 send-1 ;
+: send-16  ( conn -- conn )  send-4 send-4 send-4 send-4 ;
 : (tcp-output)  ( conn -- )
   0 went !
   dup c.state @ dup established = swap close-wait = or if
-    begin dup sendable ?dup while send-data true went ! repeat
+    send-16
     dup fin-queued flag?  over fin-sent flag? 0= and  over unsent 0= and if
       dup dup snd-nxt f-fin f-ack or control-out  true went !
       dup fin-sent flag+
@@ -281,13 +287,18 @@ create rst-conn  /conn-header allot
 : new-iss  ( -- seq )  \ RFC 6528: a clock, plus a keyed hash of the addresses and ports
   ip-source i-sport @ i-dport @ isn-key tuple-hash  counter 4 rshift +  $ffffffff and ;
 
-: count-list  ( conn -- n )  0 swap begin ?dup while swap 1+ swap c.link @ repeat ;
+\ These walk a list of up to max-conns connections, pausing after each, so a
+\ SYN's time between pauses does not grow with the number of connections
+\ (proofs/yields.txt). Callers hold CONNS-LOCK, so no other task frees one
+\ under them.
+: count-list  ( conn -- n )  0 swap begin ?dup while swap 1+ swap c.link @ pause repeat ;
 : half-open  ( -- n )  \ connections still in the handshake
   0 conns @ begin ?dup while
-    dup c.state @ syn-received = if swap 1+ swap then  c.link @
+    dup c.state @ syn-received = if swap 1+ swap then  c.link @  pause
   repeat ;
-: room?  ( -- flag )  \ a new connection is within the caps
+: (room?)  ( -- flag )
   conns @ count-list max-conns @ <  half-open max-half-open @ < and ;
+: room?  ( -- flag )  ['] (room?) conns-lock locked ;  \ a new connection is within the caps
 
 : open-conn  ( -- )  \ a SYN to a listening port: answer it
   new-conn >r
@@ -545,7 +556,8 @@ create crlf  13 c, 10 c,
   dup fin-queued flag+  tcp-output ;
 : drop-connection  ( conn -- )  dup abort-connection close-connection ;  \ reset it, and let it go
 
-: .tcp  ( -- )  \ connections live and pooled
+: (.tcp)  ( -- )
   ." connections " conns @ count-list (.) type
   ." , pooled " free-conns @ count-list (.) type ;
+: .tcp  ( -- )  ['] (.tcp) conns-lock locked ;  \ connections live and pooled
 

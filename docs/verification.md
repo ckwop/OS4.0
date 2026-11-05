@@ -385,6 +385,49 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     `vq-wait-len`'s loop. A request that times out stays
     with the device (TD-36): only resetting the device fixes that, which is
     a feature still to decide on.
+  - **Steps** (#136): `room?` pauses after each connection it counts, under
+    `conns-lock`, and `(tcp-output)` sends at most 16 segments a call, so
+    neither is in `proofs/yields.txt` any more and both are counted by
+    `Yield.lean`. `vq-wait-len` pauses every round; that it ends rests on the
+    clock passing its deadline (trusted: `counter` advances).
+- **The one theorem, stated** (not yet proven; each hypothesis below names
+  what is left). For the bare-metal build, take any state σ with `Inv σ` and
+  any behaviour of the card (any ids, lengths and ring indexes in its used
+  ring). One round of `net-loop` (`tcp-timers`, `net-poll`, `frame-in`
+  under CATCH, then a pause) ends in a state σ' with `Inv σ'`; it writes only
+  `W`; and it never runs more than the watchdog's allowance between pauses.
+  By induction this holds after any sequence of frames.
+  - `Inv`: the queue records (`RxQueue`, `TxQueue`); the pools (the live and
+    free connection lists acyclic, disjoint, together every connection ever
+    reserved, at most `max-conns` live and `max-half-open` half open; each
+    connection in its hash bucket exactly while it is live); the ARP cache's
+    index below 8; the listeners' queues hold only live connections.
+  - `W`: `rx-frame`, `tx-frame`, `arp-frame`, the ARP cache, the receive and
+    transmit rings and buffers, the connection records and their rings, the
+    hash buckets, the listeners' queues, the network task's own variables
+    and counters, and the wake flags of tasks it wakes.
+  - Hypotheses, each a named gap:
+    - **H-queue:** `new-vq` builds the records `RxQueue` and `TxQueue`
+      describe, and nothing else writes them (Drivers.lean assumes it; the
+      fault tests check it on the running system).
+    - **H-parse:** `arp-in`, `ip-in`'s handlers (`icmp-in`, `udp-in`,
+      `tcp-in`) and the telnet layer write only `W` and read only the frame
+      and their own state. Today the generated footprints say "anywhere" for
+      `arp-in`, `tcp-in`, `segment-in` and the telnet words.
+    - **H-pool:** `Inv`'s pool part is kept by `tcp-in`, the timers, and the
+      application side (`accept-connection`, `close-connection`,
+      `release-conn`).
+    - **H-steps:** the loops still in `proofs/yields.txt` end within the
+      bounds their lines give (a frame, a table, a hash bucket).
+    - **H-device:** after a request times out the card no longer writes its
+      buffers (TD-36: only a device reset makes this true).
+    - **H-model:** the primitives and the specifications of CATCH and THROW
+      (TD-31), `>phys`, and a clock that advances.
+  - Proven towards it: the driver's part (`Drivers.lean`: whatever the card
+    reports, `net-poll` copies at most 2036 bytes into the caller's buffer and
+    hands each buffer back with stores only into its own rings); the steps
+    for every word not listed in `yields.txt` (`Yield.lean`); the writes of
+    every word whose footprint is generated (`Foots.lean`).
 
 ### V5: Primitives against the assembly — L
 

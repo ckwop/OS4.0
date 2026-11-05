@@ -181,9 +181,12 @@ proofs-extract: $(GENERATED) $(GENERATED_VIRT)
 
 # Two modules at a time (Lake runs them in Lean's task pool, which
 # LEAN_NUM_THREADS sizes): the biggest need over a gigabyte each, and four at
-# once overloaded the VM (DECISIONS.md #130).
+# once overloaded the VM (DECISIONS.md #130). The TCP footprints, the biggest,
+# go first and alone. A time limit, so a proof that never finishes fails the
+# build instead of holding the VM (#137).
 proofs: proofs-extract
-	cd proofs && LEAN_NUM_THREADS=2 lake build OS4 OS4Virt OS4.Drivers
+	cd proofs && LEAN_NUM_THREADS=1 timeout 5400 lake build OS4.Foots.NetTcp
+	cd proofs && LEAN_NUM_THREADS=2 timeout 5400 lake build OS4 OS4Virt OS4.Drivers
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)

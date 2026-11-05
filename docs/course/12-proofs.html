@@ -58,7 +58,8 @@
   <pre class="code below" data-src="Makefile" data-step="2">proofs-extract: $(GENERATED) $(GENERATED_VIRT)
 
 proofs: proofs-extract
-	cd proofs &amp;&amp; LEAN_NUM_THREADS=2 lake build OS4 OS4Virt OS4.Drivers</pre>
+	cd proofs &amp;&amp; LEAN_NUM_THREADS=1 timeout 5400 lake build OS4.Foots.NetTcp
+	cd proofs &amp;&amp; LEAN_NUM_THREADS=2 timeout 5400 lake build OS4 OS4Virt OS4.Drivers</pre>
   <div class="src"><a href="../../Makefile">Makefile › proofs</a></div>
   <div class="talk">
     <p>The proofs are about the system as it is compiled, never about a copy of it. Make proofs boots the hosted build, which loads every boot file. A small Forth program then prints the whole dictionary, word by word, as it ended up in memory. A Python generator turns that into Lean definitions, one per word, and the theorems about them. Lake, Lean's build tool, checks the lot, beside a model of the machine and the theorems written by hand. The bare-metal build's drivers come from a second dump, over the serial console, so the proofs see the network card's driver too. Hand proofs about that driver sit in their own module, Drivers. Whatever the card reports, a received frame is copied only into the caller's buffer, and never more than it holds. And the stores into the card's rings, for the network and the disks alike, land only in those rings and the card's own register.</p>
@@ -281,8 +282,8 @@ theorem «serve-door».cost : Cost «serve-door».t 1010 1010 Bool.true :=</pre>
       <pre class="code" data-src="proofs/yields.txt" data-step="2">root net-loop
 root serve-door
 …
-uncounted count-list        <span class="c">\ a round per connection: up to max-conns (256)</span>
-uncounted half-open         <span class="c">\ a round per connection: up to max-conns (256)</span></pre>
+uncounted find-conn         <span class="c">\ a round per connection in the segment's hash bucket</span>
+uncounted enqueue           <span class="c">\ a round per connection already waiting to be accepted</span></pre>
       <div class="src"><a href="../../proofs/yields.txt" data-ref="proofs/yields.txt">proofs/yields.txt</a></div>
       <ul class="points below">
         <li data-step="2">Roots, tables of xts, and loops that never pause, each with its bound</li>
@@ -292,7 +293,7 @@ uncounted half-open         <span class="c">\ a round per connection: up to max-
   </div>
   <div class="talk">
     <p>Proving these found two real problems. The TCP timer sweep walked every connection, up to two hundred and fifty-six, each perhaps retransmitting, without pausing once. And a door's listener accepted every waiting connection in one go. Both pass every test, because tests don't open hundreds of connections. Both now pause after each connection, and the sweep holds a lock so the connection it goes to next can't be freed while it waits.</p>
-    <p>The yields file says what the proofs start from: the roots, the tables of execution tokens that some words execute from, and the loops that never pause. Those are left out of the count, each with a comment saying what bounds it: a frame's length, the size of a pool. Those bounds are argued, not yet proven.</p>
+    <p>The yields file says what the proofs start from: the roots, the tables of execution tokens that some words execute from, and the loops that never pause. Those are left out of the count, each with a comment saying what bounds it: a frame's length, a table, a hash bucket. Those bounds are argued, not yet proven. The two largest have since gone: counting connections for a new SYN now pauses after each one, and TCP output sends at most sixteen segments a call, written out without a loop.</p>
     <p>And any other loop without a pause, on the path of a system task, fails the build. So a new one has to pause, or be listed with its reason.</p>
   </div>
 </section>

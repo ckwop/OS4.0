@@ -11,7 +11,7 @@ task server  ' line-server server start  ok
 settle .tcp ." , half-open " half-open . connections 0, pooled 16, half-open 0  ok
 1000 ms  ok
 --- peer ---
-peer: syn flood: 16 of 40 answered
+peer: syn flood: 16 to 20 of 40 answered
 peer: initial sequence numbers unrelated: yes
 peer: after the flood: echo ok
 peer: reset in the window: challenge ACK
@@ -20,4 +20,5 @@ peer: data acknowledging unsent bytes: challenge ACK
 peer: reset outside the window: ignored
 peer: connection still works: yes
 peer: client with MSS 0: echo ok
+peer: 1592 bytes in 64-byte segments once the window opens: all, promptly
 peer: reader that never reads: reset by the OS

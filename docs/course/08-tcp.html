@@ -198,14 +198,14 @@
     </div>
     <ul class="points">
       <li data-step="1">The least of: what's unsent, the room left in their window, one segment</li>
-      <li data-step="2"><code>tcp-output</code> sends segments while there is any, then the FIN, then a bare ACK if owed</li>
+      <li data-step="2"><code>tcp-output</code> sends up to 16 segments, then the FIN, then a bare ACK if owed; the next ACK sends more</li>
       <li data-step="3">A closed window: the retransmit timer probes it</li>
       <li data-step="4">Telnet output follows Nagle's rule: one small segment in flight at a time</li>
     </ul>
   </div>
   <div class="talk">
     <p>Sending is governed by a single question: how much may go now? Sendable answers it. The least of three things: what the application has queued but not yet sent, the room left in the other end's window, which is the window it advertised minus what's already in flight, and one segment's worth, the largest the other end said it accepts.</p>
-    <p>TCP output sends segments of that size until sendable is zero. Once everything queued has gone, and if the application has closed, it sends our FIN. And if an ACK is owed and nothing else carried it, it sends a bare ACK.</p>
+    <p>TCP output sends segments of that size until sendable is zero, or sixteen have gone. Sixteen is written out, not looped, so the network task never runs long without pausing; the peer's next ACK calls TCP output again for the rest. Once everything queued has gone, and if the application has closed, it sends our FIN. And if an ACK is owed and nothing else carried it, it sends a bare ACK.</p>
     <p>If the other end's window is shut, with data waiting, the retransmission timer is armed anyway, and when it fires it sends a single byte to probe whether the window has opened.</p>
     <p>One refinement lives in the telnet layer: output waits while a small segment is still unacknowledged, which is Nagle's rule. Typing and echoing a character at a time would otherwise make a segment per keystroke.</p>
   </div>
@@ -290,7 +290,7 @@
   <pre class="code below" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">rst-in</span>  ( conn -- )
   i-seq @ over rcv-nxt = if  release-conn exit  then
   i-seq @ over rcv-nxt - $ffffffff and  over rx-room u&lt; if challenge else drop then ;</pre>
-  <pre class="code below" data-src="forth/net/tcp.fs" data-step="3">: <span class="w">room?</span>  ( -- flag )  <span class="c">\ a new connection is within the caps</span>
+  <pre class="code below" data-src="forth/net/tcp.fs" data-step="3">: <span class="w">(room?)</span>  ( -- flag )
   conns @ count-list max-conns @ &lt;  half-open max-half-open @ &lt; and ;</pre>
   <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:rst-in">forth/net/tcp.fs › new-iss, rst-in, room?</a></div>
   <div class="cols even below">
@@ -306,7 +306,7 @@
   <div class="talk">
     <p>An off-path attacker can send packets with forged addresses, but can't see the conversation. TCP's defence is that a forged segment must carry sequence numbers the attacker can't know. So they must be unguessable. New-iss makes the initial sequence number from a clock plus a keyed hash of the connection's addresses and ports, as RFC sixty-five twenty-eight recommends. The key is random, drawn at boot.</p>
     <p>Resets are the next target, because a forged reset kills a connection. Following RFC fifty-nine sixty-one, a reset only counts if its sequence number is exactly the next byte we expect. One that's merely close gets a challenge ACK instead, which a genuine peer answers with an exact reset, and an attacker never sees.</p>
-    <p>Then there are floods. The caps allow two hundred and fifty-six live connections and sixty-four half-open ones; a SYN beyond that is simply dropped, and a real client will retry. And connections are found through a hash table keyed with another random key, so an attacker can't choose ports that all land in one bucket and slow every lookup to a crawl.</p>
+    <p>Then there are floods. The caps allow two hundred and fifty-six live connections and sixty-four half-open ones; a SYN beyond that is simply dropped, and a real client will retry. Counting them walks the connection list, so room pauses after each one, holding the connections lock so that no other task frees one under it. And connections are found through a hash table keyed with another random key, so an attacker can't choose ports that all land in one bucket and slow every lookup to a crawl.</p>
   </div>
 </section>
 

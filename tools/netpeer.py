@@ -338,7 +338,10 @@ class Peer:
         answered()
         answers = [(c.sport, e[1]) for c in flood for e in c.log[:1] if e[0] == SYN | ACK]
         isns = [isn for _, isn in answers]
-        print(f"peer: syn flood: {len(isns)} of 40 answered", flush=True)
+        # The cap is 16 half-open; under load one may time out (max-syn-retries 1)
+        # and free its slot before the last SYNs are handled, so allow a few more.
+        held = 16 <= len(isns) <= 20
+        print(f"peer: syn flood: {'16 to 20' if held else len(isns)} of 40 answered", flush=True)
         close = [(p, q) for p, q in zip(answers, answers[1:])
                  if min((p[1] - q[1]) % MOD32, (q[1] - p[1]) % MOD32) <= 1 << 16]
         print(f"peer: initial sequence numbers unrelated: {'no' if close else 'yes'}", flush=True)
@@ -370,6 +373,24 @@ class Peer:
             line = b"y" * 150
             print(f"peer: client with MSS 0: echo {'ok' if small.echo(line) else 'failed'}", flush=True)
             small.close()
+
+        bulk = TcpClient(self, 53003, dport=5000)     # a backlog of many small segments
+        bulk.mss_option = 64
+        if bulk.connect():
+            bulk.window = 0                 # the echoes pile up in the OS
+            lines = [f"bulk {j} ".encode() + b"b" * 190 + b"\r\n" for j in range(8)]
+            for line in lines:
+                bulk.send_reliably(line)
+            time.sleep(1)
+            bulk.window = 65535             # then open the window: over 16 segments wait
+            bulk.send_seg(ACK, bulk.snd_nxt)
+            start = time.time()
+            total = sum(map(len, lines))
+            done = bulk.wait_for(lambda: len(bulk.received) >= total, 20)
+            prompt = done and time.time() - start < 5
+            print(f"peer: {total} bytes in 64-byte segments once the window opens: "
+                  f"{'all, promptly' if prompt else 'all, slowly' if done else 'not all'}", flush=True)
+            bulk.close()
 
         stalled = TcpClient(self, 53002, dport=5000)  # sends, but never takes the echoes
         if stalled.connect():
