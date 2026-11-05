@@ -306,7 +306,11 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   address.
 - **Pools:** for connections, half-open slots and tasks, free plus live is the
   total, and every path that closes returns its slot. This is the proof
-  counterpart of the `soak` peer.
+  counterpart of the `soak` peer. Proven so far (`proofs/OS4/Pools.lean`):
+  `unlink`, which every closing path uses to take a connection off the live
+  list, ends on any list that ends, and leaves exactly the list without
+  that connection (`unlink_eq`, `unlink_chain`), provided the list's link
+  cells are apart; it writes one cell, the link before the connection.
 - **Steps:** the loops in `proofs/yields.txt` whose bound a peer sets are proven
   bounded, or made to pause: `(tcp-output)`, and `room?` (`count-list`,
   `half-open`).
