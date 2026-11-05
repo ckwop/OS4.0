@@ -303,7 +303,13 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   (`proofs/OS4/Parsers.lean`, `frame_in_dispatch`): `frame-in` drops a frame
   under 14 bytes without reading it; otherwise it reads only bytes 12 and 13
   (the type), and hands ARP or IPv4 the rest of the frame with its length
-  less 14, or drops it.
+  less 14, or drops it. And IP (`proofs/OS4/IpCheck.lean`,
+  `ip_check_bounds`): `ip-check` accepts a packet only with
+  20 ≤ ihl ≤ total ≤ len, so the payload `ip-in` hands on (`total - ihl`
+  bytes at `ihl`) lies inside the frame, whatever the header claims; the
+  checksum's reads are taken from its generated stack effect. The `hostile`
+  peer already sends each of those edges (ihl 0 to 4 and 15, totals 0, 10,
+  19, 200 and 65535).
 - **Writes:** a parser writes only its designated buffers and connection state
   (V9's footprints).
 - **Overflow:** no length or offset computation wraps into a valid-looking
