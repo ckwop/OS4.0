@@ -374,6 +374,16 @@ class Peer:
             print(f"peer: client with MSS 0: echo {'ok' if small.echo(line) else 'failed'}", flush=True)
             small.close()
 
+        for port, options in ((53004, b"\x01\x01\x01\x02"), (53005, b"\x01\x01\x02\x04")):
+            cut = TcpClient(self, port, dport=5000)  # an MSS option cut off by the header's end
+            cut.syn_options = options
+            if cut.connect():
+                print(f"peer: MSS option cut short ({options.hex()}): "
+                      f"echo {'ok' if cut.echo(b'cut short') else 'failed'}", flush=True)
+                cut.close()
+            else:
+                print(f"peer: MSS option cut short ({options.hex()}): no SYN-ACK", flush=True)
+
         bulk = TcpClient(self, 53003, dport=5000)     # a backlog of many small segments
         bulk.mss_option = 64
         if bulk.connect():
@@ -911,6 +921,7 @@ class TcpClient:
         self.seen_seqs = set()
         self.peer_mss = None
         self.mss_option = 1460
+        self.syn_options = None             # raw SYN options, in place of the MSS option
         self.window = 65535                 # what we advertise
         self.log = []                       # (flags, seq, ack, data length) of each segment in
         self.done = threading.Event()       # the script has finished
@@ -978,7 +989,10 @@ class TcpClient:
         self.snd_una = self.snd_nxt = self.iss
         self.rcv_nxt = 0
         for wait in backoff(budget):
-            self.send_seg(SYN, self.iss, options=struct.pack("!BBH", 2, 4, self.mss_option))
+            options = self.syn_options
+            if options is None:
+                options = struct.pack("!BBH", 2, 4, self.mss_option)
+            self.send_seg(SYN, self.iss, options=options)
             deadline = time.time() + wait
             while time.time() < deadline:
                 try:

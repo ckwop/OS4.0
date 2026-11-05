@@ -445,8 +445,31 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   - Proven towards it: the driver's part (`Drivers.lean`: whatever the card
     reports, `net-poll` copies at most 2036 bytes into the caller's buffer and
     hands each buffer back with stores only into its own rings); the steps
-    for every word not listed in `yields.txt` (`Yield.lean`); the writes of
-    every word whose footprint is generated (`Foots.lean`).
+    for every word not listed in `yields.txt` (`Yield.lean`), now including
+    `room?` and `(tcp-output)`; the writes of every word whose footprint is
+    generated (`Foots.lean`); the parsers' front, where every length a
+    header claims is checked against the frame before it is used
+    (`frame_in_dispatch`, `ip_check_bounds`, `udp_in_head`, `tcp_in_head`);
+    and the pool step every closing path takes (`unlink_chain`).
+  - Left for each hypothesis, most tractable first:
+    - H-parse: the parsers after their front. ARP's learning writes the
+      cache through an index read from memory (`arp-next`), and an address
+      `arp-find` returns: both need bounds proven (a mask on the index would
+      make the generated footprint bounded). `tcp-in`'s handling
+      (`segment-in`, `data-in`) writes connection records found through the
+      hash table, so its footprint rests on H-pool. Telnet works on a
+      connection's receive ring, through masked offsets.
+    - H-pool: `(free-conn)` composes `hash-out` (a walk of the hash
+      bucket, like `unlink`, through `c.hlink`) with `unlink`; `new-conn`
+      pops the free list or reserves. With both proven, every path to
+      `release-conn` returns its slot; the timers' release follows.
+    - H-steps: the remaining listed loops each need a bound from the code
+      above them (a frame's length, a table's size, an acyclic bucket),
+      or to pause.
+    - H-queue: needs the kernel's `dp` and `dict-owner` cells stated apart
+      from the dictionary (a small trusted hypothesis), then `new-vq`.
+    - H-device: a device reset after a timeout (TD-36, the user's call).
+    - H-model: V5 (the primitives against the assembly).
 
 ### V5: Primitives against the assembly — L
 

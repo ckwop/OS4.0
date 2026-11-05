@@ -265,8 +265,9 @@ variable i-data  variable i-len  variable i-sport  variable i-dport
     dup c@  dup 0= if 2drop drop exit then         \ end of options
     1 = if
       1+                                            \ no-op
-    else
-      dup c@ 2 =  over 1+ c@ 4 = and if  dup 2 + n16@ i-mss !  then
+    else                                            \ only bytes inside the header:
+      dup 1+ 2 pick < 0= if 2drop exit then         \ no length byte left
+      dup c@ 2 =  over 1+ c@ 4 = and  over 4 + 3 pick > 0= and if  dup 2 + n16@ i-mss !  then
       dup 1+ c@ 1 max +
     then
   repeat 2drop ;
