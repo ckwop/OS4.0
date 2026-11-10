@@ -2,8 +2,8 @@
 # --coverage). The build fails if a count drops below its line here; to lower
 # one on purpose, record the decision in DECISIONS.md. When a count rises,
 # raise its line, so it cannot fall back unnoticed.
-modelled colon words: 631
-stack effects: 908
-agreeing stack comments: 436
-footprints: 908
-counted words: 188
+modelled colon words: 634
+stack effects: 911
+agreeing stack comments: 437
+footprints: 911
+counted words: 193
