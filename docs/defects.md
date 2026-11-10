@@ -51,6 +51,7 @@ one now does.
 | 22 | 2026-11-04 | `net-send` (bare metal) copied `len` bytes into its 2 KiB transmit buffer with no bound, relying on every caller to keep frames short | A length over 2036, or a negative one, would write past `tx-buf` into the driver's other data and beyond | Proof planning (writing the HAL contract, V4) | No: the network stack never sends a frame that long | Length held to the buffer; proven (`Drivers.lean`) |
 | 23 | 2026-11-04 | `net-send` (bare metal) offered the card an empty frame, header only, when asked to send 0 bytes | QEMU's virtio-net never completes such a request and marks the device broken: the send throws -263 and the network is gone until reboot | Test (`net-faults`, written for defect 22's fix: its negative length became 0) | Only once that test was written | Empty frames are not sent; the test sends again after one |
 | 24 | 2026-11-10 | ICMP "destination unreachable" quoted the packet's header and 8 bytes even when the packet ended sooner | The reply carried 8 bytes of an earlier frame still in `rx-frame`: a sender on the link, choosing the header length, could read another connection's ports and sequence number (which RFC 5961's checks rely on being secret) or 8 bytes of its data | Proof planning (V4: a parser reads only its frame) | No; repro in `tests/udp` (the peer's protocol 200 cases) | #138; proven (`Icmp.lean`) |
+| 25 | 2026-11-05 | `options-mss` read an MSS option's length byte and value even when they lay past the end of the TCP header | A SYN whose options end in a truncated MSS option (kind 2 in the last byte, or kind 2 and length 4 in the last two) set the connection's MSS from bytes after the header: the segment's data, or stale bytes of an earlier frame when there was none (clamped to 64 to our MSS, so no memory harm) | Proof planning (V4 reads: a parser reads only the frame) | No | Options are read only while their bytes lie inside the header; `tcp-attack` sends both truncated forms (found before 24, merged after it) |
 
 ## Also shown
 
@@ -61,8 +62,8 @@ one now does.
 
 ## What the log says so far
 
-Up to 2026-11-10: 24 defects. Tests found 2, the app 1, hardening 4, and
-the proofs 17 (7 directly, 5 by the audits they pointed to, 5 while
+Up to 2026-11-10: 25 defects. Tests found 2, the app 1, hardening 4, and
+the proofs 18 (7 directly, 5 by the audits they pointed to, 6 while
 planning a proof). (A double free in the fix for 20 was caught by
 `tcp-attack` before it was committed, so it is not logged: the tests and
 the proofs find different things.) No proof-found
