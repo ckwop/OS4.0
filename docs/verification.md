@@ -481,7 +481,21 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     fixed (#142, defect 32): a segment's sequence number must fall in our
     window before its acknowledgement is looked at, the send window comes
     only from a newer segment (SND.WL1/WL2), and challenge ACKs are
-    rationed per connection.
+    rationed per connection (defect 33).
+  - The sending side, read against this contract (2026-11-10), not yet
+    proven: with `acked ≤ sent ≤ queued` and `queued - acked ≤ /tx` for
+    every live connection's counts, `acked` moves `c.tx-acked` on by at
+    most what is in flight, and only for an acknowledgement after SND.UNA
+    and no later than SND.NXT; `(send)` queues at most `tx-room`; a
+    retransmission sets `sent` back to `acked`; `sendable` is at most the
+    unsent bytes, the window less what is in flight (never below 0), and
+    the peer's MSS (at least 64, at most `our-mss`, so `(segment-out)`'s
+    -24 never fires); every index into a ring is masked; a closed window
+    with data waiting always has the retransmission timer armed, so a probe
+    follows. All held. One gap, logged as TD-40: after a retransmission
+    nothing remembers the most ever sent, so a late ACK for it is refused.
+    Reading every copy in the network words for a bound on both sides
+    found `udp-send` letting a negative length through (defect 36).
   - Proven towards it: the driver's part (`Drivers.lean`: whatever the card
     reports, `net-poll` copies at most 2036 bytes into the caller's buffer and
     hands each buffer back with stores only into its own rings); the steps
