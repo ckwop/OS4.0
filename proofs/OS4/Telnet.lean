@@ -34,12 +34,12 @@ def Box.conn (B : Box) : Cell := rd B.m0 (B.p + 336) 8
 def Box.prot (B : Box) (a : Cell) : Prop := B.supp a ∨ (a - (B.p + 328)).toNat < 8
 
 /-- What the session's terminal rests on: no other task or device writes the
-protected bytes; the connection's record (`/conn`, 12464 bytes) misses them;
+protected bytes; the connection's record (`/conn`, 12488 bytes) misses them;
 and so does everything TCP output writes for the connection (its generated
 footprint: the frames and the network's variables). -/
 structure Box.Net (B : Box) : Prop where
   quiet : ∀ a, B.prot a → Quiet a
-  apart : ∀ a, B.prot a → 12464 ≤ (a - B.conn).toNat
+  apart : ∀ a, B.prot a → 12488 ≤ (a - B.conn).toNat
   out : ∀ a, B.prot a → ¬ Writes Words.«tcp-output».regs ⟨[B.conn], [], B.p⟩ a
 
 /-- f, run in B's user area from a state where pre holds, returns with the

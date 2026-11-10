@@ -135,16 +135,19 @@
   <pre class="code" data-src="forth/net/tcp.fs" data-step="1">: <span class="w">segment-in</span>  ( conn -- )
   &gt;r
   f-rst i-flag? if  r&gt; rst-in exit  then
-<span class="band tint1" data-label="handshake" data-step="1">  r@ c.state @ syn-received = if
-    f-syn i-flag? if  r@ dup c.iss @ f-syn f-ack or control-out  r&gt; drop exit  then
+<span class="band tint1" data-label="handshake" data-step="1">  f-syn i-flag? if
+    r@ c.state @ syn-received = if  r@ dup c.iss @ f-syn f-ack or control-out  r&gt; drop exit  then
+    r&gt; challenge exit
+  then
+  r@ acceptable? 0= if  r&gt; challenge exit  then      <span class="c">\ say where we are</span>
+  r@ c.state @ syn-received = if
     f-ack i-flag? 0=  i-ack @ r@ c.iss @ 1+ $ffffffff and &lt;&gt;  or if  r&gt; drop exit  then
     established r@ c.state !  0 r@ c.rexmit !  base-rto r@ c.rto !  0 r@ c.retries !
     r@ dup c.lport @ listener-of ?dup if enqueue else drop then
   then
-</span><span class="band tint2" data-label="acknowledgement" data-step="2">  f-syn i-flag? if  r@ ack-now flag+  r&gt; tcp-output exit  then
-  f-ack i-flag? 0= if  r&gt; drop exit  then
+</span><span class="band tint2" data-label="acknowledgement" data-step="2">  f-ack i-flag? 0= if  r&gt; drop exit  then
   r@ ack-ok? 0= if  r&gt; challenge exit  then
-  i-wnd @ r@ c.snd-wnd !
+  r@ window-in
   r@ acked
   r@ fin-acked-in
   r@ c.state @ closed = if  r&gt; drop exit  then      <span class="c">\ released, maybe recycled</span>
@@ -156,8 +159,8 @@
   <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:segment-in">forth/net/tcp.fs › segment-in</a></div>
   <div class="talk">
     <p>Every segment for an existing connection goes through segment-in. It's the heart of TCP, and it reads from top to bottom. A reset is handled first, with care, as we'll see later.</p>
-    <p>In blue, the handshake. If the connection is still half open, a repeated SYN means our SYN-ACK was lost, so it's sent again. Otherwise this must be the ACK that completes the handshake, acknowledging exactly our SYN. If it is, the connection is established and queued for the application.</p>
-    <p>In green, the acknowledgement. A SYN on an established connection is suspicious, and just gets an ACK. A segment without an ACK is dropped. An acknowledgement outside the range we could have sent gets a challenge, coming later. Otherwise, note how much the other end will now take, move the acknowledged count on, and see whether that finished our FIN.</p>
+    <p>In blue, the checks and the handshake, in the order RFC fifty-nine sixty-one gives. If the connection is still half open, a repeated SYN means our SYN-ACK was lost, so it's sent again. A SYN on an established connection is suspicious, and just gets a challenge ACK, coming later. Then the sequence number: a segment must overlap the window we offered, or sit exactly at the next byte we expect. Anything else is old, or forged, and gets an ACK saying where we are; nothing else in it is looked at. Then, if the connection is half open, this must be the ACK that completes the handshake, acknowledging exactly our SYN. If it is, the connection is established and queued for the application.</p>
+    <p>In green, the acknowledgement. A segment without an ACK is dropped. An acknowledgement outside the range we could have sent gets a challenge. Otherwise, window-in notes how much the other end will now take, but only from a segment newer than the one that last told us. Then move the acknowledged count on, and see whether that finished our FIN.</p>
     <p>In orange, the rest: take any data, take a FIN if there is one, and finally send whatever is now owed: data, a FIN, or an ACK.</p>
   </div>
 </section>
@@ -307,7 +310,7 @@
   </div>
   <div class="talk">
     <p>An off-path attacker can send packets with forged addresses, but can't see the conversation. TCP's defence is that a forged segment must carry sequence numbers the attacker can't know. So they must be unguessable. New-iss makes the initial sequence number from a clock plus a keyed hash of the connection's addresses and ports, as RFC sixty-five twenty-eight recommends. The key is random, drawn at boot.</p>
-    <p>Resets are the next target, because a forged reset kills a connection. Following RFC fifty-nine sixty-one, a reset only counts if its sequence number is exactly the next byte we expect. One that's merely close gets a challenge ACK instead, which a genuine peer answers with an exact reset, and an attacker never sees.</p>
+    <p>Resets are the next target, because a forged reset kills a connection. Following RFC fifty-nine sixty-one, a reset only counts if its sequence number is exactly the next byte we expect. One that's merely close gets a challenge ACK instead, which a genuine peer answers with an exact reset, and an attacker never sees. Challenge ACKs are rationed: each connection may send ten at once, then ten a second. The budget is each connection's own. A budget shared by every connection once let attackers spend it on a connection of their own, and so learn when a forged segment had landed in someone else's window.</p>
     <p>Then there are floods. The caps allow two hundred and fifty-six live connections and sixty-four half-open ones; a SYN beyond that is simply dropped, and a real client will retry. Counting them walks the connection list, so room pauses after each one, holding the connections lock so that no other task frees one under it. And connections are found through a hash table keyed with another random key, so an attacker can't choose ports that all land in one bucket and slow every lookup to a crawl.</p>
   </div>
 </section>

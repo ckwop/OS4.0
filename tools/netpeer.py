@@ -384,14 +384,48 @@ class Peer:
         tests = [("reset in the window", lambda: c.send_seg(RST, c.snd_nxt + 1000)),
                  ("SYN on an open connection", lambda: c.send_seg(SYN, c.snd_nxt + 5)),
                  ("data acknowledging unsent bytes",
-                  lambda: c.send_seg(ACK | PSH, c.snd_nxt, b"forged\r\n", ack=c.rcv_nxt + 100000))]
+                  lambda: c.send_seg(ACK | PSH, c.snd_nxt, b"forged\r\n", ack=c.rcv_nxt + 100000)),
+                 ("an acknowledgement outside the window",
+                  lambda: c.send_seg(ACK, c.snd_nxt + 0x40000000))]
         for name, forge in tests:
             print(f"peer: {name}: {'challenge ACK' if c.challenged(forge) else 'no challenge ACK'}", flush=True)
         c.send_seg(RST, c.snd_nxt + 0x40000000)  # far outside the window: ignored
         c.drain(0.5)
         print(f"peer: reset outside the window: {'ignored' if not c.reset else 'reset'}", flush=True)
         print(f"peer: connection still works: {'yes' if c.echo(b'still here') else 'no'}", flush=True)
+        start = len(c.log)                  # challenge ACKs are rate limited (RFC 5961 section 7)
+        for k in range(60):
+            c.send_seg(RST, c.snd_nxt + 1000 + k)
+        c.drain(2)
+        answers = sum(1 for e in c.log[start:] if e[0] == ACK and e[3] == 0)
+        print(f"peer: challenge ACKs for 60 resets in the window: "
+              f"{'limited' if 0 < answers <= 45 else answers}", flush=True)
+        print(f"peer: and then it still works: {'yes' if c.echo(b'and still') else 'no'}", flush=True)
         c.send_seg(RST, c.snd_nxt)
+
+        # A segment that must not set the send window: the server on 5001 sends a
+        # line two seconds after it accepts. A window shut by the forgery would
+        # make its first data a one-byte probe, a second later.
+        def outside(w):                     # the right acknowledgement, outside our window
+            w.window = 0
+            w.send_seg(ACK, w.snd_nxt + 0x40000000)
+        def older(w):                       # a segment older than one that set the window
+            w.send_seg(ACK | PSH, w.snd_nxt + 100, b"later")   # in the window, out of order
+            w.window = 0
+            w.send_seg(ACK, w.snd_nxt)
+        for port, name, forge in ((53008, "outside the window", outside),
+                                  (53009, "older than the last", older)):
+            w = TcpClient(self, port, dport=5001)
+            if not w.connect():
+                print(f"peer: window of 0 {name}: no SYN-ACK", flush=True)
+                continue
+            forge(w)
+            w.window = 65535
+            w.wait_for(lambda: w.received.endswith(b"\r\n"), 10)
+            first = next((e[3] for e in w.log if e[3]), 0)
+            print(f"peer: window of 0 {name}: "
+                  f"{'ignored' if first > 1 else 'shut the window' if first else 'no data'}", flush=True)
+            w.close()
         time.sleep(0.5)
 
         small = TcpClient(self, 53001, dport=5000)

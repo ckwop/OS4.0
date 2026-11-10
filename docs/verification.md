@@ -214,7 +214,7 @@ dictionary", becomes a theorem.
     - **`hdump`:** each header on the sandbox's chain runs one of the words
       the dump found there (the dumper is trusted);
     - **`Box.Net`,** for a network session: no other task or device writes
-      the setting or the task's `cur-conn`; the connection's record (12464
+      the setting or the task's `cur-conn`; the connection's record (12488
       bytes) misses them; and so do TCP output's regions for the connection
       (`«tcp-output».regs`: the frames and the network's variables). All are
       true by allocation (the record and the frames come from `reserve`,
@@ -340,7 +340,7 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   live plus free stays what it was. Assumed there: `conn-bucket`'s own
   stores (its generated footprint: `tuple` and the SipHash state) miss the
   pool; the bucket's cells are apart from the pool's; and a connection's
-  176-byte header is apart from every other link cell (records do not
+  200-byte header is apart from every other link cell (records do not
   overlap). Not yet covered: `new-conn` when the free list is empty (it
   reserves a new connection), and the timers' and the application's paths
   to `free-conn`.
@@ -477,9 +477,11 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     in a chain, breaking `find-conn`'s "a live connection or 0"; the
     bucket now leaves our address out. `close-connection` holds
     `conns-lock` throughout, so its output, which may wait, never works on
-    a record the network task has freed (#141). Read and left as they are
-    (TD-39): window updates without RFC 793's ordering check, challenge ACKs
-    without a rate limit.
+    a record the network task has freed (#141). The two left by TD-39 are
+    fixed (#142, defect 32): a segment's sequence number must fall in our
+    window before its acknowledgement is looked at, the send window comes
+    only from a newer segment (SND.WL1/WL2), and challenge ACKs are
+    rationed per connection.
   - Proven towards it: the driver's part (`Drivers.lean`: whatever the card
     reports, `net-poll` copies at most 2036 bytes into the caller's buffer and
     hands each buffer back with stores only into its own rings); the steps

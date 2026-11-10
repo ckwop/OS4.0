@@ -523,8 +523,8 @@ theorem chain_move (m m' : Mem) : ∀ (ys : List Cell) (a a' : Cell), rd m' a' 8
     exact ⟨by rw [ha]; exact hy, hy0,
       ih y y (hz y (by simp)) (fun z hz' => hz z (List.mem_cons_of_mem y hz')) hc⟩
 
-/-- A connection record (its 176-byte header at x) apart from the cell at y. -/
-def Away (x y : Cell) : Prop := 176#64 ≤ y - x ∧ 8#64 ≤ x - y
+/-- A connection record (its 200-byte header at x) apart from the cell at y. -/
+def Away (x y : Cell) : Prop := 200#64 ≤ y - x ∧ 8#64 ≤ x - y
 
 /-- `new-conn`'s thread, with `reserve` left as RS. -/
 noncomputable def newConnCode (RS : Sem) : List Ins := [.call Words.«free-conns», .call Prim.fetch,
@@ -539,7 +539,7 @@ theorem newConnCode_eq : Words.«new-conn».code = newConnCode Words.«reserve»
 /-- `new-conn`'s memory up to the header: x off the free list, cleared, its
 retransmission timeout set. -/
 def newConnM3 (m : Mem) (x : Cell) : Mem :=
-  wr (Prim.fillM 176 (wr m freeV 8 (rd m x 8)) x 0) (x + 112#64) 8 1000#64
+  wr (Prim.fillM 200 (wr m freeV 8 (rd m x 8)) x 0) (x + 112#64) 8 1000#64
 
 /-- Then x on the live list. -/
 def newConnM (m : Mem) (x : Cell) : Mem :=
@@ -558,7 +558,7 @@ theorem new_conn_eq (x : Cell) (s r : List Cell) (m : Mem) (u : Cell) (e : Nat)
 /-- The header's stores (the clearing and the timeout) leave a cell the
 record is away from. -/
 theorem header_rd (m1 : Mem) (x z : Cell) (h : Away x z) :
-    rd (wr (Prim.fillM 176 m1 x 0) (x + 112#64) 8 1000#64) z 8 = rd m1 z 8 := by
+    rd (wr (Prim.fillM 200 m1 x 0) (x + 112#64) 8 1000#64) z 8 = rd m1 z 8 := by
   obtain ⟨h1, h2⟩ := h
   rw [rd_wr_other _ _ _ _ (by bv_omega) (by bv_omega)]
   apply rd_congr
