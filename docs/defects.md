@@ -63,7 +63,7 @@ one now does.
 | 33 | 2026-11-10 | Challenge ACKs had no rate limit (RFC 5961 section 7; a choice, #92, logged as TD-39) | Each forged segment in range drew an ACK to the real peer: a spoofer could make the OS send as fast as it was sent to | Proof planning (TD-39) | No; repro in `tests/tcp-attack` (60 resets in the window drew 60 ACKs on the old code) | #142: per connection, bursts of 10, then 10 a second |
 | 34 | 2026-11-10 | `password?` took the iteration count from the stored hash unchecked, and `pbkdf2` ran `n 1 ?do`: a count of 0 or less ran 2^64 iterations | A stored hash with a bad count (a damaged record that still passes its checksum, or an app's own record of player hashes gone wrong) hung the login for good while holding `hash-lock`: every later hash or login in the system waited behind it. It pauses, so the watchdog never stopped it | Proof planning (a password check must end and read only its 56 bytes, whatever they hold) | No; repro in `tests/crypto` (a task checking a count of 0 is still at it a second later). Seen failing on the old code | #143: counts outside 1 to `max-iterations` refused unhashed; `pbkdf2` throws -24 for a count below 1 |
 | 35 | 2026-11-10 | `password?` compared the hashes with `compare`, which stops at the first byte that differs | How long a wrong guess took said how many leading bytes of its hash matched. Not usable as it stands (the salt is secret, and the 250 ms hash and the network hide nanoseconds), but it is the kind of leak a password check must not have | Hardening (review against a checklist) | No (no test can time it) | #143: `bytes-differ` reads all 32 bytes |
-| 36 | 2026-11-10 | `udp-send` checked its length against `udp-max` with a signed comparison, so a negative length passed, and `cmove` took it as a count near 2^64 | An application (or a sandbox word built on it, were one ever exposed) that passed a negative length overwrote everything after `tx-frame` until it faulted | Proof planning (V4: every copy bounded by both its source and its destination, read across the network words) | No; repro in `tests/udp` (a length of -1 must throw -265) | Unsigned comparison |
+| 36 | 2026-11-10 | `udp-send` checked its length against `udp-max` with a signed comparison, so a negative length passed, and `cmove` took it as a count near 2^64 | An application (or a sandbox word built on it, were one ever exposed) that passed a negative length overwrote everything after `tx-frame` until it faulted | Proof planning (V4: every copy bounded by both its source and its destination, read across the network words) | No; repro in `tests/udp` (a length of -1 must throw -265). Seen failing on the old code: the hosted build's emulator itself died of a SIGSEGV | Unsigned comparison |
 
 ## Also shown
 
@@ -83,8 +83,8 @@ written for it. Of the next five (32 to 36), 32 and 33 are within an
 off-path attacker's reach (TCP's order of checks, and challenge ACKs
 without a limit), 34 needs a damaged password record, 35 is a timing
 leak with no known use, and 36 an application's slip away from an
-overwrite; 32 to 34 and 36 fail tests written for them, 32 to 34 seen
-failing on the old code. (A double free in the fix for 20 was caught by
+overwrite; 32 to 34 and 36 fail tests written for them, each seen failing
+on the old code. (A double free in the fix for 20 was caught by
 `tcp-attack` before it was committed, so it is not logged: the tests and
 the proofs find different things.) No proof-found
 defect would have failed the test suite as it stood. The tests had already

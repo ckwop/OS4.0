@@ -496,6 +496,13 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     nothing remembers the most ever sent, so a late ACK for it is refused.
     Reading every copy in the network words for a bound on both sides
     found `udp-send` letting a negative length through (defect 36).
+  - Passwords (2026-11-10): `password?` must end and read only its 56
+    bytes, whatever they hold. A stored count of 0 or less ran PBKDF2 for
+    2^64 iterations under `hash-lock` (defect 34). Proven
+    (`proofs/OS4/Passwords.lean`, `password_bad_count`): a count outside 1
+    to 2^21 makes `(password?)` answer false with no store and no hashing.
+    The hashes are compared in constant time (`bytes-differ`), which no
+    proof here states.
   - Proven towards it: the driver's part (`Drivers.lean`: whatever the card
     reports, `net-poll` copies at most 2036 bytes into the caller's buffer and
     hands each buffer back with stores only into its own rings); the steps

@@ -481,8 +481,8 @@ def sendR (B : Box) : Nat → S → Prop
   | 49, s => ∃ y w t, s.ds = y :: w :: t ∧ y.toNat < 8192
   | 50, s => ∃ y w t, s.ds = (B.p + 328) :: y :: w :: t ∧ y.toNat < 8192
   | 51, s => ∃ y w t, s.ds = B.conn :: y :: w :: t ∧ y.toNat < 8192
-  | 52, s => ∃ y w t, s.ds = (B.conn + 4272) :: y :: w :: t ∧ y.toNat < 8192
-  | 53, s => ∃ y w t, s.ds = (y + (B.conn + 4272)) :: w :: t ∧ y.toNat < 8192
+  | 52, s => ∃ y w t, s.ds = (B.conn + 4296) :: y :: w :: t ∧ y.toNat < 8192
+  | 53, s => ∃ y w t, s.ds = (y + (B.conn + 4296)) :: w :: t ∧ y.toNat < 8192
   | 56, s => ∃ x t, s.ds = x :: t
   | 57, s => ∃ x t, s.ds = (B.p + 328) :: x :: t
   | 58, s => ∃ x t, s.ds = B.conn :: x :: t

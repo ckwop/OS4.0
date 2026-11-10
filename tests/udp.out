@@ -9,6 +9,7 @@ s" hello, peer" to-peer .  wait-heard -1 heard from 10.0.2.2:7: hello, peer
  ok
 5000 udp-unbind  ok
 s" again" to-peer .  500 ms -1  ok
+pad -1 5000 ip 10.0.2.2 7 ' udp-send catch .  2drop 2drop drop -265  ok
 5000 ms  ok
 --- peer ---
 peer: udp echo of 0 bytes: ok
