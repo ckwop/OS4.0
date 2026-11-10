@@ -287,6 +287,30 @@ class Peer:
                   f"{'ok' if ok else f'wrong: code {message[1]}, port {dport}'}", flush=True)
             break
 
+        # A packet with no payload, for a protocol nobody handles: the report
+        # may quote its header and nothing more. The frame before it (dropped:
+        # a bad checksum) leaves bytes in the OS's buffer that are not ours to see.
+        for ihl in (5, 15):
+            options = bytes(ihl * 4 - 20)
+            self.send(self.os_mac, ETH_IP, ip_packet(b"\xaa" * 100, protocol=200, good_checksum=False))
+            self.send(self.os_mac, ETH_IP, ip_packet(b"", protocol=200, ihl=ihl, options=options))
+            label = f"protocol 200, a {ihl * 4}-byte header and no payload"
+            deadline = time.time() + 5
+            while True:
+                try:
+                    packet, _, message = self.unreachables.get(timeout=max(0.1, deadline - time.time()))
+                except queue.Empty:
+                    print(f"peer: {label}: no ICMP reply", flush=True)
+                    break
+                quoted = message[8:]
+                if quoted[9] != 200:
+                    continue
+                extra = quoted[ihl * 4:]
+                ok = message[1] == 2 and not checksum(message) and not extra
+                print(f"peer: {label}: ICMP protocol unreachable quotes {len(quoted)} bytes: "
+                      f"{'ok' if ok else f'{len(extra)} of them not from the packet: {extra.hex()}'}", flush=True)
+                break
+
     def script_tcp(self):
         if not self.find_os():
             print("peer: no ARP reply from 10.0.2.15", flush=True)

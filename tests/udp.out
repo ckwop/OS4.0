@@ -18,3 +18,5 @@ peer: udp echo of 1472 bytes: ok
 peer: udp echo of 37 bytes, no checksum: ok
 peer: udp burst of 48 datagrams: 48 echoed
 peer: udp to closed port 9: ICMP port unreachable ok
+peer: protocol 200, a 20-byte header and no payload: ICMP protocol unreachable quotes 20 bytes: ok
+peer: protocol 200, a 60-byte header and no payload: ICMP protocol unreachable quotes 60 bytes: ok

@@ -312,7 +312,11 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   datagram's own length field, and works with ul from then on. TCP too
   (`tcp_in_head`): after its checksum, `tcp-in` goes on only with
   20 ≤ hlen ≤ len, and sets `i-len` to `len - hlen` and `i-data` to
-  `seg + hlen`, so the segment's data lies inside it. The `hostile`
+  `seg + hlen`, so the segment's data lies inside it. And ICMP's reports
+  (`proofs/OS4/Icmp.lean`, `unreachable_quote`, `quote_le`): a "destination
+  unreachable" quotes the packet's header and 8 bytes or the whole packet,
+  whichever is shorter, so never past the packet's total length (#138;
+  it used to quote 8 bytes of an earlier frame, defect 24). The `hostile`
   peer already sends each of those edges (ihl 0 to 4 and 15, totals 0, 10,
   19, 200 and 65535).
 - **Writes:** a parser writes only its designated buffers and connection state

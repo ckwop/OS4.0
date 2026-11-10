@@ -17,8 +17,9 @@ variable echoes-answered
   proto-icmp swap ip-send ;
 
 \ Destination unreachable: tell the sender of the packet being handled that it
-\ could not be delivered, quoting its header and first 8 bytes. Never for a
-\ broadcast. Codes: 2 protocol unreachable, 3 port unreachable.
+\ could not be delivered, quoting its header and first 8 bytes, or as many as
+\ it has: past the packet's end, rx-frame still holds an earlier frame's
+\ bytes. Never for a broadcast. Codes: 2 protocol unreachable, 3 port unreachable.
 3 constant icmp-unreachable
 2 constant protocol-unreachable
 3 constant port-unreachable
@@ -26,7 +27,7 @@ variable echoes-answered
   rx-ip ip-dst + n32@ broadcast-ip = if drop exit then
   icmp-unreachable tx-icmp icmp-type + c!  tx-icmp icmp-code + c!
   0 tx-icmp 4 + n32!
-  rx-ip ip-ver-ihl + c@ 15 and 4 * 8 +  dup >r
+  rx-ip ip-ver-ihl + c@ 15 and 4 * 8 +  rx-ip ip-length + n16@ min  dup >r
   rx-ip tx-icmp 8 + rot cmove
   r> 8 + ip-source icmp-send drop ;
 : unreachable  ( code -- )  ['] (unreachable) tx-lock locked ;

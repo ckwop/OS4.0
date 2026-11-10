@@ -255,6 +255,7 @@
     <p>IP doesn't know about the protocols above it. Instead it has a table of two hundred and fifty-six handlers, one per protocol number, and each protocol file registers itself with ip-handler-store, as the last line of the ICMP code here does.</p>
     <p>ICMP is the control protocol, best known for ping. Its handler checks the length and the checksum, then looks at the type. Type eight is an echo request, a ping, and gets an echo reply with the same data. Type zero is a reply to one of our own pings, which the ping word is waiting for.</p>
     <p>If a packet arrives for a protocol that has no handler, the stack replies with an ICMP message saying protocol unreachable, as a well-behaved host should. Likewise, UDP will answer port unreachable for a port that nobody is listening on.</p>
+    <p>That message quotes the start of the packet it's about: the header and eight bytes more. But a packet can have fewer than eight bytes after its header, and past its end the receive buffer still holds an earlier frame, which may be someone else's. So the quote stops at the packet's own length. A proof found that: the reply used to leak eight bytes of the frame before. Now the proof shows the quote never passes the packet's end.</p>
   </div>
 </section>
 

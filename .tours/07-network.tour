@@ -53,7 +53,7 @@
       "file": "forth/net/icmp.fs",
       "pattern": ": icmp-in  \\(",
       "title": "ICMP",
-      "description": "Echo requests get replies; replies to our own `ping` are noted in `pong`. `unreachable` above tells a sender a protocol or port has no handler (never for a broadcast). The last line registers the handler with IP."
+      "description": "Echo requests get replies; replies to our own `ping` are noted in `pong`. `unreachable` above tells a sender a protocol or port has no handler (never for a broadcast), quoting the packet's header and up to 8 bytes more, never past the packet's end (proven, `proofs/OS4/Icmp.lean`). The last line registers the handler with IP."
     },
     {
       "file": "forth/net/udp.fs",

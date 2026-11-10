@@ -50,6 +50,7 @@ one now does.
 | 21 | 2026-11-04 | A virtio request that timed out stayed with the device; when it completed late, its used-ring entry was taken by the next request on that queue, and its buffer was still written | After one disk timeout, a later read could return before its data arrived, with the wrong request's status; the late write could land in a reused block buffer | Proof planning (writing the HAL contract, V4) | No: QEMU completes requests at once | Open: TD-36 (needs a device reset, the user's call) |
 | 22 | 2026-11-04 | `net-send` (bare metal) copied `len` bytes into its 2 KiB transmit buffer with no bound, relying on every caller to keep frames short | A length over 2036, or a negative one, would write past `tx-buf` into the driver's other data and beyond | Proof planning (writing the HAL contract, V4) | No: the network stack never sends a frame that long | Length held to the buffer; proven (`Drivers.lean`) |
 | 23 | 2026-11-04 | `net-send` (bare metal) offered the card an empty frame, header only, when asked to send 0 bytes | QEMU's virtio-net never completes such a request and marks the device broken: the send throws -263 and the network is gone until reboot | Test (`net-faults`, written for defect 22's fix: its negative length became 0) | Only once that test was written | Empty frames are not sent; the test sends again after one |
+| 24 | 2026-11-10 | ICMP "destination unreachable" quoted the packet's header and 8 bytes even when the packet ended sooner | The reply carried 8 bytes of an earlier frame still in `rx-frame`: a sender on the link, choosing the header length, could read another connection's ports and sequence number (which RFC 5961's checks rely on being secret) or 8 bytes of its data | Proof planning (V4: a parser reads only its frame) | No; repro in `tests/udp` (the peer's protocol 200 cases) | #138; proven (`Icmp.lean`) |
 
 ## Also shown
 
@@ -60,8 +61,8 @@ one now does.
 
 ## What the log says so far
 
-Up to 2026-11-04: 23 defects. Tests found 2, the app 1, hardening 4, and
-the proofs 16 (7 directly, 5 by the audits they pointed to, 4 while
+Up to 2026-11-10: 24 defects. Tests found 2, the app 1, hardening 4, and
+the proofs 17 (7 directly, 5 by the audits they pointed to, 5 while
 planning a proof). (A double free in the fix for 20 was caught by
 `tcp-attack` before it was committed, so it is not logged: the tests and
 the proofs find different things.) No proof-found
