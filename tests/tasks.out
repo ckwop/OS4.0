@@ -31,3 +31,6 @@ t1 stopped
 t2 stopped
  ok
 ' ping up@ start invalid numeric argument
+\ MS waits its whole time, however often the task is woken (a connection wakes its owner)  ok
+: waker ( -- ) begin main-task wake pause again ;  ok
+' waker t1 start  counter 200 ms counter swap - counter-hz 5 / u< 0= .  t1 sleep -1  ok

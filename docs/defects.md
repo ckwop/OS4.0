@@ -53,6 +53,12 @@ one now does.
 | 24 | 2026-11-10 | ICMP "destination unreachable" quoted the packet's header and 8 bytes even when the packet ended sooner | The reply carried 8 bytes of an earlier frame still in `rx-frame`: a sender on the link, choosing the header length, could read another connection's ports and sequence number (which RFC 5961's checks rely on being secret) or 8 bytes of its data | Proof planning (V4: a parser reads only its frame) | No; repro in `tests/udp` (the peer's protocol 200 cases) | #138; proven (`Icmp.lean`) |
 | 25 | 2026-11-05 | `options-mss` read an MSS option's length byte and value even when they lay past the end of the TCP header | A SYN whose options end in a truncated MSS option (kind 2 in the last byte, or kind 2 and length 4 in the last two) set the connection's MSS from bytes after the header: the segment's data, or stale bytes of an earlier frame when there was none (clamped to 64 to our MSS, so no memory harm) | Proof planning (V4 reads: a parser reads only the frame) | No | Options are read only while their bytes lie inside the header; `tcp-attack` sends both truncated forms (found before 24, merged after it) |
 
+| 26 | 2026-11-10 | `udp-find` matched port 0 to the first free slot (a free slot holds port 0), so a datagram to UDP port 0 ran that slot's handler: one left by `udp-unbind`, or xt 0, a jump to address 0 | Any host could run a handler the application had unbound (the `udp` test's own `heard` answered a datagram to port 0), or make the network task jump to address 0 on every such datagram (a fault, caught per frame; bare metal prints a register dump each time) | Proof planning (V4 H-parse: what `udp-in` may execute, read against its table) | No; repro in `tests/udp` (the peer's port 0 case) | #140: port 0 is never found or bound |
+| 27 | 2026-11-10 | `listener-of` likewise matched port 0 to a free listening slot: a SYN to TCP port 0 was answered, and once the handshake completed, the connection was queued on that free slot, where nothing accepts it and nothing times it out | Any client could open 256 such connections and fill `max-conns` for good: no further TCP connection to any port until reboot. A later `listen` taking that slot would hand its application the stale connections | Proof planning (V4 H-pool: the listeners' queues hold only connections someone will accept, read against `listener-of`) | No; repro in `tests/tcp-attack` (a SYN to port 0 must get a reset) | #140 |
+| 28 | 2026-11-10 | `ms` returned as soon as the task was woken. A connection's events (data, ACKs) wake its owner, and after `close-connection` the owner stayed set, so a pooled task went on being woken by a connection it had finished with | The two-second pause between admin password tries ended as soon as the client sent anything, or its ACK arrived: the pause did not slow guessing. Any `ms` in a task that owned a connection was cut short | Proof planning (V4 H-pool: reading what keeps a connection's task pointer after the connection is given up) | No; repro in `tests/tasks` (a task woken in a loop while another sleeps 200 ms) | `ms` sleeps until its time, however often woken; `close-connection` clears the owner |
+| 29 | 2026-11-10 | `fin-in` compared the FIN's sequence number, `i-seq + i-len`, with `rcv-nxt` without taking it to 32 bits | A FIN in a segment whose data crossed 2^32 was ignored, its data acknowledged and the FIN not: the connection closed only when the peer sent the FIN again on its own | Proof planning (V4: wraparound in the receive path's sequence arithmetic) | No; repro in `tests/tcp-attack` (a client whose data crosses 2^32) | Masked to 32 bits |
+| 30 | 2026-11-10 | `release-conn` freed a connection already closed once the application had closed it. `close-connection` frees a closed connection itself, waiting for `conns-lock` while the timer sweep holds it; had that sweep's `catch` released the same connection (after a throw in `conn-timers`, only the watchdog's in practice), it would have been freed twice | A connection on the free list twice, so two later connections sharing one record. Not reachable short of the watchdog stopping the sweep at that connection | Proof planning (V4 H-pool: every path frees a live connection exactly once) | No | `release-conn` leaves a closed connection alone |
+
 ## Also shown
 
 - **Mutation:** a `u>` changed to compare signed passed all 36 hosted tests,
@@ -62,9 +68,12 @@ one now does.
 
 ## What the log says so far
 
-Up to 2026-11-10: 25 defects. Tests found 2, the app 1, hardening 4, and
-the proofs 18 (7 directly, 5 by the audits they pointed to, 6 while
-planning a proof). (A double free in the fix for 20 was caught by
+Up to 2026-11-10: 30 defects. Tests found 2, the app 1, hardening 4, and
+the proofs 23 (7 directly, 5 by the audits they pointed to, 11 while
+planning a proof). Of the five found planning V4's receive path and pool
+(26 to 30), the first three were reachable by any client (two through port
+0, which a free table slot also holds), and each fails a test written for
+it. (A double free in the fix for 20 was caught by
 `tcp-attack` before it was committed, so it is not logged: the tests and
 the proofs find different things.) No proof-found
 defect would have failed the test suite as it stood. The tests had already

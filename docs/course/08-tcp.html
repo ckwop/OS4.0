@@ -91,6 +91,7 @@
   <div class="talk">
     <p>A TCP connection opens with a three-way handshake. The client sends a SYN, a segment asking to synchronise. The server answers with a SYN-ACK: its own SYN, and an acknowledgement of the client's. At that point the connection is half open, in a state called syn-received. When the client's final ACK arrives, the connection is established.</p>
     <p>All of that happens in the network task. The application doesn't see a connection until it's fully established: only then is it added to the listening port's queue.</p>
+    <p>A free listening slot holds port zero, so port zero itself never listens: a SYN to it gets a reset. Once it found a free slot instead, and its connections waited there for good, never accepted, until no room was left for any other.</p>
     <p>Accept-connection takes the next one from that queue. If the queue is empty, the task records itself as the one waiting, and stops. When the network task queues a new connection, it wakes the waiting task, which takes the connection and records itself as its owner, the task to wake whenever anything changes on it.</p>
   </div>
 </section>
@@ -263,8 +264,8 @@
       </svg>
     </div>
     <div>
-      <pre class="code" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">close-connection</span>  ( conn -- )
-  dup app-closed flag+
+      <pre class="code" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">close-connection</span>  ( conn -- )  <span class="c">\ its task, now free for other work, is woken no more</span>
+  dup app-closed flag+  0 over c.owner !
   dup c.state @ closed = if  free-conn exit  then
   linger-ms deadline over c.timeout !
   dup fin-queued flag+  tcp-output ;</pre>
@@ -277,7 +278,7 @@
   </ul>
   <div class="talk">
     <p>Each direction of a connection closes separately, with a FIN. If we close first, the connection passes through fin-wait-one, until our FIN is acknowledged, then fin-wait-two, until theirs arrives, then time-wait for two seconds, to catch any stragglers. If they close first, we go through close-wait, while the application finishes, and last-ack, until our FIN is acknowledged.</p>
-    <p>For the application, it's one word. Close-connection marks the connection as given up by the application, sets a linger deadline of one minute, and queues a FIN. The FIN only goes once everything queued before it has been sent.</p>
+    <p>For the application, it's one word. Close-connection marks the connection as given up by the application, forgets its owner, so that the task, soon busy with other work, is woken by it no more, sets a linger deadline of one minute, and queues a FIN. The FIN only goes once everything queued before it has been sent.</p>
     <p>The important detail is that every state that waits for the other end has a time limit. A client that never acknowledges, or never sends its own FIN, can't hold a connection record for ever: after the linger time, or the fin-wait time, it's reset and recycled.</p>
   </div>
 </section>

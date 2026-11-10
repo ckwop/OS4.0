@@ -269,23 +269,26 @@ class Peer:
                 echoed.add(message[8:])
         print(f"peer: udp burst of {burst} datagrams: {len(echoed)} echoed", flush=True)
 
-        self.send_ip(17, self.udp_segment(40001, 9, b"anyone there?"))
-        deadline = time.time() + 5
-        while True:                         # skip reports about other datagrams
-            try:
-                packet, ihl, message = self.unreachables.get(timeout=max(0.1, deadline - time.time()))
-            except queue.Empty:
-                print("peer: udp to closed port 9: no ICMP reply", flush=True)
+        # Port 0 is never bound: it once found a free slot and ran its handler
+        # (defect 26), an unbound one or none at all (xt 0).
+        for sport, port in ((40001, 9), (40003, 0)):
+            self.send_ip(17, self.udp_segment(sport, port, b"anyone there?"))
+            deadline = time.time() + 5
+            while True:                     # skip reports about other datagrams
+                try:
+                    packet, ihl, message = self.unreachables.get(timeout=max(0.1, deadline - time.time()))
+                except queue.Empty:
+                    print(f"peer: udp to closed port {port}: no ICMP reply", flush=True)
+                    break
+                quoted = message[8:]
+                qihl = (quoted[0] & 15) * 4
+                qsport, dport = struct.unpack("!HH", quoted[qihl:qihl + 4])
+                if qsport != sport:
+                    continue
+                ok = message[1] == 3 and not checksum(message) and dport == port
+                print(f"peer: udp to closed port {port}: ICMP port unreachable "
+                      f"{'ok' if ok else f'wrong: code {message[1]}, port {dport}'}", flush=True)
                 break
-            quoted = message[8:]
-            qihl = (quoted[0] & 15) * 4
-            sport, dport = struct.unpack("!HH", quoted[qihl:qihl + 4])
-            if sport != 40001:
-                continue
-            ok = message[1] == 3 and not checksum(message) and dport == 9
-            print(f"peer: udp to closed port 9: ICMP port unreachable "
-                  f"{'ok' if ok else f'wrong: code {message[1]}, port {dport}'}", flush=True)
-            break
 
         # A packet with no payload, for a protocol nobody handles: the report
         # may quote its header and nothing more. The frame before it (dropped:
@@ -425,6 +428,22 @@ class Peer:
             print(f"peer: {total} bytes in 64-byte segments once the window opens: "
                   f"{'all, promptly' if prompt else 'all, slowly' if done else 'not all'}", flush=True)
             bulk.close()
+
+        wrap = TcpClient(self, 53006, dport=5000)     # a FIN after data that crosses 2**32
+        wrap.iss = MOD32 - 3
+        if wrap.connect():
+            data = b"wrap\r\n"
+            start = len(wrap.log)
+            wrap.send_seg(FIN | ACK | PSH, wrap.snd_nxt, data)
+            end = (wrap.snd_nxt + len(data) + 1) % MOD32
+            acked = wrap.wait_for(lambda: any(e[0] & ACK and e[2] == end for e in wrap.log[start:]), 5)
+            print(f"peer: FIN after data across 2**32: {'acknowledged' if acked else 'not acknowledged'}",
+                  flush=True)
+            wrap.snd_nxt += len(data)
+            wrap.close()
+
+        zero = TcpClient(self, 53007, dport=0)        # no one listens on port 0
+        print(f"peer: SYN to port 0: {zero.expect_reset()}", flush=True)
 
         stalled = TcpClient(self, 53002, dport=5000)  # sends, but never takes the echoes
         if stalled.connect():

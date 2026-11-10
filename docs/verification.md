@@ -460,6 +460,22 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
       buffers (TD-36: only a device reset makes this true).
     - **H-model:** the primitives and the specifications of CATCH and THROW
       (TD-31), `>phys`, and a clock that advances.
+  - Planning H-parse and H-pool for the receive path (2026-11-10) found five
+    defects (26 to 30 in `docs/defects.md`), each with a failing test first:
+    a datagram to UDP port 0 ran a free slot's handler (an unbound one, or
+    xt 0); a SYN to TCP port 0 queued its connection on a free listener
+    slot, never accepted, so 256 of them shut TCP for good; `ms` ended at
+    any wake, so a connection's traffic cut short the pause between
+    password tries; `fin-in` compared an unmasked sequence number; and
+    `release-conn` could free a connection the application was already
+    freeing. Proven (`proofs/OS4/Ports.lean`): `udp-find` and
+    `listener-of` answer 0 for port 0 without searching, and pass any
+    other port to the search; `release-conn` leaves a closed connection
+    untouched (`release_conn_closed`), so the sweep's `catch` cannot free
+    twice. Read and left as they are (TD-39): `close-connection`'s output
+    after a wait may touch a freed record (harmless as the code stands),
+    window updates without RFC 793's ordering check, challenge ACKs
+    without a rate limit.
   - Proven towards it: the driver's part (`Drivers.lean`: whatever the card
     reports, `net-poll` copies at most 2036 bytes into the caller's buffer and
     hands each buffer back with stores only into its own rings); the steps
@@ -484,7 +500,14 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     - H-pool: `new-conn` when it reserves a new connection; the records
       apart from each other and from the hash cells (stated as hypotheses
       of the pool steps); and the paths to `free-conn` (`release-conn`, the
-      timers, `close-connection`) shown to pass a live connection.
+      timers, `close-connection`) shown to pass a live connection. Stated
+      and read against the code (2026-11-10), not yet proven: a connection
+      is freed only by `close-connection` finding it closed, or by
+      `release-conn` closing it after the application has closed it (or it
+      never reached one, in the handshake); `release-conn` on a closed one
+      is proven to do nothing; the listeners' queues hold only connections
+      on a port someone listens on (port 0 never, proven for
+      `listener-of`).
     - H-steps: the remaining listed loops each need a bound from the code
       above them (a frame's length, a table's size, an acyclic bucket),
       or to pause. Proven in the plain semantics, not yet in the counted

@@ -11,3 +11,6 @@ counter 200 ms counter swap - counter-hz 5 / u< 0= .
 ' oops t2 start  2 yield
 .tasks
 ' ping up@ start
+\ MS waits its whole time, however often the task is woken (a connection wakes its owner)
+: waker ( -- ) begin main-task wake pause again ;
+' waker t1 start  counter 200 ms counter swap - counter-hz 5 / u< 0= .  t1 sleep

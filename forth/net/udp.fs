@@ -18,11 +18,15 @@
 16 constant #udp-ports
 create udp-ports  #udp-ports 2 cells * allot   udp-ports #udp-ports 2 cells * 0 fill
 : udp-slot  ( i -- addr )  2 cells * udp-ports + ;   \ port, then handler; port 0: free
-: udp-find  ( port -- slot | 0 )
+: udp-slot-of  ( port -- slot | 0 )  \ port 0 finds a free slot
   #udp-ports 0 do  dup i udp-slot @ = if  drop i udp-slot unloop exit  then  loop
   drop 0 ;
+\ Port 0 is never bound: a datagram to it once ran a free slot's handler, an
+\ unbound one or xt 0 (docs/defects.md, 26).
+: udp-find  ( port -- slot | 0 )  dup if udp-slot-of then ;
 : udp-bind    ( xt port -- )  \ datagrams to port go to xt
-  dup udp-find ?dup 0= if  0 udp-find dup 0= if -266 throw then  then
+  dup 0= if -24 throw then
+  dup udp-find ?dup 0= if  0 udp-slot-of dup 0= if -266 throw then  then
   tuck !  cell+ ! ;
 : udp-unbind  ( port -- )  udp-find ?dup if 0 swap ! then ;
 

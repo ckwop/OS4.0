@@ -229,12 +229,13 @@
   <div class="below" data-step="2">
     <pre class="code" data-src="forth/tasks.fs">: <span class="w">stop</span>   ( -- )  1 task-status !  0 task-wake !  pause ;   <span class="c">\ until another task wakes this one</span>
 : <span class="w">wake</span>   ( task -- )  0 swap task-status field! ;
-: <span class="w">ms</span>     ( n -- )  counter-hz 1000 / *  counter +  task-wake !  1 task-status !  pause ;</pre>
+: <span class="w">stop-until</span>  ( u -- )  task-wake !  1 task-status !  pause ;  <span class="c">\ until woken or counter value u</span>
+: <span class="w">ms</span>     ( n -- )  deadline  begin dup stop-until  dup counter - 0&gt; 0= until drop ;</pre>
     <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:ms">forth/tasks.fs › ms</a></div>
   </div>
   <div class="talk">
     <p>A task is in one of three states. Ready means it will run on its next turn. Sleeping means it's waiting for a time. Stopped means it's waiting for another task to wake it.</p>
-    <p>All three words are tiny Forth definitions. <span data-say="em ess">ms</span> works out the counter value some milliseconds from now, stores it as the wake time, marks the task not ready, and pauses. Pause will make it ready again once the counter passes that value. Stop marks the task not ready with no wake time at all, so only another task can bring it back. And wake just sets another task's status to zero, through the field-store word, which reaches into that task's user area.</p>
+    <p>All three words are tiny Forth definitions. Stop-until stores a wake time, marks the task not ready, and pauses. Pause will make it ready again once the counter passes that value, or sooner, if another task wakes it. So <span data-say="em ess">ms</span> works out the counter value some milliseconds from now, and sleeps until then, again and again until the time has really come. It used to sleep only once, and any wake cut it short: a client typing during the pause between password tries skipped the pause. Stop marks the task not ready with no wake time at all, so only another task can bring it back. And wake just sets another task's status to zero, through the field-store word, which reaches into that task's user area.</p>
     <p>Here's a real example. A listener waiting for a telnet connection is stopped inside accept-connection, costing nothing. When a connection arrives, the network task queues it and wakes the listener, which runs on its next turn.</p>
   </div>
 </section>

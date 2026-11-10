@@ -59,7 +59,7 @@
       "file": "forth/net/udp.fs",
       "pattern": ": udp-bind    \\(",
       "title": "UDP",
-      "description": "A table of 16 ports and handlers. `udp-in` below checks the length and (if present) the checksum, then calls the handler with the data, or answers port unreachable. The echo service is at the end of the file."
+      "description": "A table of 16 ports and handlers; a free slot has port 0, so port 0 itself is never bound or found (a datagram to it once ran a free slot's handler: defect 26). `udp-in` below checks the length and (if present) the checksum, then calls the handler with the data, or answers port unreachable. The echo service is at the end of the file."
     },
     {
       "file": "forth/net/udp.fs",

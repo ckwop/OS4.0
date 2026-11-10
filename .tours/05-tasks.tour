@@ -29,7 +29,7 @@
       "file": "forth/tasks.fs",
       "pattern": ": stop   \\( -- \\)",
       "title": "Sleeping and waking",
-      "description": "Three one-line words over two fields of the user area:\n\n- `stop`: not ready, no wake time; only another task's `wake` brings it back.\n- `wake`: set another task's status to 0 (ready).\n- `ms`: a wake time some milliseconds from now; `pause` makes it ready once the counter passes it."
+      "description": "Short words over two fields of the user area:\n\n- `stop`: not ready, no wake time; only another task's `wake` brings it back.\n- `wake`: set another task's status to 0 (ready).\n- `stop-until`: a wake time; `pause` makes it ready once the counter passes it, or sooner if woken.\n- `ms`: `stop-until` a time some milliseconds from now, again until that time has come, so a wake does not cut it short (defect 28)."
     },
     {
       "file": "forth/tasks.fs",

@@ -278,7 +278,7 @@
   </div>
   <div class="talk">
     <p>UDP adds port numbers to IP, and a length and a checksum, and that's all: each datagram stands alone, with no connection and no guarantee it arrives.</p>
-    <p>An application binds a port to an execution token. Here's the echo service from the standard, in three lines: bind port seven to a word that sends every datagram straight back with udp-reply.</p>
+    <p>An application binds a port to an execution token. Here's the echo service from the standard, in three lines: bind port seven to a word that sends every datagram straight back with udp-reply. The table marks a free slot with port zero, so port zero itself can never be bound. It once could be reached, though: a datagram to port zero found a free slot, and ran whatever handler that slot had held, or none at all.</p>
     <p>One thing to know about UDP handlers: they run inside the network task, in the middle of receiving. So they must be quick and must never wait. Anything slow should be handed to a task of its own. While a handler runs, words like udp-peer-ip and udp-reply refer to the datagram being handled.</p>
     <p>On the way in, the checksum is checked if the sender included one; on the way out, one is always sent.</p>
   </div>

@@ -223,12 +223,16 @@ variable went                  \ something went out (only used under tx-lock)
 8 constant #listeners
 create listeners  #listeners 3 cells * allot   listeners #listeners 3 cells * 0 fill
 : listen-slot  ( i -- addr )  3 cells * listeners + ; \ port, queue head, waiting task
-: listener-of  ( port -- l | 0 )
+: port-slot  ( port -- l | 0 )  \ port 0 finds a free slot
   #listeners 0 do  dup i listen-slot @ = if  drop i listen-slot unloop exit  then  loop
   drop 0 ;
+\ Port 0 never listens: a SYN to it once found a free slot, and the connection
+\ waited there for good, never accepted (docs/defects.md, 27).
+: listener-of  ( port -- l | 0 )  dup if port-slot then ;
 : listen  ( port -- )  \ accept connections on port
+  dup 0= if -24 throw then
   dup listener-of if drop exit then
-  0 listener-of dup 0= if -270 throw then  ! ;
+  0 port-slot dup 0= if -270 throw then  ! ;
 
 : enqueue  ( conn l -- )  \ a connection ready to accept, at the end of the queue
   0 2 pick c.next !
@@ -313,8 +317,11 @@ create rst-conn  /conn-header allot
   r> arm-rexmit ;
 
 \ It is over: recycle it once the application is done with it. One still in the
-\ handshake was never handed to an application, so it is recycled now.
+\ handshake was never handed to an application, so it is recycled now. Once
+\ closed it is left alone: CLOSE-CONNECTION frees a closed one itself, so a
+\ second release (the sweep's, after a throw) must not free it as well.
 : release-conn  ( conn -- )
+  dup c.state @ closed = if drop exit then
   dup c.state @ syn-received = if dup app-closed flag+ then
   closed over c.state !  0 over c.rexmit !
   dup wake-owner
@@ -355,7 +362,7 @@ create rst-conn  /conn-header allot
 : fin-in  ( conn -- )  \ their FIN, once everything before it has arrived
   f-fin i-flag? 0= if drop exit then
   dup fin-received flag? if  ack-now flag+ exit  then    \ sent again: our ACK was lost
-  i-seq @ i-len @ +  over rcv-nxt <> if drop exit then
+  i-seq @ i-len @ + $ffffffff and  over rcv-nxt <> if drop exit then   \ 32 bits, as RCV-NXT
   dup fin-received flag+  dup ack-now flag+  dup wake-owner
   dup c.state @
   dup established = if  drop close-wait swap c.state ! exit  then
@@ -549,8 +556,8 @@ create crlf  13 c, 10 c,
 \ (RESET-SOON: no other timeout runs before our FIN), the sweep does it, and
 \ frees the connection as the application has closed it: resetting it here as
 \ well could free it twice.
-: close-connection  ( conn -- )
-  dup app-closed flag+
+: close-connection  ( conn -- )  \ its task, now free for other work, is woken no more
+  dup app-closed flag+  0 over c.owner !
   dup c.state @ closed = if  free-conn exit  then
   dup c.timeout @ if  drop exit  then
   linger-ms deadline over c.timeout !
