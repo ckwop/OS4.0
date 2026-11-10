@@ -10,7 +10,8 @@ vector ip-in    icmp-in tcp-in udp-in no-protocol 2drop    \ ip-handlers, 'no-pr
 vector udp-in                                              \ udp-ports: none in the base
 
 \ Loops that do not pause, so are not counted: each runs in no steps in the
-\ proofs. Each line says what bounds it, which is not yet proven.
+\ proofs. Each line says what bounds it, not yet proven in the counted
+\ semantics (where a bound is proven in the plain one, the line names it).
 uncounted arp-find          \ #arp (8) rounds
 uncounted listener-of       \ #listeners (8) rounds
 uncounted sum16             \ a round per two bytes summed: at most a frame
@@ -19,8 +20,8 @@ uncounted fold              \ each round shrinks the sum below 2^49: at most 4
 uncounted cstr>u            \ hosted driver: a round per digit of a port number argument
 uncounted (segment-out)     \ copies the segment a byte a round: at most the MSS
 uncounted siphash           \ a round per 8 bytes hashed: a connection's addresses and ports
-uncounted hash-out          \ a round per connection in its hash bucket
-uncounted unlink            \ a round per connection in the list
+uncounted hash-out          \ a round per connection in its hash bucket (Pools.lean, hash_out_eq)
+uncounted unlink            \ a round per connection in the list (Pools.lean, unlink_eq)
 uncounted options-mss       \ each round moves on at least a byte of options: at most 40
 uncounted data-in           \ copies a segment's data a byte a round: under a frame
 uncounted find-conn         \ a round per connection in the segment's hash bucket

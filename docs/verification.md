@@ -330,6 +330,20 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   list, ends on any list that ends, and leaves exactly the list without
   that connection (`unlink_eq`, `unlink_chain`), provided the list's link
   cells are apart; it writes one cell, the link before the connection.
+  `hash-out` takes a connection out of its hash bucket the same way, through
+  each connection's hash link (`hash_out_eq`, `hunlink_chain`). And both
+  pool steps keep the pool whole (`Pool`: the live and free lists end, and
+  their link cells, with `conns` and `free-conns`, are pairwise apart, so no
+  connection is on both lists or twice on one): `(free-conn)` moves a live
+  connection to the front of the free list (`free_conn_step`), and
+  `new-conn` moves the first free one to the live list (`new_conn_pool`), so
+  live plus free stays what it was. Assumed there: `conn-bucket`'s own
+  stores (its generated footprint: `tuple` and the SipHash state) miss the
+  pool; the bucket's cells are apart from the pool's; and a connection's
+  176-byte header is apart from every other link cell (records do not
+  overlap). Not yet covered: `new-conn` when the free list is empty (it
+  reserves a new connection), and the timers' and the application's paths
+  to `free-conn`.
 - **Steps:** the loops in `proofs/yields.txt` whose bound a peer sets are proven
   bounded, or made to pause: `(tcp-output)`, and `room?` (`count-list`,
   `half-open`).
@@ -453,23 +467,29 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     `room?` and `(tcp-output)`; the writes of every word whose footprint is
     generated (`Foots.lean`); the parsers' front, where every length a
     header claims is checked against the frame before it is used
-    (`frame_in_dispatch`, `ip_check_bounds`, `udp_in_head`, `tcp_in_head`);
-    and the pool step every closing path takes (`unlink_chain`).
+    (`frame_in_dispatch`, `ip_check_bounds`, `udp_in_head`, `tcp_in_head`,
+    `unreachable_quote`); and both pool steps (`free_conn_step`, `new_conn_pool`: a connection
+    moves between the live and free lists and their total stays the same).
   - Left for each hypothesis, most tractable first:
-    - H-parse: the parsers after their front. ARP's learning writes the
-      cache through an index read from memory (`arp-next`), and an address
-      `arp-find` returns: both need bounds proven (a mask on the index would
-      make the generated footprint bounded). `tcp-in`'s handling
-      (`segment-in`, `data-in`) writes connection records found through the
-      hash table, so its footprint rests on H-pool. Telnet works on a
+    - H-parse: ARP's learning writes the cache through an index read from
+      memory (`arp-next`), and an address `arp-find` returns: both need
+      bounds proven (drafted on branch `v4-arp`, `proofs/OS4/Arp.lean`, not
+      yet checked: it did not finish in the time Lean was given).
+      `arp-reply`'s generated footprint is already bounded.
+      `tcp-in`'s handling (`segment-in`, `data-in`) writes connection
+      records found through the hash table, so its footprint rests on the
+      pool invariant, now proven for the pool steps: what is left is that
+      `find-conn` returns a live connection or 0. Telnet works on a
       connection's receive ring, through masked offsets.
-    - H-pool: `(free-conn)` composes `hash-out` (a walk of the hash
-      bucket, like `unlink`, through `c.hlink`) with `unlink`; `new-conn`
-      pops the free list or reserves. With both proven, every path to
-      `release-conn` returns its slot; the timers' release follows.
+    - H-pool: `new-conn` when it reserves a new connection; the records
+      apart from each other and from the hash cells (stated as hypotheses
+      of the pool steps); and the paths to `free-conn` (`release-conn`, the
+      timers, `close-connection`) shown to pass a live connection.
     - H-steps: the remaining listed loops each need a bound from the code
       above them (a frame's length, a table's size, an acyclic bucket),
-      or to pause.
+      or to pause. Proven in the plain semantics, not yet in the counted
+      one: `unlink` and `hash-out` end on any list that ends (`unlink_eq`,
+      `hash_out_eq`).
     - H-queue: needs the kernel's `dp` and `dict-owner` cells stated apart
       from the dictionary (a small trusted hypothesis), then `new-vq`.
     - H-device: a device reset after a timeout (TD-36, the user's call).
