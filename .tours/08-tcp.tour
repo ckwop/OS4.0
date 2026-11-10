@@ -59,13 +59,13 @@
       "file": "forth/net/tcp.fs",
       "pattern": ": close-connection  \\(",
       "title": "Closing",
-      "description": "Mark it closed by the application and forget its owner (the task goes on to other work), give it `linger-ms` (60 s) to send what is queued, queue a FIN. `fin-in` and `fin-acked-in` move it through the closing states; `timed-out` ends TIME-WAIT and FIN-WAIT-2, or resets a connection that would not finish. A send that timed out (`reset-soon`) has already set its timeout to now, so the sweep resets it within a tick, and frees it once the application has closed it: only one task ever releases it."
+      "description": "Under `conns-lock` (the sweep's order: `conns-lock`, then `tx-lock`), so the network task cannot free it while its output waits: mark it closed by the application and forget its owner (the task goes on to other work), give it `linger-ms` (60 s) to send what is queued, queue a FIN. `fin-in` and `fin-acked-in` move it through the closing states; `timed-out` ends TIME-WAIT and FIN-WAIT-2, or resets a connection that would not finish. A send that timed out (`reset-soon`) has already set its timeout to now, so the sweep resets it within a tick, and frees it once the application has closed it: only one task ever releases it."
     },
     {
       "file": "forth/net/tcp.fs",
       "pattern": ": new-iss  \\(",
       "title": "The defences",
-      "description": "Keyed initial sequence numbers (RFC 6528); `rst-in` and `ack-ok?` further down apply RFC 5961; `room?` caps connections and half-open ones; `bucket` hashes with `bucket-key`. `tests/tcp-attack` floods and forges against all of them."
+      "description": "Keyed initial sequence numbers (RFC 6528); `rst-in` and `ack-ok?` further down apply RFC 5961; `room?` caps connections and half-open ones; `bucket` hashes with `bucket-key`, leaving out our own address, so a connection's bucket cannot change while it is hashed (defect 31). `tests/tcp-attack` floods and forges against all of them."
     },
     {
       "file": "forth/net/tcp.fs",

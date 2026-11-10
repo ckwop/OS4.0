@@ -8,6 +8,12 @@ task server  ' line-server server start  ok
 settle served @ .  conns @ count-list . 32 0  ok
 create fake-conn /conn allot  fake-conn /conn 0 fill  ok
 fake-conn 0 0 0 2000 ' segment-out catch . 2drop 2drop drop -24  ok
+\ A connection freed after MY-IP changed still leaves its hash bucket (defect 31)  ok
+new-conn constant c1  ip 10.0.2.2 c1 c.rip !  1234 c1 c.rport !  5000 c1 c.lport !  c1 hash-in  ok
+my-ip @  ip 10.0.2.99 my-ip !  c1 free-conn  my-ip !  c1 conn-bucket @ c1 = . 0  ok
+\ CLOSE-CONNECTION waits while another task holds CONNS-LOCK across pauses, as the sweep does, then frees once  ok
+task sweeper  : hold ( -- ) conns-lock get  20 0 do pause loop  conns-lock release ;  ok
+new-conn constant c2  ' hold sweeper start  pause  c2 close-connection  free-conns @ c2 =  c2 c.link @ c2 <> and . -1  ok
 1000 ms  ok
 --- peer ---
 peer: tcp: 32 of 32 clients connected, 320 of 320 lines echoed, 32 closed cleanly

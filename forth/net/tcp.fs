@@ -105,13 +105,15 @@ variable max-half-open  64 max-half-open !   \ connections still in the handshak
 create isn-key  random , random ,
 create bucket-key  random , random ,
 create tuple 2 cells allot
-: tuple-hash  ( rip rport lport key -- h )  \ the keyed hash of a connection's addresses and ports
-  >r  swap 16 lshift or  swap 32 lshift or  tuple !  my-ip @ tuple cell+ !
+: tuple-hash  ( rip rport lport local key -- h )  \ the keyed hash of a connection's addresses and ports
+  >r  tuple cell+ !  swap 16 lshift or  swap 32 lshift or  tuple !
   tuple 16 r> key@ siphash ;
 
+\ A connection's bucket must not change while it is hashed, so it leaves out
+\ our address, which the console or an app may change (docs/defects.md, 31).
 256 constant #buckets
 create buckets  #buckets cells allot   buckets #buckets cells 0 fill
-: bucket  ( rip rport lport -- addr )  bucket-key tuple-hash #buckets 1- and cells buckets + ;
+: bucket  ( rip rport lport -- addr )  0 bucket-key tuple-hash #buckets 1- and cells buckets + ;
 : conn-bucket  ( conn -- addr )  dup c.rip @ over c.rport @ rot c.lport @ bucket ;
 : hash-in   ( conn -- )  dup conn-bucket  dup @ 2 pick c.hlink !  ! ;
 : hash-out  ( conn -- )
@@ -290,7 +292,7 @@ create rst-conn  /conn-header allot
   then ;
 
 : new-iss  ( -- seq )  \ RFC 6528: a clock, plus a keyed hash of the addresses and ports
-  ip-source i-sport @ i-dport @ isn-key tuple-hash  counter 4 rshift +  $ffffffff and ;
+  ip-source i-sport @ i-dport @ my-ip @ isn-key tuple-hash  counter 4 rshift +  $ffffffff and ;
 
 \ These walk a list of up to max-conns connections, pausing after each, so a
 \ SYN's time between pauses does not grow with the number of connections
@@ -555,13 +557,17 @@ create crlf  13 c, 10 c,
 \ within LINGER-MS, the connection is reset. If a send asked for a reset
 \ (RESET-SOON: no other timeout runs before our FIN), the sweep does it, and
 \ frees the connection as the application has closed it: resetting it here as
-\ well could free it twice.
-: close-connection  ( conn -- )  \ its task, now free for other work, is woken no more
+\ well could free it twice. It holds CONNS-LOCK throughout: its output may wait
+\ for TX-LOCK, and meanwhile the network task could release the connection and,
+\ the application having closed it, free it (TD-39). The lock order is the
+\ sweep's: CONNS-LOCK, then TX-LOCK.
+: (close-connection)  ( conn -- )  \ its task, now free for other work, is woken no more
   dup app-closed flag+  0 over c.owner !
   dup c.state @ closed = if  free-conn exit  then
   dup c.timeout @ if  drop exit  then
   linger-ms deadline over c.timeout !
   dup fin-queued flag+  tcp-output ;
+: close-connection  ( conn -- )  ['] (close-connection) conns-lock locked ;
 : drop-connection  ( conn -- )  dup abort-connection close-connection ;  \ reset it, and let it go
 
 : (.tcp)  ( -- )

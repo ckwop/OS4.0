@@ -42,7 +42,8 @@ theorem udp_find_ne (port : Cell) (h : port ≠ 0) (s r : List Cell) (m : Mem) (
   simp only [Words.«udp-find», Words.«udp-find».code]
   generalize Words.«udp-slot-of» = U
   simp [forth, h, pass]
-  cases U ⟨port :: s, r, m, p, e⟩ <;> rfl
+  have h' : ¬ port = 0#64 := fun hp => h (by rw [hp]; rfl)
+  cases U ⟨port :: s, r, m, p, e⟩ <;> simp [h']
 
 /-- `listener-of` gives 0 for port 0, touching nothing. -/
 theorem listener_of_zero (s r : List Cell) (m : Mem) (p : Cell) (e : Nat) :
@@ -57,7 +58,8 @@ theorem listener_of_ne (port : Cell) (h : port ≠ 0) (s r : List Cell) (m : Mem
   simp only [Words.«listener-of», Words.«listener-of».code]
   generalize Words.«port-slot» = P
   simp [forth, h, pass]
-  cases P ⟨port :: s, r, m, p, e⟩ <;> rfl
+  have h' : ¬ port = 0#64 := fun hp => h (by rw [hp]; rfl)
+  cases P ⟨port :: s, r, m, p, e⟩ <;> simp [h']
 
 /-- A connection already closed (state 0, the cell 8 bytes in) is left
 alone: no store, no wake, no free. -/

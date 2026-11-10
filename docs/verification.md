@@ -472,9 +472,13 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     `listener-of` answer 0 for port 0 without searching, and pass any
     other port to the search; `release-conn` leaves a closed connection
     untouched (`release_conn_closed`), so the sweep's `catch` cannot free
-    twice. Read and left as they are (TD-39): `close-connection`'s output
-    after a wait may touch a freed record (harmless as the code stands),
-    window updates without RFC 793's ordering check, challenge ACKs
+    twice. Then a sixth (31): a connection's bucket hashed `my-ip` too, so
+    after `my-ip` changed `hash-out` missed it and a freed record stayed
+    in a chain, breaking `find-conn`'s "a live connection or 0"; the
+    bucket now leaves our address out. `close-connection` holds
+    `conns-lock` throughout, so its output, which may wait, never works on
+    a record the network task has freed (#141). Read and left as they are
+    (TD-39): window updates without RFC 793's ordering check, challenge ACKs
     without a rate limit.
   - Proven towards it: the driver's part (`Drivers.lean`: whatever the card
     reports, `net-poll` copies at most 2036 bytes into the caller's buffer and

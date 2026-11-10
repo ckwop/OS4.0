@@ -264,11 +264,12 @@
       </svg>
     </div>
     <div>
-      <pre class="code" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">close-connection</span>  ( conn -- )  <span class="c">\ its task, now free for other work, is woken no more</span>
+      <pre class="code" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">(close-connection)</span>  ( conn -- )  <span class="c">\ its task, now free for other work, is woken no more</span>
   dup app-closed flag+  0 over c.owner !
   dup c.state @ closed = if  free-conn exit  then
   linger-ms deadline over c.timeout !
-  dup fin-queued flag+  tcp-output ;</pre>
+  dup fin-queued flag+  tcp-output ;
+: <span class="w">close-connection</span>  ( conn -- )  ['] (close-connection) conns-lock locked ;</pre>
       <div class="src"><a href="../../forth/net/tcp.fs" data-ref="forth/net/tcp.fs:close-connection">forth/net/tcp.fs › close-connection</a></div>
     </div>
   </div>
@@ -278,7 +279,7 @@
   </ul>
   <div class="talk">
     <p>Each direction of a connection closes separately, with a FIN. If we close first, the connection passes through fin-wait-one, until our FIN is acknowledged, then fin-wait-two, until theirs arrives, then time-wait for two seconds, to catch any stragglers. If they close first, we go through close-wait, while the application finishes, and last-ack, until our FIN is acknowledged.</p>
-    <p>For the application, it's one word. Close-connection marks the connection as given up by the application, forgets its owner, so that the task, soon busy with other work, is woken by it no more, sets a linger deadline of one minute, and queues a FIN. The FIN only goes once everything queued before it has been sent.</p>
+    <p>For the application, it's one word. Close-connection marks the connection as given up by the application, forgets its owner, so that the task, soon busy with other work, is woken by it no more, sets a linger deadline of one minute, and queues a FIN. The FIN only goes once everything queued before it has been sent. It does all this holding the connections lock, the one the timer sweep holds: its output may wait for the network, and meanwhile the network task must not recycle the connection under it.</p>
     <p>The important detail is that every state that waits for the other end has a time limit. A client that never acknowledges, or never sends its own FIN, can't hold a connection record for ever: after the linger time, or the fin-wait time, it's reset and recycled.</p>
   </div>
 </section>
@@ -287,7 +288,7 @@
 <section class="slide" data-code="11">
   <h2>Defences against off-path attackers</h2>
   <pre class="code" data-src="forth/net/tcp.fs" data-step="1">: <span class="w">new-iss</span>  ( -- seq )  <span class="c">\ RFC 6528: a clock, plus a keyed hash of the addresses and ports</span>
-  ip-source i-sport @ i-dport @ isn-key tuple-hash  counter 4 rshift +  $ffffffff and ;</pre>
+  ip-source i-sport @ i-dport @ my-ip @ isn-key tuple-hash  counter 4 rshift +  $ffffffff and ;</pre>
   <pre class="code below" data-src="forth/net/tcp.fs" data-step="2">: <span class="w">rst-in</span>  ( conn -- )
   i-seq @ over rcv-nxt = if  release-conn exit  then
   i-seq @ over rcv-nxt - $ffffffff and  over rx-room u&lt; if challenge else drop then ;</pre>
