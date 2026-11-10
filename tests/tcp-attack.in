@@ -5,7 +5,10 @@ variable served
 : line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;
 1 max-syn-retries !  16 max-half-open !
 task server  ' line-server server start
-: settled? ( -- flag ) served @ 7 = conns @ 0= and ;
+: late ( conn -- ) 2000 ms  dup >r s" a line, late" r> ['] send-line catch if 2drop drop then  close-connection  1 served +! ;
+: late-server ( -- ) 5001 listen begin 5001 accept-connection ['] late spawn drop again ;
+task lates  ' late-server lates start
+: settled? ( -- flag ) served @ 9 = conns @ 0= and ;
 : settle ( -- ) 80000 deadline begin 200 ms settled? over expired? or until drop ;
 settle .tcp ." , half-open " half-open .
 1000 ms

@@ -7,4 +7,5 @@ variable heard?
 s" hello, peer" to-peer .  wait-heard
 5000 udp-unbind
 s" again" to-peer .  500 ms
+pad -1 5000 ip 10.0.2.2 7 ' udp-send catch .  2drop 2drop drop
 5000 ms

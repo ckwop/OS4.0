@@ -59,7 +59,7 @@
 
 proofs: proofs-extract
 	cd proofs &amp;&amp; LEAN_NUM_THREADS=1 timeout 5400 lake build OS4.Foots.NetTcp
-	cd proofs &amp;&amp; LEAN_NUM_THREADS=2 timeout 5400 lake build OS4 OS4Virt OS4.Drivers OS4.Pools OS4.Parsers OS4.IpCheck OS4.Icmp OS4.Ports</pre>
+	cd proofs &amp;&amp; LEAN_NUM_THREADS=2 timeout 5400 lake build OS4 OS4Virt OS4.Drivers OS4.Pools OS4.Parsers OS4.IpCheck OS4.Icmp OS4.Ports OS4.Passwords</pre>
   <div class="src"><a href="../../Makefile">Makefile › proofs</a></div>
   <div class="talk">
     <p>The proofs are about the system as it is compiled, never about a copy of it. Make proofs boots the hosted build, which loads every boot file. A small Forth program then prints the whole dictionary, word by word, as it ended up in memory. A Python generator turns that into Lean definitions, one per word, and the theorems about them. Lake, Lean's build tool, checks the lot, beside a model of the machine and the theorems written by hand. The bare-metal build's drivers come from a second dump, over the serial console, so the proofs see the network card's driver too. Hand proofs about that driver sit in their own module, Drivers. Whatever the card reports, a received frame is copied only into the caller's buffer, and never more than it holds. And the stores into the card's rings, for the network and the disks alike, land only in those rings and the card's own register. Beside it, other modules cover the network stack: the parsers, which trust no length a header claims; and the connection pool, where closing a connection moves it from the live list to the free list and opening one moves it back, so none is lost.</p>

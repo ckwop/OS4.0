@@ -214,7 +214,7 @@ dictionary", becomes a theorem.
     - **`hdump`:** each header on the sandbox's chain runs one of the words
       the dump found there (the dumper is trusted);
     - **`Box.Net`,** for a network session: no other task or device writes
-      the setting or the task's `cur-conn`; the connection's record (12464
+      the setting or the task's `cur-conn`; the connection's record (12488
       bytes) misses them; and so do TCP output's regions for the connection
       (`«tcp-output».regs`: the frames and the network's variables). All are
       true by allocation (the record and the frames come from `reserve`,
@@ -340,7 +340,7 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
   live plus free stays what it was. Assumed there: `conn-bucket`'s own
   stores (its generated footprint: `tuple` and the SipHash state) miss the
   pool; the bucket's cells are apart from the pool's; and a connection's
-  176-byte header is apart from every other link cell (records do not
+  200-byte header is apart from every other link cell (records do not
   overlap). Not yet covered: `new-conn` when the free list is empty (it
   reserves a new connection), and the timers' and the application's paths
   to `free-conn`.
@@ -477,9 +477,32 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     in a chain, breaking `find-conn`'s "a live connection or 0"; the
     bucket now leaves our address out. `close-connection` holds
     `conns-lock` throughout, so its output, which may wait, never works on
-    a record the network task has freed (#141). Read and left as they are
-    (TD-39): window updates without RFC 793's ordering check, challenge ACKs
-    without a rate limit.
+    a record the network task has freed (#141). The two left by TD-39 are
+    fixed (#142, defect 32): a segment's sequence number must fall in our
+    window before its acknowledgement is looked at, the send window comes
+    only from a newer segment (SND.WL1/WL2), and challenge ACKs are
+    rationed per connection (defect 33).
+  - The sending side, read against this contract (2026-11-10), not yet
+    proven: with `acked ≤ sent ≤ queued` and `queued - acked ≤ /tx` for
+    every live connection's counts, `acked` moves `c.tx-acked` on by at
+    most what is in flight, and only for an acknowledgement after SND.UNA
+    and no later than SND.NXT; `(send)` queues at most `tx-room`; a
+    retransmission sets `sent` back to `acked`; `sendable` is at most the
+    unsent bytes, the window less what is in flight (never below 0), and
+    the peer's MSS (at least 64, at most `our-mss`, so `(segment-out)`'s
+    -24 never fires); every index into a ring is masked; a closed window
+    with data waiting always has the retransmission timer armed, so a probe
+    follows. All held. One gap, logged as TD-40: after a retransmission
+    nothing remembers the most ever sent, so a late ACK for it is refused.
+    Reading every copy in the network words for a bound on both sides
+    found `udp-send` letting a negative length through (defect 36).
+  - Passwords (2026-11-10): `password?` must end and read only its 56
+    bytes, whatever they hold. A stored count of 0 or less ran PBKDF2 for
+    2^64 iterations under `hash-lock` (defect 34). Proven
+    (`proofs/OS4/Passwords.lean`, `password_bad_count`): a count outside 1
+    to 2^21 makes `(password?)` answer false with no store and no hashing.
+    The hashes are compared in constant time (`bytes-differ`), which no
+    proof here states.
   - Proven towards it: the driver's part (`Drivers.lean`: whatever the card
     reports, `net-poll` copies at most 2036 bytes into the caller's buffer and
     hands each buffer back with stores only into its own rings); the steps

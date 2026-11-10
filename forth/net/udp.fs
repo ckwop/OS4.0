@@ -59,7 +59,7 @@ variable udp-to
 
 : (udp-send)  ( data len port dst-ip dst-port -- flag )
   tx-udp udp-dport + n16!  udp-to !  tx-udp udp-sport + n16!
-  dup udp-max > if 2drop -265 throw then
+  dup udp-max u> if 2drop -265 throw then           \ a negative length too (docs/defects.md, 36)
   dup >r  tx-udp /udp + swap cmove
   r> /udp +  dup tx-udp udp-length + n16!
   0 tx-udp udp-checksum + n16!

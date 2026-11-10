@@ -6,7 +6,10 @@ variable served  ok
 : line-server ( -- ) 5000 listen begin 5000 accept-connection ['] serve spawn drop again ;  ok
 1 max-syn-retries !  16 max-half-open !  ok
 task server  ' line-server server start  ok
-: settled? ( -- flag ) served @ 7 = conns @ 0= and ;  ok
+: late ( conn -- ) 2000 ms  dup >r s" a line, late" r> ['] send-line catch if 2drop drop then  close-connection  1 served +! ;  ok
+: late-server ( -- ) 5001 listen begin 5001 accept-connection ['] late spawn drop again ;  ok
+task lates  ' late-server lates start  ok
+: settled? ( -- flag ) served @ 9 = conns @ 0= and ;  ok
 : settle ( -- ) 80000 deadline begin 200 ms settled? over expired? or until drop ;  ok
 settle .tcp ." , half-open " half-open . connections 0, pooled 16, half-open 0  ok
 1000 ms  ok
@@ -17,8 +20,13 @@ peer: after the flood: echo ok
 peer: reset in the window: challenge ACK
 peer: SYN on an open connection: challenge ACK
 peer: data acknowledging unsent bytes: challenge ACK
+peer: an acknowledgement outside the window: challenge ACK
 peer: reset outside the window: ignored
 peer: connection still works: yes
+peer: challenge ACKs for 60 resets in the window: limited
+peer: and then it still works: yes
+peer: window of 0 outside the window: ignored
+peer: window of 0 older than the last: ignored
 peer: client with MSS 0: echo ok
 peer: MSS option cut short (01010102): echo ok
 peer: MSS option cut short (01010204): echo ok

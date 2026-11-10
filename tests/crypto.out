@@ -25,3 +25,9 @@ create pw1 /password allot  create pw2 /password allot  ok
 s" swordfish" pw1 hash-password  s" swordfish" pw2 hash-password  ok
 s" swordfish" pw1 password? .  s" swordfish" pw2 password? .  s" Swordfish" pw1 password? . -1 -1 0  ok
 pw1 pw.hash 32 pw2 pw.hash 32 compare 0<> .  pw1 pw.iterations @ . -1 100  ok
+\ a stored hash with a corrupt count is refused at once: 0 once meant 2^64 iterations under HASH-LOCK  ok
+variable answer  -2 answer !  : try ( -- ) s" swordfish" pw1 password? answer ! ;  ok
+0 pw1 pw.iterations !  task trier  ' try trier start  1000 ms  answer @ . 0  ok
+max-iterations 1+ pw1 pw.iterations !  s" swordfish" pw1 password? .  -1 pw1 pw.iterations !  s" swordfish" pw1 password? . 0 0  ok
+pass salt 0 digest ' pbkdf2 catch .  2drop 2drop 2drop -24  ok
+100 pw1 pw.iterations !  s" swordfish" pw1 password? .  s" swordfisH" pw1 password? . -1 0  ok

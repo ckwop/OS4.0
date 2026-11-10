@@ -118,7 +118,8 @@ create outer-blk  64 allot
   inner-h sha-h 8 cells-move  inner-blk compress  sha-h outer-blk sha256-out
   outer-h sha-h 8 cells-move  outer-blk compress  sha-h inner-blk sha256-out ;
 : xor-32  ( src dst -- )  4 0 do  over i cells + @  over i cells + dup @ rot xor swap !  loop 2drop ;
-: (pbkdf2)  ( pass plen salt slen n out -- )
+: (pbkdf2)  ( pass plen salt slen n out -- )  \ n at least 1 (RFC 8018), or it throws -24
+  over 1 < if -24 throw then
   >r >r  2swap hmac-key!
   inner-h resume  sha-update  block-1 4 sha-update  hmac-mid sha-final
   outer-h resume  hmac-mid 32 sha-update  u-block sha-final
@@ -141,19 +142,28 @@ constant /password
 variable hash-iterations        \ for new hashes; 0 until measured
 250 constant hash-ms
 1000 constant min-iterations
+\ A stored count beyond this is not ours: a corrupt record. Without a limit a
+\ count from the disk could hold HASH-LOCK for ever (a count of 0 or less once
+\ meant 2^64 iterations; docs/defects.md, 34).
+2097152 constant max-iterations
 create pw-check 32 allot
 
 : calibrate  ( -- n )  \ iterations that take about HASH-MS here
   counter  pw-check 8 pw-check 8 200 pw-check pbkdf2  counter swap - 1 max
-  >r  200 hash-ms * counter-hz 1000 / *  r> /  min-iterations max ;
+  >r  200 hash-ms * counter-hz 1000 / *  r> /  min-iterations max  max-iterations min ;
 : iterations  ( -- n )
   hash-iterations @ ?dup 0= if  calibrate dup hash-iterations !  then ;
 : hash-password  ( addr len pw -- )  \ a new salt, and the hash of the password
   >r  iterations r@ pw.iterations !
   random r@ pw.salt !  random r@ pw.salt cell+ !
   r@ pw.salt 16 r@ pw.iterations @ r> pw.hash pbkdf2 ;
+: bytes-differ  ( addr1 addr2 n -- x )  \ 0 if the n bytes are the same; reads all n whatever they hold
+  0 swap 0 ?do  2 pick i + c@  2 pick i + c@  xor or  loop nip nip ;
+\ A count outside 1 to MAX-ITERATIONS is refused unhashed. The hashes are
+\ compared in constant time: how long it takes says nothing of where they differ.
 : (password?)  ( addr len pw -- flag )
-  >r  r@ pw.salt 16 r@ pw.iterations @ pw-check (pbkdf2)
-  pw-check 32 r> pw.hash 32 compare 0= ;
+  >r  r@ pw.iterations @  1 max-iterations 1+ within 0= if  r> drop 2drop false exit  then
+  r@ pw.salt 16 r@ pw.iterations @ pw-check (pbkdf2)
+  pw-check r> pw.hash 32 bytes-differ 0= ;
 : password?  ( addr len pw -- flag )  \ the password matches the hash
   ['] (password?) hash-lock locked ;

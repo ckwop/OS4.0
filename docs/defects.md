@@ -59,6 +59,11 @@ one now does.
 | 29 | 2026-11-10 | `fin-in` compared the FIN's sequence number, `i-seq + i-len`, with `rcv-nxt` without taking it to 32 bits | A FIN in a segment whose data crossed 2^32 was ignored, its data acknowledged and the FIN not: the connection closed only when the peer sent the FIN again on its own | Proof planning (V4: wraparound in the receive path's sequence arithmetic) | No; repro in `tests/tcp-attack` (a client whose data crosses 2^32) | Masked to 32 bits |
 | 30 | 2026-11-10 | `release-conn` freed a connection already closed once the application had closed it. `close-connection` frees a closed connection itself, waiting for `conns-lock` while the timer sweep holds it; had that sweep's `catch` released the same connection (after a throw in `conn-timers`, only the watchdog's in practice), it would have been freed twice | A connection on the free list twice, so two later connections sharing one record. Not reachable short of the watchdog stopping the sweep at that connection | Proof planning (V4 H-pool: every path frees a live connection exactly once) | No | `release-conn` leaves a closed connection alone |
 | 31 | 2026-11-10 | A connection's hash bucket was a hash of its addresses and ports and of `my-ip`, recomputed when it was freed: if `my-ip` had changed since, `hash-out` looked in the wrong bucket and the freed record stayed in its old one | A record recycled by `new-conn` (its hash link cleared) cut that bucket's chain, so live connections behind it could no longer be found, and `find-conn` could return the recycled record for the old addresses. Only full Forth can change `my-ip` (the console, the admin REPL, an app), not a player or a peer | Proof planning (V4 H-pool: `find-conn` returns a live connection or 0, which needs a connection's bucket fixed while it is hashed) | No; repro in `tests/tcp` | The bucket hash leaves out our address (#141) |
+| 32 | 2026-11-10 | `segment-in` never checked a segment's sequence number (RFC 793's first check) before acting on its acknowledgement, and took the send window from any segment with an acceptable ACK, old or new (no SND.WL1/WL2) | An outsider needed only an acknowledgement in range, whatever sequence number they sent: one in about 2^16 guesses shut the send window (output stalled until a probe reopened it), and one in (2^32 / bytes in flight) acknowledged data the peer never had, which was then never resent and the connection stalled. A reordered old segment of the real peer could also shut the window. A segment outside the window got no ACK | Proof planning (V4: the ACK path read against RFC 793's and 5961's order of checks; the window half was TD-39) | No; repro in `tests/tcp-attack` (an ACK outside the window must draw a challenge ACK; a window of 0 outside the window, or older than the last, must not stop the next send). Seen failing on the old code | #142: `acceptable?` first, then `window-in` |
+| 33 | 2026-11-10 | Challenge ACKs had no rate limit (RFC 5961 section 7; a choice, #92, logged as TD-39) | Each forged segment in range drew an ACK to the real peer: a spoofer could make the OS send as fast as it was sent to | Proof planning (TD-39) | No; repro in `tests/tcp-attack` (60 resets in the window drew 60 ACKs on the old code) | #142: per connection, bursts of 10, then 10 a second |
+| 34 | 2026-11-10 | `password?` took the iteration count from the stored hash unchecked, and `pbkdf2` ran `n 1 ?do`: a count of 0 or less ran 2^64 iterations | A stored hash with a bad count (a damaged record that still passes its checksum, or an app's own record of player hashes gone wrong) hung the login for good while holding `hash-lock`: every later hash or login in the system waited behind it. It pauses, so the watchdog never stopped it | Proof planning (a password check must end and read only its 56 bytes, whatever they hold) | No; repro in `tests/crypto` (a task checking a count of 0 is still at it a second later). Seen failing on the old code | #143: counts outside 1 to `max-iterations` refused unhashed; `pbkdf2` throws -24 for a count below 1 |
+| 35 | 2026-11-10 | `password?` compared the hashes with `compare`, which stops at the first byte that differs | How long a wrong guess took said how many leading bytes of its hash matched. Not usable as it stands (the salt is secret, and the 250 ms hash and the network hide nanoseconds), but it is the kind of leak a password check must not have | Hardening (review against a checklist) | No (no test can time it) | #143: `bytes-differ` reads all 32 bytes |
+| 36 | 2026-11-10 | `udp-send` checked its length against `udp-max` with a signed comparison, so a negative length passed, and `cmove` took it as a count near 2^64 | An application (or a sandbox word built on it, were one ever exposed) that passed a negative length overwrote everything after `tx-frame` until it faulted | Proof planning (V4: every copy bounded by both its source and its destination, read across the network words) | No; repro in `tests/udp` (a length of -1 must throw -265). Seen failing on the old code: the hosted build's emulator itself died of a SIGSEGV | Unsigned comparison |
 
 ## Also shown
 
@@ -69,12 +74,17 @@ one now does.
 
 ## What the log says so far
 
-Up to 2026-11-10: 31 defects. Tests found 2, the app 1, hardening 4, and
-the proofs 24 (7 directly, 5 by the audits they pointed to, 12 while
+Up to 2026-11-10: 36 defects. Tests found 2, the app 1, hardening 5, and
+the proofs 28 (7 directly, 5 by the audits they pointed to, 16 while
 planning a proof). Of the six found planning V4's receive path and pool
 (26 to 31), the first three were reachable by any client (two through port
 0, which a free table slot also holds), and each but 30 fails a test
-written for it. (A double free in the fix for 20 was caught by
+written for it. Of the next five (32 to 36), 32 and 33 are within an
+off-path attacker's reach (TCP's order of checks, and challenge ACKs
+without a limit), 34 needs a damaged password record, 35 is a timing
+leak with no known use, and 36 an application's slip away from an
+overwrite; 32 to 34 and 36 fail tests written for them, each seen failing
+on the old code. (A double free in the fix for 20 was caught by
 `tcp-attack` before it was committed, so it is not logged: the tests and
 the proofs find different things.) No proof-found
 defect would have failed the test suite as it stood. The tests had already

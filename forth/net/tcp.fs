@@ -78,6 +78,9 @@
 1 cells field c.hlink             \ next in its hash bucket
 1 cells field c.owner             \ the task to wake when something changes
 1 cells field c.next              \ next in its listener's queue
+1 cells field c.wl1               \ the sequence number of the segment that last set c.snd-wnd
+1 cells field c.wl2               \ and its acknowledgement number (RFC 793's SND.WL1, SND.WL2)
+1 cells field c.ch-next           \ the challenge ACK budget: when it is full again
 dup constant /conn-header
 /rx field c.rx
 /tx field c.tx
@@ -311,7 +314,7 @@ create rst-conn  /conn-header allot
   new-conn >r
   syn-received r@ c.state !
   i-dport @ r@ c.lport !  i-sport @ r@ c.rport !  ip-source r@ c.rip !
-  i-seq @ r@ c.irs !
+  i-seq @ dup r@ c.irs !  r@ c.wl1 !               \ the SYN set the window
   new-iss r@ c.iss !
   i-wnd @ r@ c.snd-wnd !  i-mss @ our-mss min 64 max r@ c.mss !
   r@ hash-in
@@ -378,7 +381,16 @@ create rst-conn  /conn-header allot
 \ the window it gets a challenge ACK, which a real peer answers with an exact
 \ reset. An acknowledgement must lie between what we sent and a window before
 \ what was acknowledged, or the segment is dropped.
-: challenge  ( conn -- )  dup ack-now flag+ tcp-output ;
+\ Challenge ACKs are rate limited (section 7): bursts of up to 10, then 10 a
+\ second. The budget is each connection's own: a budget shared by all of them
+\ would tell an outsider, who spends it on a connection of their own, when a
+\ forged segment hit another's window (CVE-2016-5696).
+: challenge-budget?  ( conn -- flag )  \ spends one challenge ACK if the budget has one
+  c.ch-next  dup @ expired? if  counter over !  then
+  dup @ 1000 deadline - 0< 0= if  drop false exit  then
+  100 deadline counter -  swap +!  true ;
+: challenge  ( conn -- )
+  dup challenge-budget? if  dup ack-now flag+ tcp-output  else  drop  then ;
 : rst-in  ( conn -- )
   i-seq @ over rcv-nxt = if  release-conn exit  then
   i-seq @ over rcv-nxt - $ffffffff and  over rx-room u< if challenge else drop then ;
@@ -386,19 +398,46 @@ create rst-conn  /conn-header allot
   dup snd-nxt over snd-una - s32  swap i-ack @ swap snd-una - s32   ( sent n )
   tuck < 0=  swap -65535 < 0= and ;
 
+\ RFC 793: a segment counts only if it overlaps what we can take, or lies at
+\ RCV-NXT (all an empty segment or a probe of our closed window can do). Its
+\ acknowledgement is not even looked at otherwise: an outsider must guess our
+\ window as well as theirs.
+: acceptable?  ( conn -- flag )
+  i-seq @ over rcv-nxt - s32  swap rx-room          ( d wnd )
+  over 0= if  2drop true exit  then                 \ at RCV-NXT
+  over 0< if  drop i-len @ + 0>  exit  then         \ starts before it: must reach past it
+  < ;
+
+\ The send window comes only from a segment that acknowledges nothing old, and
+\ that is newer than the one that last set it (RFC 793's SND.WL1, SND.WL2): a
+\ reordered or forged old segment cannot shut it.
+: window-in  ( conn -- )
+  i-ack @ over snd-una - s32 0< if  drop exit  then
+  i-seq @ over c.wl1 @ - s32 ?dup if
+    0< if  drop exit  then
+  else
+    i-ack @ over c.wl2 @ - s32 0< if  drop exit  then
+  then
+  i-wnd @ over c.snd-wnd !  i-seq @ over c.wl1 !  i-ack @ swap c.wl2 ! ;
+
+\ The order is RFC 5961's: a reset, then a SYN, then the sequence number, then
+\ the acknowledgement.
 : segment-in  ( conn -- )
   >r
   f-rst i-flag? if  r> rst-in exit  then
+  f-syn i-flag? if
+    r@ c.state @ syn-received = if  r@ dup c.iss @ f-syn f-ack or control-out  r> drop exit  then
+    r> challenge exit
+  then
+  r@ acceptable? 0= if  r> challenge exit  then      \ say where we are
   r@ c.state @ syn-received = if
-    f-syn i-flag? if  r@ dup c.iss @ f-syn f-ack or control-out  r> drop exit  then
     f-ack i-flag? 0=  i-ack @ r@ c.iss @ 1+ $ffffffff and <>  or if  r> drop exit  then
     established r@ c.state !  0 r@ c.rexmit !  base-rto r@ c.rto !  0 r@ c.retries !
     r@ dup c.lport @ listener-of ?dup if enqueue else drop then
   then
-  f-syn i-flag? if  r@ ack-now flag+  r> tcp-output exit  then
   f-ack i-flag? 0= if  r> drop exit  then
   r@ ack-ok? 0= if  r> challenge exit  then
-  i-wnd @ r@ c.snd-wnd !
+  r@ window-in
   r@ acked
   r@ fin-acked-in
   r@ c.state @ closed = if  r> drop exit  then      \ released, maybe recycled
