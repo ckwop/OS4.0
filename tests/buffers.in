@@ -6,3 +6,9 @@ empty-buffers
 32 33 marks  flush  empty-buffers
 32 33 index
 34 mark  save-buffers  empty-buffers  34 34 index
+\ emptying the buffers while a LOAD reads one leaves that one alone (defect 38)
+: pins. ( -- ) #buffers 0 do i 'pins @ . loop ;
+40 wipe  0 >line \ empty-buffers and flush during a load
+1 >line empty-buffers flush  1 2 + .
+save-buffers  40 load  pins.
+: load-many ( -- ) 9 0 do 40 load loop ;  load-many  pins.  41 block drop  42 block drop

@@ -10,3 +10,12 @@ s" first" 40 record!  show  40 copy-seq .  41 copy-seq .
 empty-buffers show
 s" fourth" 40 record!  empty-buffers show  40 copy-seq .  41 copy-seq .
 ' put2 broken .  s" fifth" 40 record!  empty-buffers show  40 copy-seq .  41 copy-seq .
+\ a disk that cannot be written: RECORD! fails, and RECORD@ never reads what it failed to write (defect 39)
+: put6 ( -- ) s" sixth" 40 record! ;  false disk-ok !  ' put6 catch .  true disk-ok !  show  empty-buffers show
+: put0 ( -- ) s" zero" 0 record! ;  ' put0 catch .  ' put0 catch .  0 block 8 type
+\ sequence numbers wrap (defect 40): a copy numbered 2^64-1 is older than the next
+: forge ( addr len seq n -- ) ['] fill-copy blocks-lock locked sync ;
+s" newest" -1 50 forge  s" older" -2 51 forge  r1 100 50 record@ r1 swap type space
+s" after" 50 record!  50 copy-seq .  51 copy-seq .  r1 100 50 record@ r1 swap type space
+s" next" 50 record!  50 copy-seq .  51 copy-seq .  r1 100 50 record@ r1 swap type space
+s" low" 1 60 forge  s" high" -1 61 forge  s" new" 60 record!  60 copy-seq .  61 copy-seq .  r1 100 60 record@ r1 swap type

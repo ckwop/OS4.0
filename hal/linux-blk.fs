@@ -48,11 +48,14 @@ variable #found   -1 #found !         \ disks opened; -1 until the first look
 : #disks     ( -- n )  disks-open #found @ ;
 : blk-count  ( n -- u )  dup #disks u< if cells disk-sizes + @ else drop 0 then ;
 : disk-fd    ( n -- fd )  cells disk-fds + @ ;
+\ A block beyond the disk is refused here: its offset (u * 1024) would wrap for a
+\ block of 2^54 or more and reach the start of the disk, and a write past the
+\ end would grow the image.
 : blk-read   ( addr u n -- )
-  dup #disks u< 0= if -33 throw then
+  2dup blk-count u< 0= if -33 throw then
   disk-fd -rot 1024 swap 10 lshift sys-pread64 syscall 1024 <> if -33 throw then ;
 : blk-write  ( addr u n -- )
-  dup #disks u< 0= if -34 throw then
+  2dup blk-count u< 0= if -34 throw then
   disk-fd -rot 1024 swap 10 lshift sys-pwrite64 syscall 1024 <> if -34 throw then ;
 : blk-flush  ( n -- )
   dup #disks u< 0= if -34 throw then

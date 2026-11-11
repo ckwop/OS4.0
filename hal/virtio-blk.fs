@@ -63,10 +63,12 @@ variable #found   -1 #found !         \ disks started; -1 until the first look
   0 r@ d.vq @ r@ d.base @ 0 vq-submit  r@ d.vq @ vq-wait
   r> d.status c@ ;
 
+\ A block beyond the disk is refused here, not by the device: its sector number
+\ (2u) would wrap for a block of 2^63 or more and reach the start of the disk.
 : blk-read   ( addr u n -- )
-  dup #disks u< 0= if -33 throw then  >r req-in swap 2* r> disk blk-request if -33 throw then ;
+  2dup blk-count u< 0= if -33 throw then  >r req-in swap 2* r> disk blk-request if -33 throw then ;
 : blk-write  ( addr u n -- )
-  dup #disks u< 0= if -34 throw then  >r req-out swap 2* r> disk blk-request if -34 throw then ;
+  2dup blk-count u< 0= if -34 throw then  >r req-out swap 2* r> disk blk-request if -34 throw then ;
 : blk-flush  ( n -- )
   dup #disks u< 0= if -34 throw then  disk
   dup d.features @ blk-f-flush and if  >r 0 req-flush 0 r> blk-request if -34 throw then  else drop then ;

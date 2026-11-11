@@ -86,6 +86,7 @@
 : abs     ( n -- u )  dup 0< if negate then ;
 : min     ( n1 n2 -- n )  2dup > if swap then drop ;
 : max     ( n1 n2 -- n )  2dup < if swap then drop ;
+: umin    ( u1 u2 -- u )  2dup u< 0= if swap then drop ;
 : within  ( n lo hi -- flag )  over - >r - r> u< ;
 
 \ ---- Defining words

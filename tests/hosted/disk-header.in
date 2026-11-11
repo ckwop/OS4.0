@@ -1,0 +1,16 @@
+\ A hostile data-disk header (defect 37): its size is unsigned, like a block number
+create hdr 1024 allot  hdr 1024 0 fill  s" OS40DISK" hdr swap cmove  1 hdr 8 + !  7 hdr 16 + !
+: put-header ( size -- ) hdr 24 + !  data-disk @ disk-fd hdr 1024 0 sys-pwrite64 syscall .  false mounted !  empty-buffers ;
+: try ( u xt -- ) catch ?dup if . drop else ." fine " then ;
+: blk ( u -- ) block 8 type space ;
+-1 put-header .disk
+1023 ' blk try  1024 ' blk try  $40000000000000 ' blk try  -1 ' blk try
+5000 put-header .disk  1023 ' blk try  1024 ' blk try
+3 put-header .disk  2 ' blk try  3 ' blk try
+\ the drivers refuse a block beyond the disk, whatever the layers above let through
+1024 reserve constant rbuf  rbuf 1024 0 fill
+: raw ( u -- ) rbuf swap data-disk @ blk-read ;
+1023 ' raw try  1024 ' raw try  $40000000000000 ' raw try  -1 ' raw try
+: rawout ( u -- ) rbuf swap data-disk @ blk-write ;
+$40000000000000 ' rawout try  1024 ' rawout try
+0 block 8 type

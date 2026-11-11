@@ -277,6 +277,10 @@ The brief's `sync` rule and DECISIONS.md #95.
     buffered. Whatever writes and flushes fail, `put_keeps` and
     `crash_reads` give no garbage and durability; other tasks' evictions keep
     the invariant; `old_loses` shows the old protocol losing a record.
+  - **Trusted:** the model's sequence numbers are unbounded (`Nat`); the code's
+    are 64-bit serial numbers (`newer?`, #146), which agree with the model
+    while the two copies are less than 2^63 apart (they are one write
+    apart, unless the disk was crafted).
   - **Still to do:** link the model to the compiled `record!`, `record@` and
     block words (which needs the disk in `Machine.lean`), and the
     new-player ordering.
