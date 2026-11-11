@@ -24,6 +24,9 @@ peer: malformed icmp: 13 frames, still answering
 peer: malformed udp: 8 frames, still answering
 peer: malformed tcp: 23 frames, still answering
 peer: SYN to the broadcast address: ignored
+peer: SYN from 0.0.0.0: ignored
+peer: SYN from 127.0.0.1: ignored
+peer: SYN from 127.9.9.9: ignored
 peer: replies sent to a forged group MAC: 0
 peer: largest ping: ok
 peer: random bytes: 600 frames, still answering

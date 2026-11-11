@@ -31,3 +31,21 @@ variable answer  -2 answer !  : try ( -- ) s" swordfish" pw1 password? answer ! 
 max-iterations 1+ pw1 pw.iterations !  s" swordfish" pw1 password? .  -1 pw1 pw.iterations !  s" swordfish" pw1 password? . 0 0  ok
 pass salt 0 digest ' pbkdf2 catch .  2drop 2drop 2drop -24  ok
 100 pw1 pw.iterations !  s" swordfish" pw1 password? .  s" swordfisH" pw1 password? . -1 0  ok
+\ every boundary of SHA-256's padding: 55, 56, 63, 64, 65, 119, 120 and 128 bytes  ok
+63 char a as digest sha256 .digest 7D3E74A05D7DB15BCE4AD9EC0658EA98E3F06EEECF16B4C6FFF2DA457DDC2F34  ok
+65 char a as digest sha256 .digest 635361C48BB9EAB14198E76EA8AB7F1A41685D6AD62AA9146D301D4F17EB0AE0  ok
+119 char a as digest sha256 .digest 31EBA51C313A5C08226ADF18D4A359CFDFD8D2E816B13F4AF952F7EA6584DCFB  ok
+120 char a as digest sha256 .digest 2F3D335432C70B580AF0E8E1B3674A7C020D683AA5F73AAAEDFDC55AF904C21C  ok
+128 char a as digest sha256 .digest 6836CF13BAC400E9105071CD6AF47084DFACAD4E5E302C94BFED24E013AFB73E  ok
+64 counting digest sha256 .digest FDEAB9ACF3710362BD2658CDC9A29E8F9C757FCF9811603A8C447CD1D9151108  ok
+\ HMAC keys of 63, 64 (used as they are) and 65 bytes (hashed first)  ok
+create key65 65 allot  key65 65 $aa fill  ok
+s" abc" key65 63 digest hmac-sha256 .digest D266BF8E63E138DDFF6FB42D7C769F06A54470BFFDC77A7B6DEFAFF051708922  ok
+s" abc" key65 64 digest hmac-sha256 .digest 2F8CFF867F2668CA93D3C5B03BA9F816746742EDA349B3BC4BB35AA27816754C  ok
+s" abc" key65 65 digest hmac-sha256 .digest 102EBC7CEB9DFF09E5A77413A3CD67382908ECE255487006EB0E1E1B801F9CE6  ok
+text 0 key65 64 digest hmac-sha256 .digest DB2CF93F633FCDFD9BB7F3B99763A63725CB8E38B4FA60A87D0E94B71D8B5970  ok
+100 char a as s" key" digest hmac-sha256 .digest D5F24A2F72B5B5287A7880151D68AA3F0548D1855D7DF4DA177A9B4007EDB9DB  ok
+\ PBKDF2 with a password longer than a block, and a salt that spills into a second block  ok
+create pw70 70 allot  pw70 70 char p fill  create s60 60 allot  s60 60 char s fill  ok
+pw70 70 s60 60 3 digest pbkdf2 .digest 332FA7A90D130CF6AC8F28BDADD7F93E1A988D164DDFE8FE47EEAFE45DA42FB2  ok
+pw70 64 s60 55 1 digest pbkdf2 .digest FB0BC69B3591FF52E1DBB58A2C8C8804D98331AC2E1E7FCF9483A82BBFEE3769  ok

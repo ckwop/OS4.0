@@ -45,8 +45,9 @@ variable my-ip      ip 10.0.2.15 my-ip !
 variable netmask    ip 255.255.255.0 netmask !
 variable gateway    ip 10.0.2.2 gateway !
 $ffffffff constant broadcast-ip
-: bad-source?  ( ip -- flag )  \ no packet comes from ours, a broadcast or a multicast address
-  dup my-ip @ =  swap $e0000000 u< 0= or ;
+: bad-source?  ( ip -- flag )  \ no packet comes from ours, a broadcast or a multicast address,
+  dup my-ip @ =  over $e0000000 u< 0= or      \ "this host" (0.0.0.0) or loopback (127/8): RFC 1122 3.2.1.3
+  over 0= or  swap 24 rshift 127 = or ;
 : group-mac?  ( addr -- flag )  c@ 1 and 0<> ;   \ broadcast or multicast: never a sender
 
 \ ---- Ethernet frames: destination MAC, source MAC, type, then the payload.

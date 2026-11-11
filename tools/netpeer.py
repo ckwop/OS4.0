@@ -141,6 +141,7 @@ class Peer:
         self.tcp_queues = {}            # our TCP port -> queue of (packet, segment)
         self.ident = 0x7E57
         self.misaddressed = 0           # IP packets for us sent to some other MAC
+        self.strays = []                # destinations of IP packets sent to us for another address
         threading.Thread(target=self.receive, daemon=True).start()
 
     def send(self, dst_mac, eth_type, payload):
@@ -187,6 +188,7 @@ class Peer:
             total = struct.unpack("!H", body[2:4])[0]
             protocol, dst = body[9], body[16:20]
             if dst != PEER_IP:
+                self.strays.append(bytes(dst))
                 return
             if frame[:6] != PEER_MAC:
                 self.misaddressed += 1
@@ -796,6 +798,15 @@ class Peer:
                   f"{'still answering' if self.alive() else 'not answering'}", flush=True)
 
         print(f"peer: SYN to the broadcast address: {'ignored' if to_all.empty() else 'answered'}", flush=True)
+
+        # Sources no packet may come from (RFC 1122 3.2.1.3): "this host" and loopback.
+        forged = [(60998, bytes(4), "0.0.0.0"), (60997, bytes([127, 0, 0, 1]), "127.0.0.1"),
+                  (60996, bytes([127, 9, 9, 9]), "127.9.9.9")]
+        for sport, src, _ in forged:      # to a closed port: a reset, sent by way of the gateway (us)
+            self.raw(eth(ETH_IP, ip_packet(tcp_segment(sport, 4999, SYN, src=src), protocol=6, src=src)))
+        time.sleep(1)
+        for _, src, name in forged:
+            print(f"peer: SYN from {name}: {'answered' if src in self.strays else 'ignored'}", flush=True)
         print(f"peer: replies sent to a forged group MAC: {self.misaddressed}", flush=True)
 
         big = echo_request(self.ident, 77, bytes(range(256)) * 5 + bytes(192))   # 1472 bytes of data

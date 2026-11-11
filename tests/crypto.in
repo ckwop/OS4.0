@@ -30,3 +30,21 @@ variable answer  -2 answer !  : try ( -- ) s" swordfish" pw1 password? answer ! 
 max-iterations 1+ pw1 pw.iterations !  s" swordfish" pw1 password? .  -1 pw1 pw.iterations !  s" swordfish" pw1 password? .
 pass salt 0 digest ' pbkdf2 catch .  2drop 2drop 2drop
 100 pw1 pw.iterations !  s" swordfish" pw1 password? .  s" swordfisH" pw1 password? .
+\ every boundary of SHA-256's padding: 55, 56, 63, 64, 65, 119, 120 and 128 bytes
+63 char a as digest sha256 .digest
+65 char a as digest sha256 .digest
+119 char a as digest sha256 .digest
+120 char a as digest sha256 .digest
+128 char a as digest sha256 .digest
+64 counting digest sha256 .digest
+\ HMAC keys of 63, 64 (used as they are) and 65 bytes (hashed first)
+create key65 65 allot  key65 65 $aa fill
+s" abc" key65 63 digest hmac-sha256 .digest
+s" abc" key65 64 digest hmac-sha256 .digest
+s" abc" key65 65 digest hmac-sha256 .digest
+text 0 key65 64 digest hmac-sha256 .digest
+100 char a as s" key" digest hmac-sha256 .digest
+\ PBKDF2 with a password longer than a block, and a salt that spills into a second block
+create pw70 70 allot  pw70 70 char p fill  create s60 60 allot  s60 60 char s fill
+pw70 70 s60 60 3 digest pbkdf2 .digest
+pw70 64 s60 55 1 digest pbkdf2 .digest

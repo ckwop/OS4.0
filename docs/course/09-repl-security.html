@@ -290,7 +290,7 @@ peer: sandbox A| : sq dup * ; : ?</pre>
   <div class="talk">
     <p>On the admin door, the session's setup word asks for the password. Read-secret reads a line with echo turned off, so it never appears on the screen. Password-query hashes the guess with the stored salt and count, and compares every byte of the two hashes, whatever it finds, so the time taken says nothing about where they differ. A stored count that's out of range, which only a damaged record could hold, is refused without hashing. Then forget-secret wipes the typed password from the buffer straight away.</p>
     <p>There are three tries, with a two-second wait after each wrong one, so guessing over the network is painfully slow, on top of the quarter second the hash itself costs. After three, the session says goodbye and closes.</p>
-    <p>Until a password has been set, the admin door turns everyone away. The first password can only be set on the console, with set-admin-password, which asks twice and stores the hash. So the first person who can reach the network never gets the full Forth by default.</p>
+    <p>Until a password has been set, the admin door turns everyone away. The first password can only be set on the console, with set-admin-password, which asks twice and stores the hash. It makes the hash in a buffer of its own: the sessions share the copy they check against, and hashing pauses, so a session reading the stored hash halfway through once spliced the old salt onto the new hash, and nobody could log in. So the first person who can reach the network never gets the full Forth by default.</p>
   </div>
 </section>
 

@@ -1,0 +1,15 @@
+OS 4.0
+\ Setting the admin password while sessions read the stored one (defect 42): the hash stored is whole  ok
+100 hash-iterations !  ok
+s" old" admin-pw hash-password  admin-pw /password admin-record record!  ok
+variable reads  ok
+: reader ( -- ) begin admin-password? drop 1 reads +! pause again ;  ok
+task rd  ' reader rd start  ok
+set-admin-password New admin password:  
+Again:  
+Admin password set.
+ ok
+rd sleep  reads @ 10 > . -1  ok
+create got /password allot  got /password admin-record record@ . 56  ok
+s" new" got password? .  s" old" got password? . -1 0  ok
+admin-password? .  s" new" admin-pw password? . -1 -1  ok
