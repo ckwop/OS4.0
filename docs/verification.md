@@ -532,7 +532,12 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
       (`FindConn.lean`, `find_conn_live`): `find-conn` ends and returns 0 or
       a connection on its bucket's chain, so, with the hash table's
       invariant (every connection on a chain is live, a hypothesis), 0 or a
-      live one. Left: that `hash-in` and `hash-out` keep that invariant.
+      live one. The invariant's steps are proven too: `hash-in` puts a
+      connection first on its chain, leaving the rest (`hash_in_chain`), so
+      a live connection keeps it (`hash_in_live`); after `hash-out` and
+      `free-conn` the chain and the live list both lose it, and the chain
+      still holds only live ones (`hash_out_live`). Left: chaining these
+      along `open-conn` and the free paths, with the records' cells apart.
       Telnet works on a
       connection's receive ring, through masked offsets.
     - H-pool: `new-conn` when it reserves a new connection is proven

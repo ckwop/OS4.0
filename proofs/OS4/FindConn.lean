@@ -15,6 +15,10 @@ ports, and whatever the records on the chain hold, the walk ends and returns
 0 or a connection on that chain (`find_conn_run`). With the hash table's
 invariant, that every connection on a bucket's chain is live (`H ⊆ L`, a
 hypothesis here), it returns 0 or a live connection (`find_conn_live`).
+Then the invariant's steps: `hash-in` of a live connection keeps it
+(`hash_in_eq`, `hash_in_chain`, `hash_in_live`), and so do `hash-out` and
+`free-conn` together (`hash_out_live`, with `hunlink_chain` and
+`free_conn_pool` in `Pools.lean`).
 
 Hypotheses, as in `Pools.lean`: `bucket` (a keyed hash, which writes only its
 scratch cells) is taken as given, leaving the rx frame, and so `ip-source`,
@@ -114,5 +118,72 @@ theorem find_conn_live (ipv b : Cell) (H L s r : List Cell) (m m1 : Mem) (u : Ce
   refine loopThread_eq _ _ (fcFuel H + 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1) _ ?_ (by simp [outOfFuel])
   simp [run, fcCode, hip0, hb, Prim.fetch, forth]
   simpa [fcCode, forth] using hy
+
+/-! ## `hash-in` keeps the chain's connections live
+
+`hash-in` puts a connection first on its bucket's chain. With `new-conn`
+having put it first on the live list, every connection on the chain is still
+live; with `hash-out` taking it off (`hunlink_chain` in `Pools.lean`) before
+`free-conn` moves it to the free list, `find-conn` never meets a freed one. -/
+
+/-- `hash-in`'s thread, with `conn-bucket` left as CB. -/
+noncomputable def hashInCode (CB : Sem) : List Ins := [.call Prim.dup, .call CB, .call Prim.dup,
+  .call Prim.fetch, .lit 2, .call Prim.pick, .call Words.«c.hlink», .call Prim.store, .call Prim.store, .exit]
+
+theorem hashInCode_eq : Words.«hash-in».code = hashInCode Words.«conn-bucket» := rfl
+
+/-- `hash-in`'s memory: c's hash link takes the old head, then the bucket takes c. -/
+def hashInM (m : Mem) (c b : Cell) : Mem := wr (wr m (c + 152#64) 8 (rd m b 8)) b 8 c
+
+set_option maxHeartbeats 4000000 in
+theorem hash_in_eq (c b : Cell) (s r : List Cell) (m m1 : Mem) (u : Cell) (e e1 : Nat)
+    (hb : Words.«conn-bucket» ⟨c :: c :: s, r, m, u, e⟩ = .ok ⟨b :: c :: s, r, m1, u, e1⟩) :
+    Words.«hash-in» ⟨c :: s, r, m, u, e⟩ = .ok ⟨s, r, hashInM m1 c b, u, e1⟩ := by
+  rw [show Words.«hash-in» = thread (hashInCode Words.«conn-bucket») from rfl]
+  generalize Words.«conn-bucket» = CB at hb
+  simp [forth, hashInCode, hashInM, hb]
+
+/-- After `hash-in`, the bucket's chain is c and then the old chain, so long
+as c's hash link is apart from the bucket cell and from the old chain's links. -/
+theorem hash_in_chain (m : Mem) (c b : Cell) (H : List Cell) (h : HChain m b H) (hc0 : c ≠ 0)
+    (hapart : ∀ y ∈ b :: H.map (· + 152), Apart (c + 152#64) y)
+    (hbH : ∀ y ∈ H.map (· + 152), Apart b y) (hbc : Apart b (c + 152#64)) :
+    HChain (hashInM m c b) b (c :: H) := by
+  refine ⟨by unfold hashInM; exact rd_wr_same _ _ _, hc0, ?_⟩
+  -- from c's link on: the old chain, under both stores
+  have h1 : HChain (wr m (c + 152#64) 8 (rd m b 8)) (c + 152#64) H := by
+    cases H with
+    | nil =>
+      simp only [HChain] at h ⊢
+      rw [rd_wr_same]; exact h
+    | cons y ys =>
+      obtain ⟨hy, hy0, hc⟩ := h
+      refine ⟨by rw [rd_wr_same]; exact hy, hy0, ?_⟩
+      exact hchain_wr _ _ ys (y + 152) m hc fun z hz =>
+        hapart z (List.mem_cons_of_mem b (by simpa using hz))
+  unfold hashInM
+  refine hchain_wr b c H (c + 152#64) _ h1 ?_
+  intro y hy
+  rcases List.mem_cons.mp hy with h2 | h2
+  · rw [h2]; exact hbc
+  · exact hbH y h2
+
+/-- So the hash table's invariant holds after `hash-in` of a live connection:
+every connection on the chain is live. -/
+theorem hash_in_live (H L : List Cell) (c : Cell) (hc : c ∈ L) (hHL : ∀ x ∈ H, x ∈ L) :
+    ∀ x ∈ c :: H, x ∈ L := by
+  intro x hx
+  rcases List.mem_cons.mp hx with h | h
+  · rw [h]; exact hc
+  · exact hHL x h
+
+/-- And after `hash-out` takes c off its chain (`hunlink_chain`: the chain
+becomes `H.erase c`) and `free-conn` takes it off the live list (`L.erase c`),
+every connection left on the chain is still live: the chain holds c once. -/
+theorem hash_out_live (H L : List Cell) (c : Cell) (hHL : ∀ x ∈ H, x ∈ L) (hnd : H.Nodup) :
+    ∀ x ∈ H.erase c, x ∈ L.erase c := by
+  intro x hx
+  have hx' := (List.Nodup.mem_erase_iff hnd).mp hx
+  exact (List.mem_erase_of_ne hx'.1).mpr (hHL x hx'.2)
 
 end OS4.FindConn
