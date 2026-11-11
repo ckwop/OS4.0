@@ -522,9 +522,13 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     moves between the live and free lists and their total stays the same).
   - Left for each hypothesis, most tractable first:
     - H-parse: ARP's learning writes the cache through an index read from
-      memory (`arp-next`), and an address `arp-find` returns: both need
-      bounds proven (drafted on branch `v4-arp`, `proofs/OS4/Arp.lean`, not
-      yet checked: it did not finish in the time Lean was given).
+      memory (`arp-next`), and an address `arp-find` returns. Proven
+      (`proofs/OS4/Arp.lean`): `arp-find` returns 0 or the MAC of one of
+      the 8 entries and changes nothing (`arp_find_range`); once
+      `arp-learn` has decided to learn, it writes only the cache and
+      `arp-next`, which it keeps below 8 (`arp_learn_tail`), given the cache
+      apart from `arp-next`. Left: its first steps (the checks before it
+      learns), which only read.
       `arp-reply`'s generated footprint is already bounded.
       `tcp-in`'s handling (`segment-in`, `data-in`) writes connection
       records found through the hash table, so its footprint rests on the
@@ -532,7 +536,12 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
       (`FindConn.lean`, `find_conn_live`): `find-conn` ends and returns 0 or
       a connection on its bucket's chain, so, with the hash table's
       invariant (every connection on a chain is live, a hypothesis), 0 or a
-      live one. Left: that `hash-in` and `hash-out` keep that invariant.
+      live one. The invariant's steps are proven too: `hash-in` puts a
+      connection first on its chain, leaving the rest (`hash_in_chain`), so
+      a live connection keeps it (`hash_in_live`); after `hash-out` and
+      `free-conn` the chain and the live list both lose it, and the chain
+      still holds only live ones (`hash_out_live`). Left: chaining these
+      along `open-conn` and the free paths, with the records' cells apart.
       Telnet works on a
       connection's receive ring, through masked offsets.
     - H-pool: `new-conn` when it reserves a new connection is proven

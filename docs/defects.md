@@ -52,7 +52,6 @@ one now does.
 | 23 | 2026-11-04 | `net-send` (bare metal) offered the card an empty frame, header only, when asked to send 0 bytes | QEMU's virtio-net never completes such a request and marks the device broken: the send throws -263 and the network is gone until reboot | Test (`net-faults`, written for defect 22's fix: its negative length became 0) | Only once that test was written | Empty frames are not sent; the test sends again after one |
 | 24 | 2026-11-10 | ICMP "destination unreachable" quoted the packet's header and 8 bytes even when the packet ended sooner | The reply carried 8 bytes of an earlier frame still in `rx-frame`: a sender on the link, choosing the header length, could read another connection's ports and sequence number (which RFC 5961's checks rely on being secret) or 8 bytes of its data | Proof planning (V4: a parser reads only its frame) | No; repro in `tests/udp` (the peer's protocol 200 cases) | #138; proven (`Icmp.lean`) |
 | 25 | 2026-11-05 | `options-mss` read an MSS option's length byte and value even when they lay past the end of the TCP header | A SYN whose options end in a truncated MSS option (kind 2 in the last byte, or kind 2 and length 4 in the last two) set the connection's MSS from bytes after the header: the segment's data, or stale bytes of an earlier frame when there was none (clamped to 64 to our MSS, so no memory harm) | Proof planning (V4 reads: a parser reads only the frame) | No | Options are read only while their bytes lie inside the header; `tcp-attack` sends both truncated forms (found before 24, merged after it) |
-
 | 26 | 2026-11-10 | `udp-find` matched port 0 to the first free slot (a free slot holds port 0), so a datagram to UDP port 0 ran that slot's handler: one left by `udp-unbind`, or xt 0, a jump to address 0 | Any host could run a handler the application had unbound (the `udp` test's own `heard` answered a datagram to port 0), or make the network task jump to address 0 on every such datagram (a fault, caught per frame; bare metal prints a register dump each time) | Proof planning (V4 H-parse: what `udp-in` may execute, read against its table) | No; repro in `tests/udp` (the peer's port 0 case) | #140: port 0 is never found or bound |
 | 27 | 2026-11-10 | `listener-of` likewise matched port 0 to a free listening slot: a SYN to TCP port 0 was answered, and once the handshake completed, the connection was queued on that free slot, where nothing accepts it and nothing times it out | Any client could open 256 such connections and fill `max-conns` for good: no further TCP connection to any port until reboot. A later `listen` taking that slot would hand its application the stale connections | Proof planning (V4 H-pool: the listeners' queues hold only connections someone will accept, read against `listener-of`) | No; repro in `tests/tcp-attack` (a SYN to port 0 must get a reset) | #140 |
 | 28 | 2026-11-10 | `ms` returned as soon as the task was woken. A connection's events (data, ACKs) wake its owner, and after `close-connection` the owner stayed set, so a pooled task went on being woken by a connection it had finished with | The two-second pause between admin password tries ended as soon as the client sent anything, or its ACK arrived: the pause did not slow guessing. Any `ms` in a task that owned a connection was cut short | Proof planning (V4 H-pool: reading what keeps a connection's task pointer after the connection is given up) | No; repro in `tests/tasks` (a task woken in a loop while another sleeps 200 ms) | `ms` sleeps until its time, however often woken; `close-connection` clears the owner |
@@ -96,6 +95,16 @@ on the old code. (A double free in the fix for 20 was caught by
 the proofs find different things.) No proof-found
 defect would have failed the test suite as it stood. The tests had already
 passed over every one of them.
+
+On 2026-11-11 a run that read each area against a written contract (what a
+word may read and write, and what must hold across a pause) found seven
+more (37 to 43): hardening 5, proof planning 2. Most sit where a value from
+a disk crosses a signed comparison (37, 40) or where shared state is used
+across a pause (42), or where cleanup misses a path (38, 41). Each fails a
+test written for it, seen failing on the old code; none would have failed
+the suite as it stood. The proofs written that day (`RecordSeq.lean`,
+`FindConn.lean`, `NewConn.lean`, `Arp.lean`) found nothing new: they
+confirm code the contracts had already been read against.
 
 They are also a different kind of bug. Hardening and the app found bugs in
 behaviour: what the OS does with a packet or a keystroke. The proofs found
