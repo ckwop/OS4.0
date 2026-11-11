@@ -277,6 +277,9 @@ The brief's `sync` rule and DECISIONS.md #95.
     buffered. Whatever writes and flushes fail, `put_keeps` and
     `crash_reads` give no garbage and durability; other tasks' evictions keep
     the invariant; `old_loses` shows the old protocol losing a record.
+  - **Proven on the compiled words** (`RecordSeq.lean`, defect 40): `newer?`
+    and `next-seq` agree, so the copy `record!` writes is the one `record@`
+    reads, in either block and across the wrap; the next number is never 0.
   - **Trusted:** the model's sequence numbers are unbounded (`Nat`); the code's
     are 64-bit serial numbers (`newer?`, #146), which agree with the model
     while the two copies are less than 2^63 apart (they are one write
@@ -525,10 +528,17 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
       `arp-reply`'s generated footprint is already bounded.
       `tcp-in`'s handling (`segment-in`, `data-in`) writes connection
       records found through the hash table, so its footprint rests on the
-      pool invariant, now proven for the pool steps: what is left is that
-      `find-conn` returns a live connection or 0. Telnet works on a
+      pool invariant, now proven for the pool steps. Proven
+      (`FindConn.lean`, `find_conn_live`): `find-conn` ends and returns 0 or
+      a connection on its bucket's chain, so, with the hash table's
+      invariant (every connection on a chain is live, a hypothesis), 0 or a
+      live one. Left: that `hash-in` and `hash-out` keep that invariant.
+      Telnet works on a
       connection's receive ring, through masked offsets.
-    - H-pool: `new-conn` when it reserves a new connection; the records
+    - H-pool: `new-conn` when it reserves a new connection is proven
+      (`NewConn.lean`, `new_conn_reserve_pool`: the record joins the live
+      list, the free list unchanged), taking `reserve`'s result as fresh and
+      apart from the pool; the records
       apart from each other and from the hash cells (stated as hypotheses
       of the pool steps); and the paths to `free-conn` (`release-conn`, the
       timers, `close-connection`) shown to pass a live connection. Stated

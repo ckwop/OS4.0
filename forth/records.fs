@@ -37,7 +37,7 @@ semaphore records-lock
   dup copy-seq  over 1+ copy-seq                   ( addr max n s0 s1 )
   2dup or 0= if  2drop 2drop drop -1 exit  then
   newer? if 1+ then                                 \ the newer copy
-  block  dup r.len @ rot umin >r                    ( addr buf )
+  block  dup r.len @ /record umin rot umin >r       ( addr buf )   \ re-read: bound it again
   r.data swap r@ move  r> ;
 
 \ Fill a buffer for block n and mark it changed, holding the buffers throughout
