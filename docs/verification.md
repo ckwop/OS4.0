@@ -522,9 +522,13 @@ through `eth`, `arp`, `ip`, `icmp`, `udp`, `tcp` and `telnet` (#65–73).
     moves between the live and free lists and their total stays the same).
   - Left for each hypothesis, most tractable first:
     - H-parse: ARP's learning writes the cache through an index read from
-      memory (`arp-next`), and an address `arp-find` returns: both need
-      bounds proven (drafted on branch `v4-arp`, `proofs/OS4/Arp.lean`, not
-      yet checked: it did not finish in the time Lean was given).
+      memory (`arp-next`), and an address `arp-find` returns. Proven
+      (`proofs/OS4/Arp.lean`): `arp-find` returns 0 or the MAC of one of
+      the 8 entries and changes nothing (`arp_find_range`); once
+      `arp-learn` has decided to learn, it writes only the cache and
+      `arp-next`, which it keeps below 8 (`arp_learn_tail`), given the cache
+      apart from `arp-next`. Left: its first steps (the checks before it
+      learns), which only read.
       `arp-reply`'s generated footprint is already bounded.
       `tcp-in`'s handling (`segment-in`, `data-in`) writes connection
       records found through the hash table, so its footprint rests on the

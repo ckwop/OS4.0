@@ -186,7 +186,7 @@ proofs-extract: $(GENERATED) $(GENERATED_VIRT)
 # build instead of holding the VM (#137).
 proofs: proofs-extract
 	cd proofs && LEAN_NUM_THREADS=1 timeout 5400 lake build OS4.Foots.NetTcp
-	cd proofs && LEAN_NUM_THREADS=2 timeout 5400 lake build OS4 OS4Virt OS4.Drivers OS4.Pools OS4.Parsers OS4.IpCheck OS4.Icmp OS4.Ports OS4.Passwords OS4.FindConn OS4.NewConn
+	cd proofs && LEAN_NUM_THREADS=2 timeout 5400 lake build OS4 OS4Virt OS4.Drivers OS4.Pools OS4.Parsers OS4.IpCheck OS4.Icmp OS4.Ports OS4.Passwords OS4.FindConn OS4.NewConn OS4.Arp
 
 # Platform-independent tests in tests/, platform-specific ones beside them.
 test-hosted: $(HOSTED)
