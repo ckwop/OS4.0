@@ -59,7 +59,7 @@
       "file": "forth/net/repl.fs",
       "pattern": ": login\\?  \\(",
       "title": "Logging in",
-      "description": "Three tries, no echo (`read-secret`), the typed text wiped (`forget-secret`), two seconds after each failure. `set-admin-password` above stores the hash as a record in blocks 998 and 999; `admin-session` turns everyone away until one is set."
+      "description": "Three tries, no echo (`read-secret`), the typed text wiped (`forget-secret`), two seconds after each failure. `set-admin-password` above makes the hash in `new-hash` and stores it as a record in blocks 998 and 999 (`admin-pw`, which the sessions share, is only ever a whole record copied without a pause: defect 42); `admin-session` turns everyone away until one is set."
     },
     {
       "file": "forth/random.fs",

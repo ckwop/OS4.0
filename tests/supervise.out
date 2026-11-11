@@ -11,3 +11,9 @@ workers @ 2 + max-workers !  ok
 : fill ( -- n code ) 0 begin 0 ['] idle ['] spawn catch ?dup 0= while drop 1+ repeat >r 2drop r> ;  ok
 fill . . -275 2  ok
 64 max-workers !  0 ' idle spawn drop  workers @ max-workers @ < . -1  ok
+\ a loop stopped while it holds the dictionary gives it up (defect 41)  ok
+variable grabs  ok
+: grabby ( -- ) 1 grabs +!  grabs @ 2 < if claim -4 throw then  begin 100 ms again ;  ok
+task grabber  ' grabby ' restarting grabber start-with  ok
+grabber: stack underflow
+1500 ms grabs @ .  dict-owner @ 0= . 2 -1  ok

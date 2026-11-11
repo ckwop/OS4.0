@@ -242,14 +242,15 @@ theorem unclaim_frees (s r : List Cell) (m : Mem) (u : Cell) (e : Nat) :
 
 /-- RETIRE starts by giving up the dictionary and the semaphores; RUN-TASK
 retires when its work ends however it ends, and `(quit)` retires any task but
-the console; the REPL's RESET and RESTARTING release semaphores too. -/
+the console; the REPL's RESET and RESTARTING give up both too. -/
 theorem cleanup_wired :
     Words.«retire».code.take 2 = [.call Words.«unclaim», .call Words.«release-all»] ∧
     Words.«run-task».code[7]? = some (.call Words.«retire») ∧
     Words.«(quit)».code[4]? = some (.call Words.«retire») ∧
     Words.«reset».code[13]? = some (.call Words.«unclaim») ∧
     Words.«reset».code[14]? = some (.call Words.«release-all») ∧
-    Words.«restarting».code[8]? = some (.call Words.«release-all») := by
-  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+    Words.«restarting».code[8]? = some (.call Words.«unclaim») ∧
+    Words.«restarting».code[9]? = some (.call Words.«release-all») := by
+  refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 end OS4.Semaphores

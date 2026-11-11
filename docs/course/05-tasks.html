@@ -348,7 +348,7 @@
     <div>
       <pre class="code" data-src="forth/tasks.fs" data-step="1">: <span class="w">restarting</span>  ( xt -- )  <span class="c">\ run xt for ever</span>
   begin
-    dup catch ?dup if  ['] report catch if drop then  release-all  then
+    dup catch ?dup if  ['] report catch if drop then  unclaim release-all  then
     1 restarts +!  1000 ms
   again ;</pre>
       <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:restarting">forth/tasks.fs › restarting</a></div>
@@ -367,7 +367,7 @@
   <div class="callout" data-step="3">Two layers: <b>catch per item</b> inside the loop, and <b>restarting</b> around the loop.</div>
   <div class="talk">
     <p>Errors in Forth are thrown and caught, and tasks use that in two layers.</p>
-    <p>The outer layer is restarting. System tasks, like the network task and the REPL listeners, don't run their loop directly. They run it under restarting, which catches whatever ended the loop, reports it, lets go of any semaphore the loop still held, waits a second so a persistent fault can't spin, and starts the loop again. A service can stumble, but it can't stop for good.</p>
+    <p>The outer layer is restarting. System tasks, like the network task and the REPL listeners, don't run their loop directly. They run it under restarting, which catches whatever ended the loop, reports it, lets go of the dictionary and any semaphore the loop still held, waits a second so a persistent fault can't spin, and starts the loop again. A service can stumble, but it can't stop for good.</p>
     <p>The inner layer is inside the loop itself. Here's the network task's loop. Every received frame is handled under its own catch, and so are the TCP timers. A malformed packet that trips an error costs exactly one packet, counted in net-errors, and the next frame is handled as normal. The same pattern runs through the base: catch per item, a frame or a connection, so one fault costs one item.</p>
   </div>
 </section>

@@ -65,7 +65,7 @@
       "file": "forth/records.fs",
       "pattern": ": \\(record!\\)",
       "title": "Writing a record",
-      "description": "A `sync` first if anything is unsynced (`unsynced` in `blocks.fs`), so the newer copy is on the disk for certain; then the next sequence number, over the older copy, filled while holding `blocks-lock` (`fill-copy`), then `sync`. A crash mid-write leaves the other copy intact. `proofs/OS4/Records.lean` proves the protocol keeps the last durable record whatever fails (#118)."
+      "description": "A `sync` first if anything is unsynced (`unsynced` in `blocks.fs`), so the newer copy is on the disk for certain; then the next sequence number (serial-number order, so the count may wrap; `newer?`), over the older copy, filled while holding `blocks-lock` (`fill-copy`), then `sync`. A crash mid-write leaves the other copy intact. `proofs/OS4/Records.lean` proves the protocol keeps the last durable record whatever fails (#118)."
     },
     {
       "file": "tools/blocks.py",

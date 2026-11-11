@@ -37,11 +37,13 @@ variable data-disk
   #disks 0 ?do  disk-header 0 i blk-read  boot-signature? 0= if i data-disk ! unloop exit then  loop
   -257 throw ;
 
+\ The header's size is unsigned, like every block number: a negative one taken
+\ as signed would let any block number through ?BLOCK (defect 37).
 : mount  ( -- )  \ read the header, once
   mounted @ if exit then
   find-data-disk  data-disk @ blk-count #blocks !
   header? disk-ok !
-  disk-ok @ if  disk-header 16 + @ volume-id !  disk-header 24 + @ #blocks @ min #blocks !  then
+  disk-ok @ if  disk-header 16 + @ volume-id !  disk-header 24 + @ #blocks @ umin #blocks !  then
   true mounted ! ;
 
 : ?block     ( u -- u )  mount  dup #blocks @ u< 0= if -35 throw then ;
@@ -77,9 +79,12 @@ variable unsynced     \ a buffer was UPDATEd, or a sync failed, since the last s
 : pin    ( i -- )  1 swap 'pins +! ;
 : unpin  ( i -- )  -1 swap 'pins +! ;
 
+\ A buffer a LOAD is reading from keeps its block and its pin: emptying it would
+\ leave its LOAD's UNPIN to drive the count below zero, and the buffer, never
+\ again unpinned, out of use for good (defect 38).
 : (empty-buffers)  ( -- )
-  #buffers 0 do  -1 i 'blk !  0 i 'dirty !  0 i 'pins !  loop ;
-(empty-buffers)
+  #buffers 0 do  i 'pins @ 0= if  -1 i 'blk !  0 i 'dirty !  then  loop ;
+buf-pins #buffers cells 0 fill  (empty-buffers)
 
 : buf-of  ( u -- i | -1 )  \ the buffer holding block u
   #buffers 0 do  dup i 'blk @ = if drop i unloop exit then  loop drop -1 ;

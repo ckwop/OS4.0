@@ -23,3 +23,4 @@ import OS4.Telnet
 import OS4.Semaphores
 import OS4.Sessions
 import OS4.Records
+import OS4.RecordSeq

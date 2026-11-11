@@ -95,12 +95,13 @@ variable max-workers  64 max-workers !
 \ ---- Supervision. A system task (the network, a listener) runs its loop
 \ under RESTARTING: whatever ends the loop, an error or a return, is reported
 \ and the loop starts again a second later, so one fault cannot stop the
-\ service for good, nor spin.
+\ service for good, nor spin. Like RETIRE, it gives up the dictionary and the
+\ semaphores the loop held, wherever it stopped (defect 41).
 
 variable restarts                                 \ how often a system task has been restarted
 : restarting  ( xt -- )  \ run xt for ever
   begin
-    dup catch ?dup if  ['] report catch if drop then  release-all  then
+    dup catch ?dup if  ['] report catch if drop then  unclaim release-all  then
     1 restarts +!  1000 ms
   again ;
 

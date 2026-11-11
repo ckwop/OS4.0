@@ -225,7 +225,7 @@
   <div class="talk">
     <p>IP is where the stack is most careful, because every packet from the outside world passes through here. Ip-check reads like a list of rules, and any rule broken drops the packet silently.</p>
     <p>The version must be four. The header length must fit within the frame, and be at least the minimum of twenty bytes. The header checksum must be right. The total length the packet claims must fit within what actually arrived, and be at least the header's own length.</p>
-    <p>Then: no fragments, because OS 4.0 doesn't reassemble them, and simply refuses them. The destination must be our address or the broadcast address. And the source mustn't be one that no real machine can have, such as our own address, or a multicast address.</p>
+    <p>Then: no fragments, because OS 4.0 doesn't reassemble them, and simply refuses them. The destination must be our address or the broadcast address. And the source mustn't be one that no real machine can have, such as our own address, a multicast address, zero, which means this host, or a loopback address starting one two seven.</p>
     <p>Only after all that does the packet reach a protocol handler. The hostile-input test sends hundreds of malformed and random frames at exactly these checks.</p>
   </div>
 </section>

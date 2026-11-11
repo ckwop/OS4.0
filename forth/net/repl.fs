@@ -14,25 +14,34 @@ variable sessions-refused       \ connections turned away because the door was f
 
 \ ---- The admin password
 
+\ ADMIN-PW is shared by the admin sessions, and RECORD@ and HASH-PASSWORD pause
+\ while they fill a buffer: so the record is read into PW-READ (under
+\ RECORDS-LOCK) and copied whole, without a pause, and a new hash is made in
+\ NEW-HASH. ADMIN-PW is only ever a whole stored record (defect 42).
 create admin-pw  /password allot
+create pw-read   /password allot
+create new-hash  /password allot
 : admin-password?  ( -- flag )  \ one is set: its hash is now in ADMIN-PW
-  admin-pw /password admin-record ['] record@ catch if  2drop drop false exit  then
-  /password = ;
+  pw-read /password admin-record ['] record@ catch if  2drop drop false exit  then
+  /password = dup if  pw-read admin-pw /password move  then ;
 : read-secret  ( -- addr len )  \ a line typed without echo, in PAD
   true hidden !  pad 64 accept  false hidden !  pad swap  cr ;
 : forget-secret  ( -- )  pad 64 0 fill ;
 
 create new-pw 64 allot
 variable new-pw-len
-: set-admin-password  ( -- )  \ asks for it twice, without echo, and stores its hash
+semaphore admin-pw-lock         \ one SET-ADMIN-PASSWORD at a time: NEW-PW is shared
+: (set-admin-password)  ( -- )
   ." New admin password: " read-secret
   dup 0= if  2drop ." Not changed." cr exit  then
   dup new-pw-len !  new-pw swap move  forget-secret
   ." Again: " read-secret  new-pw new-pw-len @ compare  forget-secret
   if  new-pw 64 0 fill  ." They differ: not changed." cr exit  then
-  new-pw new-pw-len @ admin-pw hash-password  new-pw 64 0 fill
-  admin-pw /password admin-record record!
+  new-pw new-pw-len @ new-hash hash-password  new-pw 64 0 fill
+  new-hash /password admin-record record!
   ." Admin password set." cr ;
+: set-admin-password  ( -- )  \ asks for it twice, without echo, and stores its hash
+  ['] (set-admin-password) admin-pw-lock locked ;
 
 : login?  ( -- flag )  \ three tries at the admin password
   3 0 do

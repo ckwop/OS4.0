@@ -29,6 +29,9 @@ Trusted, not proven:
 * that RECORD! is one step: records-lock keeps other records' writers out,
   and the only other task that touches these buffers is one evicting them,
   which writes back the copy SYNC was about to write anyway;
+* that sequence numbers order as `Nat`s do: the code's are 64-bit serial
+  numbers (`newer?`, DECISIONS.md #146), which agree while the two copies are
+  less than 2^63 apart;
 * that a torn copy fails its SipHash check (`Outcome` lets a pending copy
   become `none`, never another value). That holds with overwhelming
   probability, not certainty.

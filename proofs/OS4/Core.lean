@@ -64,6 +64,12 @@ theorem max (a b : Cell) :
     Words.«max» ⟨b :: a :: s, r, m, u, e⟩ = .ok ⟨(if a.slt b then b else a) :: s, r, m, u, e⟩ := by
   forth_auto
 
+/-- UMIN compares unsigned: a block number or a size from a disk is never negative
+(docs/defects.md, 37). -/
+theorem umin (a b : Cell) :
+    Words.«umin» ⟨b :: a :: s, r, m, u, e⟩ = .ok ⟨(if a.ult b then a else b) :: s, r, m, u, e⟩ := by
+  forth_auto
+
 /-- WITHIN is the usual one-comparison trick: for lo ≤ hi it is lo ≤ n < hi.
 (The SAT step takes seconds; the timeout leaves room for a loaded machine.) -/
 theorem within (n lo hi : Cell) (h : lo.sle hi) :

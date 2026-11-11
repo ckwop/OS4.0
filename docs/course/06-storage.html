@@ -256,7 +256,7 @@
   <div class="talk">
     <p>All tasks share the eight buffers, and a disk request involves waiting, which means pausing. So every public word in the block layer runs holding a semaphore called blocks-lock. While one task is waiting for its block to arrive, no other task can choose the same buffer as a victim.</p>
     <p>That gives a rule worth remembering. The address that block returns is only good until your task next pauses. After that, another task may have reused the buffer for a different block. So read it, change it, and call update, without anything that pauses in between. Update also works on the last buffer your own task asked for, so another task's request can't confuse it.</p>
-    <p>Load is the exception that needs more: it interprets source straight out of a buffer, and that can take many pauses. So load pins its buffer, and the victim search skips it.</p>
+    <p>Load is the exception that needs more: it interprets source straight out of a buffer, and that can take many pauses. So load pins its buffer, and the victim search skips it. Empty-buffers and flush leave a pinned buffer alone too. They used to reset its count, and the load's unpin then drove it below zero, which lost that buffer for good.</p>
   </div>
 </section>
 
@@ -296,7 +296,7 @@ constant /record-header</pre>
   over /record u&gt; if -274 throw then
   unsynced @ if sync then
   dup copy-seq  over 1+ copy-seq                   ( addr len n s0 s1 )
-  2dup max 1+ &gt;r  u&lt; 0= if 1+ then  r&gt; swap         <span class="c">\ the next number, over the older copy</span>
+  2dup newer? if  nip next-seq swap  else  drop next-seq swap 1+  then   <span class="c">\ the next number, over the older copy</span>
   ['] fill-copy blocks-lock locked
   sync ;</pre>
   <div class="src"><a href="../../forth/records.fs" data-ref="forth/records.fs:(record!)">forth/records.fs › (record!)</a></div>
@@ -306,7 +306,7 @@ constant /record-header</pre>
     <li data-step="4">Used for the admin password's hash, in blocks 998 and 999</li>
   </ul>
   <div class="talk">
-    <p>Here's the write. Refuse anything too large for one block. If anything is unsynced, sync first. The copy about to be overwritten is the older one, and that is only safe while the newer one is really on the disk. After a failed sync, it might be only in a buffer. Then read both copies' sequence numbers; an invalid copy counts as zero. The next number is one more than the larger, and it goes over the older copy. Fill that buffer while holding the block lock, so no other task can take the buffer in between. And sync, so that when record-store returns, the new value is durable.</p>
+    <p>Here's the write. Refuse anything too large for one block. If anything is unsynced, sync first. The copy about to be overwritten is the older one, and that is only safe while the newer one is really on the disk. After a failed sync, it might be only in a buffer. Then read both copies' sequence numbers; an invalid copy counts as zero. The next number is one more than the newer one's, and it goes over the older copy. Newer means the difference, taken as signed, is positive, so the count can wrap round and still compare right; and the next number skips zero, which means never written. Fill that buffer while holding the block lock, so no other task can take the buffer in between. And sync, so that when record-store returns, the new value is durable.</p>
     <p>That first sync came from the proofs. Without it, a disk write that failed, then another record-store, then a crash, could lose the last record that had been saved for certain. A proof now shows that whatever fails, a crash reads the last durable record or a newer one.</p>
     <p>Records hold up to a thousand bytes of binary data. Two hard rules apply to all stored data, and records are where they bite. Never store data as Forth source, which something might later interpret. And never store execution tokens: they're memory addresses, and they change every time the system is rebuilt.</p>
     <p>The network REPL keeps the admin password's hash in a record, in blocks nine nine eight and nine nine nine.</p>

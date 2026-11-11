@@ -22,3 +22,9 @@ empty-buffers  ok
  ok
 34 mark  save-buffers  empty-buffers  34 34 index   34 \ screen 34
  ok
+\ emptying the buffers while a LOAD reads one leaves that one alone (defect 38)  ok
+: pins. ( -- ) #buffers 0 do i 'pins @ . loop ;  ok
+40 wipe  0 >line \ empty-buffers and flush during a load  ok
+1 >line empty-buffers flush  1 2 + .  ok
+save-buffers  40 load  pins. 3 0 0 0 0 0 0 0 0  ok
+: load-many ( -- ) 9 0 do 40 load loop ;  load-many  pins.  41 block drop  42 block drop 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0 0  ok
