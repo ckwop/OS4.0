@@ -96,6 +96,16 @@ the proofs find different things.) No proof-found
 defect would have failed the test suite as it stood. The tests had already
 passed over every one of them.
 
+On 2026-11-11 a run that read each area against a written contract (what a
+word may read and write, and what must hold across a pause) found seven
+more (37 to 43): hardening 5, proof planning 2. Most sit where a value from
+a disk crosses a signed comparison (37, 40) or where shared state is used
+across a pause (42), or where cleanup misses a path (38, 41). Each fails a
+test written for it, seen failing on the old code; none would have failed
+the suite as it stood. The proofs written that day (`RecordSeq.lean`,
+`FindConn.lean`, `NewConn.lean`, `Arp.lean`) found nothing new: they
+confirm code the contracts had already been read against.
+
 They are also a different kind of bug. Hardening and the app found bugs in
 behaviour: what the OS does with a packet or a keystroke. The proofs found
 bugs in what must hold on every path:
