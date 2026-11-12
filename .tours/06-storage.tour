@@ -41,7 +41,7 @@
       "file": "forth/blocks.fs",
       "pattern": ": victim  \\(",
       "title": "Buffers",
-      "description": "Eight buffers with their block, dirty flag and pin count. `victim` picks round robin, skipping pinned buffers, writing a dirty one back first. `(buffer)` and `(block)` below use it."
+      "description": "Eight buffers with their block and dirty flag; each task counts its own pins of them (`my-pins`, cleared by `unpin-all` where its top level catches, TD-43), and `pinned?` asks every task. `victim` picks round robin, skipping pinned buffers, writing a dirty one back first. `(buffer)` and `(block)` below use it."
     },
     {
       "file": "forth/blocks.fs",

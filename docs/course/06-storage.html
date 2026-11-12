@@ -198,12 +198,12 @@
     <pre class="code" data-src="forth/blocks.fs">: <span class="w">victim</span>  ( -- i )  <span class="c">\ the next unpinned buffer, round robin, written back first</span>
   #buffers 0 do
     next-buf @ 1+ #buffers mod  dup next-buf !
-    dup 'pins @ 0= if  dup write-buf unloop exit  then drop
+    dup pinned? 0= if  dup write-buf unloop exit  then drop
   loop -260 throw ;</pre>
     <div class="src"><a href="../../forth/blocks.fs" data-ref="forth/blocks.fs:victim">forth/blocks.fs › victim</a></div>
   </div>
   <div class="talk">
-    <p>Forth's classic storage model is blocks of one kilobyte, cached in a few buffers. Here there are eight. Each buffer remembers which block it holds, whether it has been changed, which Forth calls dirty, and how many loads are reading source from it, which pins it in place.</p>
+    <p>Forth's classic storage model is blocks of one kilobyte, cached in a few buffers. Here there are eight. Each buffer remembers which block it holds, whether it has been changed, which Forth calls dirty, and whether any load is reading source from it, which pins it in place.</p>
     <p>Block asks for a block by number and returns the address of a buffer holding it. If it's already in a buffer, that's instant. If not, a victim is chosen, round robin, skipping any that are pinned. If the victim is dirty it's written back first, and then the new block is read in.</p>
     <p>After changing a buffer, you call update, which marks it dirty, so that it'll be written back. And if you're about to overwrite a whole block, buffer gives you one without the pointless read.</p>
     <p>One block is special. Block zero holds the disk header, and any attempt to write it throws <span data-say="minus two five nine">-259</span>.</p>
@@ -256,7 +256,7 @@
   <div class="talk">
     <p>All tasks share the eight buffers, and a disk request involves waiting, which means pausing. So every public word in the block layer runs holding a semaphore called blocks-lock. While one task is waiting for its block to arrive, no other task can choose the same buffer as a victim.</p>
     <p>That gives a rule worth remembering. The address that block returns is only good until your task next pauses. After that, another task may have reused the buffer for a different block. So read it, change it, and call update, without anything that pauses in between. Update also works on the last buffer your own task asked for, so another task's request can't confuse it.</p>
-    <p>Load is the exception that needs more: it interprets source straight out of a buffer, and that can take many pauses. So load pins its buffer, and the victim search skips it. Empty-buffers and flush leave a pinned buffer alone too. They used to reset its count, and the load's unpin then drove it below zero, which lost that buffer for good.</p>
+    <p>Load is the exception that needs more: it interprets source straight out of a buffer, and that can take many pauses. So load pins its buffer, and the victim search skips it. Empty-buffers and flush leave a pinned buffer alone too. They used to reset its count, and the load's unpin then drove it below zero, which lost that buffer for good. And each task keeps its own pin counts, in its user area: a buffer is pinned while any task's count for it is above zero. The watchdog can stop a task anywhere, even between its pin and the catch that would undo it, so whatever catches the error at the task's top level clears that task's pins, just as it frees its semaphores.</p>
   </div>
 </section>
 

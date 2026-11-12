@@ -13,3 +13,7 @@ variable grabs
 : grabby ( -- ) 1 grabs +!  grabs @ 2 < if claim -4 throw then  begin 100 ms again ;
 task grabber  ' grabby ' restarting grabber start-with
 1500 ms grabs @ .  dict-owner @ 0= .
+\ a pooled task, reused, starts with BLK clear (TD-43)
+variable seen  -1 seen !
+: dirty ( x -- ) drop 42 blk ! ;  : look ( x -- ) drop blk @ seen ! ;
+0 ' dirty spawn drop  100 ms  0 ' look spawn drop  100 ms  seen @ .
