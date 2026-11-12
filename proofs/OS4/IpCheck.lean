@@ -16,7 +16,7 @@ namespace OS4.Parsers
 open OS4
 
 /-- The packet: rx-frame after its Ethernet header. -/
-abbrev rxIp : Cell := dictTop - 12160#64 + 14#64
+abbrev rxIp : Cell := dictTop - 12424#64 + 14#64
 /-- Its header length, from the first byte. -/
 abbrev ihlOf (m : Mem) : Cell := (rd m rxIp 1 &&& 15#64) * 4#64
 
@@ -43,10 +43,10 @@ theorem ip_check_sum (k : Nat) (ihl len : Cell) (s r : List Cell) (m : Mem) (p :
     ∃ f m2 e2, run Words.«ip-check».code (k + 7) 27 ⟨ihl :: len :: s, r, m, p, e⟩ =
       if f = 0#64 then run Words.«ip-check».code (k + 3) 34 ⟨ihl :: len :: s, r, m2, p, e2⟩
       else .ok ⟨0#64 :: s, r, m2, p, e2⟩ := by
-  have hs := Words.«checksum».spec [ihl, dictTop - 12160#64 + 14#64] [] (ihl :: len :: s) r m p e rfl rfl
+  have hs := Words.«checksum».spec [ihl, dictTop - 12424#64 + 14#64] [] (ihl :: len :: s) r m p e rfl rfl
   simp only [List.cons_append, List.nil_append] at hs
   rw [show k + 7 = k + 3 + 1 + 1 + 1 + 1 by omega]
-  cases hck : Words.«checksum» ⟨ihl :: (dictTop - 12160#64 + 14#64) :: ihl :: len :: s, r, m, p, e⟩ with
+  cases hck : Words.«checksum» ⟨ihl :: (dictTop - 12424#64 + 14#64) :: ihl :: len :: s, r, m, p, e⟩ with
   | error x =>
     left
     refine ⟨x, ?_⟩
@@ -82,8 +82,8 @@ theorem ip_check_total (k : Nat) (ihl len : Cell) (s r : List Cell) (m : Mem) (p
   simp only [Words.«ip-check».code]
   generalize Words.«checksum» = CK
   simp only [n16, rxIp]
-  generalize ht : rd m (dictTop - 12160#64 + 14#64 + 2#64) 1 <<< 8 |||
-    rd m (dictTop - 12160#64 + 14#64 + 2#64 + 1#64) 1 = t
+  generalize ht : rd m (dictTop - 12424#64 + 14#64 + 2#64) 1 <<< 8 |||
+    rd m (dictTop - 12424#64 + 14#64 + 2#64 + 1#64) 1 = t
   by_cases h1 : BitVec.slt len t = false <;>
   by_cases h2 : BitVec.slt t ihl = false <;>
   simp_all [forth]
