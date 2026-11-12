@@ -9,3 +9,7 @@ hex -1 . -1 u. decimal -1 FFFFFFFFFFFFFFFF  ok
 hex 1A2B decimal . 6699  ok
 2 base ! 101 1 base ! . pictured numeric output string overflow
 decimal 7 . 7  ok
+\ the sign after the prefix, as the standard writes it (defect 48); one sign only  ok
+$-10 . #-12 . %-101 . -$10 . -16 -12 -5 -16  ok
+-$-10 . -$-10 ?
+$- . $- ?

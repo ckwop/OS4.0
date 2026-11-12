@@ -17,7 +17,7 @@
       "file": "tools/app-disk.sh",
       "pattern": "mkfs\\.fat -C -F 32",
       "title": "Making the app disk",
-      "description": "FAT32 (64 MiB, sparse), or FAT16 with one-sector clusters if the app has a `.fat16` file, labelled `OS4APP`. The loop below copies the app's files, skipping hidden ones and the top-level `build` and `tests`."
+      "description": "FAT32 (64 MiB, sparse), or FAT16 with one-sector clusters if the app has a `.fat16` file, labelled `OS4APP`. The loop below copies the app's files, skipping hidden ones and the top-level `build` and `tests`; a `.corrupt` file then breaks the disk on purpose, for tests."
     },
     {
       "file": "forth/files.fs",
@@ -29,7 +29,7 @@
       "file": "forth/files.fs",
       "pattern": ": next-cluster  \\(",
       "title": "Chains of clusters",
-      "description": "A FAT entry, 2 or 4 bytes, gives the next cluster; end markers become 0; `?cluster` refuses nonsense. `advance` below counts the clusters walked and throws -37 if a chain loops."
+      "description": "A FAT entry, 2 or 4 bytes, gives the next cluster; end markers become 0; `?cluster` refuses nonsense. `advance` below counts the clusters walked and throws -37 if a chain loops; `f-chunk` throws -37 if a file's chain ends before its size, and `(open-file)` refuses a first cluster outside the data area (defect 47; `tests/files-bad` breaks a disk on purpose with `tools/fat-corrupt.py`)."
     },
     {
       "file": "forth/files.fs",

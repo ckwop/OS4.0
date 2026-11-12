@@ -75,7 +75,7 @@ structure Ok : Prop where
   notCurrent : B.wid ≠ rd B.m0 currentA 8
   chain : Chain B.m0 (rd B.m0 B.wid 8) B.hs
   apart : ∀ a, B.dictSupp a → 512 ≤ (a - B.p).toNat
-  bufs : ∀ a, B.supp a → 128 ≤ (a - (rd B.m0 (B.p + 176) 8 + 768)).toNat
+  bufs : ∀ a, B.supp a → 128 ≤ (a - (rd B.m0 (B.p + 176) 8 + 1032)).toNat
 
 end Box
 

@@ -25,7 +25,7 @@ user emitted                          \ EMIT's character
 
 256 constant /pad
 256 constant /tib
-256 constant /sbuf
+256 2* cell+ constant /sbuf             \ which half was used last, then two halves
 128 constant /numbuf
 /pad /tib + /sbuf + /numbuf + constant /buffers
 user task-buffers
@@ -62,8 +62,12 @@ user hld
 
 : (s")  ( -- addr u )  r> dup cell+ swap @  2dup + aligned >r ;
 : s,    ( addr u -- )  dup , here swap dup allot cmove align ;
+: next-sbuf  ( -- addr )  \ the half of SBUF the last interpreted S" did not use
+  sbuf @ 1+ 1 and  dup sbuf !  256 *  sbuf cell+ + ;
+\ Interpreted, S" alternates between two buffers, so two strings can be used
+\ together, as the standard requires (defect 49).
 : s"    ( "ccc<quote>" -- addr u )
-  34 parse  state @ if  postpone (s") s,  else  dup >r sbuf swap cmove sbuf r>  then ; immediate
+  34 parse  state @ if  postpone (s") s,  else  next-sbuf swap dup >r  over >r cmove  r> r>  then ; immediate
 : ."      ( "ccc<quote>" -- )
   state @ if  postpone s" postpone type  else  34 parse type  then ; immediate
 : .(      ( "ccc<paren>" -- )  41 parse type ; immediate

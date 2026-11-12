@@ -1,0 +1,30 @@
+OS 4.0
+\ files-bad.in: an app disk broken on purpose (files-bad.app/.corrupt, tools/fat-corrupt.py): errors, never a hang  ok
+create buf 100 allot  ok
+variable fid  ok
+: lines  ( -- n ior )  0 begin  buf 100 fid @ read-line ?dup if nip nip exit then  nip  while 1+ repeat 0 ;  ok
+: bytes  ( -- n ior )  0 begin  buf 100 fid @ read-file ?dup if nip exit then  dup while +  repeat drop 0 ;  ok
+s" ok.txt" r/o open-file . fid !  lines . .  fid @ close-file . 0 0 30 0  ok
+\ a chain that ends before the file does  ok
+s" cut.txt" r/o open-file . fid !  lines . .  fid @ close-file . 0 -37 10 0  ok
+s" cut.txt" r/o open-file . fid !  bytes . .  fid @ close-file . 0 -37 500 0  ok
+include cut.fs cut.fs:10: file I/O exception
+\ a chain that loops, and one that runs into a free cluster  ok
+s" loop.txt" r/o open-file . fid !  lines . .  fid @ close-file . 0 0 30 0  ok
+s" free.txt" r/o open-file . fid !  bytes . .  fid @ close-file . 0 -37 1000 0  ok
+\ first clusters that are not in the data area  ok
+s" zero.txt" r/o open-file . . -37 0  ok
+s" one.txt" r/o open-file . . -37 0  ok
+s" far.txt" r/o open-file . . -37 0  ok
+\ a line of 255 characters, then CR LF: the error is on line 2  ok
+include crlf.fs crlf.fs:2: nonsense-word ?
+dir crlf.fs 272
+cut.fs 1470
+cut.txt 1470
+far.txt 11
+free.txt 1470
+loop.txt 1470
+ok.txt 1470
+one.txt 11
+zero.txt 100
+ ok

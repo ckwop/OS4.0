@@ -10,3 +10,5 @@ char A .
 3 spaces ." x"
 : two ." a" ." b" ; two
 s" hello" drop 1+ c@ emit
+\ two interpreted strings at once, as the standard requires (defect 49)
+s" abc" s" abd" compare .  s" first" s" second" type type

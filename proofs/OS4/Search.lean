@@ -157,6 +157,10 @@ theorem digit_frame : Frame W Words.«digit?» :=
                      false_frame, userAt_frame _, fetch_frame, less_frame, true_frame])
 theorem prefix_base_frame : Frame W Words.«prefix-base» :=
   thread_frame (by simp only [Words.«prefix-base».code]; frames [dup_frame, equal_frame, drop_frame])
+theorem sign_frame : Frame W Words.«sign?» :=
+  thread_frame (by simp only [Words.«sign?».code]
+                   frames [dup_frame, over_frame, cfetch_frame, equal_frame, slash_string_frame, true_frame,
+                     false_frame])
 theorem number_digits_frame : Frame W Words.«(number)» :=
   loopThread_frame (by simp only [Words.«(number)».code]
                        frames [dup_frame, zequal_frame, twodrop_frame, false_frame, mrot_frame,
@@ -247,10 +251,11 @@ theorem decimal_frame : Frame baseCell Words.«decimal» :=
     keeps [] [store_at])).1
 
 theorem number_frame : Frame baseCell Words.«number?» :=
-  (thread_frame_at (P := [47, 53]) (off := 0) (by decide) (fun s0 => by
+  (thread_frame_at (P := [34, 48]) (off := 0) (by decide) (fun s0 => by
     simp only [Words.«number?».code, forall_getElem?_cons, forall_getElem?_nil, and_true]
     keeps [Prim.dup_frame, Prim.equal_frame, Prim.over_frame, Prim.cfetch_frame, Prim.drop_frame, oneplus_frame, true_frame,
       Prim.tor_frame, Prim.plus_frame, slash_string_frame, Prim.zequal_frame, twodrop_frame, Prim.rfrom_frame, false_frame,
-      prefix_base_frame, qdup_frame, Prim.fetch_frame, number_digits_frame, negate_frame] [store_at])).1
+      prefix_base_frame, qdup_frame, Prim.fetch_frame, number_digits_frame, negate_frame, sign_frame, Prim.rfetch_frame,
+      Prim.or_frame, Prim.swap_frame] [store_at])).1
 
 end OS4.Isolation

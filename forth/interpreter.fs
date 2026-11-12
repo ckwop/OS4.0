@@ -98,12 +98,16 @@ forth-wordlist context !  1 #order !             \ the console's; new tasks copy
     over c@ digit? 0= if 2drop drop false exit then
     >r rot base @ * r> + -rot 1 /string
   repeat 2drop true ;
+: sign?  ( addr u -- addr' u' flag )  \ a leading -, skipped
+  dup if  over c@ [char] - = if  1 /string true exit  then then  false ;
+\ The - may come before the prefix or, as the standard writes it, after ($-1;
+\ defect 48), but only once.
 : number?  ( addr u -- n true | false )
   dup 3 = if  over c@ [char] ' = if  over 2 + c@ [char] ' = if  drop 1+ c@ true exit  then then then
-  over c@ [char] - = dup >r if 1 /string then
-  dup 0= if 2drop r> drop false exit then
-  over c@ prefix-base ?dup if  base @ >r base ! 1 /string (number) r> base !  else (number) then
-  if r> if negate then true else r> drop false then ;
+  base @ >r  sign? >r
+  dup if  over c@ prefix-base ?dup if  base !  1 /string  then then
+  r@ 0= if  sign? r> or >r  then
+  (number)  r> r> base !  swap if  if negate then true  else  drop false  then ;
 
 : undefined  ( addr u -- )  errname 2! -13 throw ;
 : ?stack     ( -- )  \ overflows are caught as they happen, underflows here

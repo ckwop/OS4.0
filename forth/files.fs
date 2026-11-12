@@ -116,7 +116,9 @@ variable fat-blk   -1 fat-blk !     \ which, or -1
 
 : f-chunk  ( f -- addr n )  \ the next bytes of f that lie together in the cache; 0 at the end
   dup f.pos @ over f.size @ u< 0= if drop 0 0 exit then
-  dup f-where ?dup 0= if 2drop 0 0 exit then             ( f pos avail )
+  dup f-where ?dup 0= if                                  ( f pos )
+    drop  f.size @ unbounded <> if -37 throw then  0 0 exit  \ a file's chain ended before its size (defect 47)
+  then                                                    ( f pos avail )
   2 pick f.size @ 3 pick f.pos @ - min
   over 1023 and 1024 swap - min  rot drop  swap fat-byte swap ;
 : f-skip  ( f n -- )  swap f.pos +! ;
@@ -136,10 +138,18 @@ variable fat-blk   -1 fat-blk !     \ which, or -1
   2 pick min  2dup lf-index  tuck = >r                          ( a u ca k )
   dup >r  3 pick swap cmove  r> r>                              ( a u k no-lf )
   2dup 0= -  r> swap f-skip  >r /string r> ;
+: lf-next?  ( f -- flag )  \ f's next byte is a line feed, which is then skipped
+  dup f-chunk if  c@ 10 =  else  drop false  then
+  dup if  swap 1 f-skip  else  nip  then ;
+\ A CR before the LF is dropped. When the buffer fills just after a CR, the LF
+\ may be the next byte: then it ends this line, not the next (defect 50).
 : f-line  ( addr u f -- u2 flag )
   dup f.pos @ over f.size @ u< 0= if  drop 2drop 0 false exit  then
   >r over swap  begin dup if r@ line-step else false then while repeat
-  drop over -  dup if  2dup + 1- c@ 13 = if 1- then  then  nip  r> drop true ;
+  0= >r  over -                                         ( addr n ) ( R: f full )
+  dup if  2dup + 1- c@ 13 = if
+    r@ 0= if  1-  else  r> r@ swap >r  lf-next? if 1- then  then
+  then then  nip  r> drop r> drop true ;
 
 \ ---- Directories
 
@@ -186,7 +196,7 @@ create dir-file /file allot         \ the directory being read
 : e-size     ( -- u )  entry 28 + le32 ;
 
 : dir-start  ( cluster -- cluster' )  dup 0= fat-bits @ 32 = and if drop root-cluster @ then ;
-: open-dir   ( cluster -- f )  dir-start unbounded dir-file f-init ;
+: open-dir   ( cluster -- f )  dir-start  dup if ?cluster then  unbounded dir-file f-init ;
 
 \ Paths. WALK-PATH leaves what it found in these:
 variable p-cluster   variable p-size   variable p-dir?
@@ -225,6 +235,7 @@ variable #files                     \ made so far
 
 : (open-file)  ( addr u -- f )
   2dup walk-path  p-dir? @ if -38 throw then
+  p-cluster @ if  p-cluster @ ?cluster drop  else  p-size @ if -37 throw then  then  \ defect 47
   new-file >r  p-cluster @ p-size @ r@ f-init drop  true r@ f.open !
   dup 31 - 0 max /string  dup r@ f.name c!  r@ f.name 1+ swap cmove  r> ;
 : (close-file)  ( f -- )  ?open  false over f.open !  free-files @ over f.link !  free-files ! ;

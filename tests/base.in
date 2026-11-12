@@ -8,3 +8,7 @@ hex -1 . -1 u. decimal
 hex 1A2B decimal .
 2 base ! 101 1 base ! .
 decimal 7 .
+\ the sign after the prefix, as the standard writes it (defect 48); one sign only
+$-10 . #-12 . %-101 . -$10 .
+-$-10 .
+$- .
