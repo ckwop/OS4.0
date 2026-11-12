@@ -251,7 +251,7 @@ theorem hld_eq (s : S) : Words.«hld» s = .ok { s with ds := (184 + s.up) :: s.
   rcases s with ⟨ds, rs, m, u, e⟩
   simp [forth]
 theorem numbuf_eq (s : S) :
-    Words.«numbuf» s = .ok { s with ds := (rd s.mem (176 + s.up) 8 + 256 + 256 + 256) :: s.ds } := by
+    Words.«numbuf» s = .ok { s with ds := (rd s.mem (176 + s.up) 8 + 256 + 256 + 520) :: s.ds } := by
   rcases s with ⟨ds, rs, m, u, e⟩
   simp [forth]
 theorem plus_store_eq (a v : Cell) (t r : List Cell) (m : Mem) (u : Cell) (e : Nat) :
@@ -266,7 +266,7 @@ theorem hold_run (ds rs : List Cell) (m : Mem) (p : Cell) (e : Nat) :
 /-- The check: is `hld` less one inside `numbuf`? -/
 theorem hold_head (n : Nat) (ds rs : List Cell) (m : Mem) (p : Cell) (e : Nat) :
     run Words.«hold».code (n + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1) 0 ⟨ds, rs, m, p, e⟩ =
-      if BitVec.ult (rd m (184 + p) 8 - (rd m (176 + p) 8 + 256 + 256 + 256) - 1) 128 = true
+      if BitVec.ult (rd m (184 + p) 8 - (rd m (176 + p) 8 + 256 + 256 + 520) - 1) 128 = true
       then run Words.«hold».code n 11 ⟨ds, rs, m, p, e⟩
       else run Words.«hold».code n 9 ⟨ds, rs, m, p, e⟩ := by
   simp [forth, ↓hld_eq, ↓numbuf_eq]
@@ -297,7 +297,7 @@ theorem hold_throw (n : Nat) (ds rs : List Cell) (m : Mem) (p : Cell) (e : Nat) 
 inside `numbuf`, and HOLD stepped it down and stored the character there. -/
 theorem hold_ok (c : Cell) (t rs : List Cell) (m : Mem) (p : Cell) (e : Nat) (s' : S)
     (h : Words.«hold» ⟨c :: t, rs, m, p, e⟩ = .ok s') :
-    (rd m (184 + p) 8 - (rd m (176 + p) 8 + 256 + 256 + 256) - 1).toNat < 128 ∧
+    (rd m (184 + p) 8 - (rd m (176 + p) 8 + 256 + 256 + 520) - 1).toNat < 128 ∧
     s' = ⟨t, rs, wr (wr m (184 + p) 8 (rd m (184 + p) 8 + 18446744073709551615))
       (rd m (184 + p) 8 + 18446744073709551615) 1 c, p, e⟩ := by
   rw [hold_run, hold_head] at h

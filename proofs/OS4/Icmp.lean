@@ -20,7 +20,7 @@ namespace OS4.Parsers
 open OS4
 
 /-- Where the quote goes: after the report's 8-byte header in tx-frame. -/
-abbrev txQuote : Cell := dictTop - 14208#64 + 34#64 + 8#64
+abbrev txQuote : Cell := dictTop - 14472#64 + 34#64 + 8#64
 
 /-- How much of the packet a report quotes: its header and 8 bytes, or the
 whole packet if that is shorter. -/

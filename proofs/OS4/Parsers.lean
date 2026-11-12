@@ -14,7 +14,7 @@ namespace OS4.Parsers
 open OS4
 
 /-- The frame being handled, and the counter `frame-in` bumps. -/
-abbrev rxFrame : Cell := dictTop - 12160
+abbrev rxFrame : Cell := dictTop - 12424
 abbrev framesIn : Cell := wordAddr "frames-in" + 8
 
 /-- A handler's outcome, passed on as it is (the thread's call of it). -/

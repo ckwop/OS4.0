@@ -18,6 +18,8 @@ consistently.
 - **App**: using the base for an app (the MUD) showed it.
 - **Hardening**: deliberate review against a threat list (RFCs, an attacker
   model), with tests written alongside.
+- **Differential testing**: the same input run in gforth and in OS 4.0,
+  and every difference read against the standard.
 
 **Tests catch it?** asks whether the test suite as it stood would have
 failed. "Repro" means a test can show the bug once you know it is there, and
@@ -73,6 +75,10 @@ one now does.
 | 44 | 2026-11-11 | `load` pinned its buffer in a global count, then set up its `catch`; a throw in between (the watchdog stops a task anywhere) skipped the `unpin` (TD-43) | That buffer stayed pinned for good: never chosen again, so each such stop lost one of the 8 buffers until every `block` threw -260 | Hardening (contract: what must hold wherever a task is stopped) | No; repro in `tests/buffers` (a pin, then an error before any `catch`) | Each task counts its own pins in its user area; `pinned?` asks every task; `reset`, `retire` and `restarting` clear the task's pins (`unpin-all`) |
 | 45 | 2026-11-11 | A pooled task, reused by `spawn`, kept `blk` from its last work, and `reset` never cleared it (TD-43) | A session or worker started with `blk` set ran `\` comments as if reading a block (skipping to 64-character boundaries) and reported errors against a block | Hardening (contract: what a reused user area holds) | No; repro in `tests/supervise` | `(start)` clears `blk` and the pins; so does `reset` |
 | 46 | 2026-11-12 | The fix for defect 44 gave each task a cell per buffer for its pins (`#buffers user-cells my-pins`, 64 bytes), which filled the user area: `'bye` ended at byte 512 | Any app defining a user variable failed to load with -267; the MUD's `people.fs` defines two (`me`, `out`), so it would not have booted. Found on the branch, before it reached main | Proof audit (a proof over the moved user offsets, `Search.lean`, led to the user-area map) | No; `make test-app` with the MUD would have. Repro in `tests/buffers` (the room left for user variables) | A pin count is a byte: the pins take one cell, leaving seven for apps; `pin` throws -5 rather than wrap past 255 |
+| 47 | 2026-11-12 | `f-chunk` (files.fs) took a cluster chain that ended before the file's size as the end of the data, while `f-line` still saw the position short of the size; and a file's first cluster was never checked | On a broken app disk, `read-line` returned an empty line, true, on every call: one test file of 30 lines gave 28,001 lines before the watchdog stopped the loop, and `include` ran 32,491 empty lines before the walk count threw. A first cluster of 0, 1 or beyond the volume opened, reading the root directory or other files' data as the file | Hardening (hostile app disks, `tools/fat-corrupt.py`) | No; repro in `tests/files-bad` | A chain that ends short of the size is -37; `open-file` refuses a first cluster outside the data area (or 0 with a size), and so does a directory's |
+| 48 | 2026-11-12 | `number?` took a sign only before a base prefix (`-$10`), not after it as the standard writes numbers (`$-10`, `#-12`, `%-101`, Forth 2012 3.4.1.3) | Standard source using that form failed with an undefined word | Differential testing against gforth | No; repro in `tests/base` | The sign may come before or after the prefix, once |
+| 49 | 2026-11-12 | Interpreted `S"` had one buffer, so a second string overwrote the first; the standard requires two (Forth 2012 11.3.4) | `s" abc" s" abd" compare` gave 0, comparing the second string with itself, at the REPL and in included files | Differential testing against gforth | No; repro in `tests/strings` | Interpreted `S"` alternates between two halves of a larger `sbuf` |
+| 50 | 2026-11-12 | `f-line` dropped a CR at the end of the buffer even when the LF after it was still unread, so the LF then ended an empty line | A line filling the buffer but for its CR (255 characters and CR LF, for `include`) came back as that line and then an empty one: `include` reported every later error a line too far on, and `read-line` gave a line that was not in the file | Hardening (hostile app disks: line lengths at the limit) | No; repro in `tests/files-bad` | When the buffer fills just after a CR, `f-line` looks at the next byte: a LF ends this line; otherwise the CR is data |
 
 ## Also shown
 
@@ -108,6 +114,21 @@ test written for it, seen failing on the old code; none would have failed
 the suite as it stood. The proofs written that day (`RecordSeq.lean`,
 `FindConn.lean`, `NewConn.lean`, `Arp.lean`) found nothing new: they
 confirm code the contracts had already been read against.
+
+On 2026-11-12 seven more (44 to 50). Hardening found four: 44 and 45 by
+asking what holds wherever a task is stopped; 47 and 50 by app disks broken
+on purpose (`tools/fat-corrupt.py`), where a file's data ran out before its
+size or a line filled the buffer just after its CR. A proof audit found 46:
+fixing the proofs over the moved user offsets showed the user area full,
+which would have stopped the MUD from booting. The first systematic
+differential run against gforth found two (48 and 49), both where the
+standard asks for more than the tests did: the sign after a base prefix,
+and two transient buffers for `S"`. It agreed on everything else tried:
+division and mixed precision at the extremes, shifts, comparisons, loops
+crossing min-int, pictured output in bases 2 to 36, `compare`, `/string`,
+`move` and `fill`. Each fails a test written for it, seen failing on the
+old code. A late virtio answer turned up again too, but that is defect 21,
+still open as TD-36.
 
 They are also a different kind of bug. Hardening and the app found bugs in
 behaviour: what the OS does with a packet or a keystroke. The proofs found

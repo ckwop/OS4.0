@@ -1,0 +1,9 @@
+# tests/files-bad: each file but ok.txt is broken on the disk
+chain CUT.TXT 1
+chain CUT.FS 1
+loop LOOP.TXT 1
+link FREE.TXT 1 0
+start ZERO.TXT 0
+size ZERO.TXT 100
+start ONE.TXT 1
+start FAR.TXT 0xfff0

@@ -142,7 +142,7 @@ fi</pre>
   <div class="talk">
     <p>FAT stores files in clusters, runs of sectors. A file's directory entry names its first cluster. The file allocation table, the FAT that gives the system its name, holds one entry per cluster: the number of the next cluster in the file, or a marker for the end.</p>
     <p>Next-cluster reads that entry, four bytes for FAT thirty-two and two for FAT sixteen, and turns the end marker into zero. Then it checks the result is a real cluster number, because the disk could be damaged, or deliberately made wrong.</p>
-    <p>One more guard sits in the code that follows chains. A broken chain could loop back on itself, and a naive reader would go round for ever. So it counts the clusters it has followed, and if that ever exceeds the number of clusters on the disk, it throws an I O error instead. Even a read-only file system has to distrust its input.</p>
+    <p>One more guard sits in the code that follows chains. A broken chain could loop back on itself, and a naive reader would go round for ever. So it counts the clusters it has followed, and if that ever exceeds the number of clusters on the disk, it throws an I O error instead. A chain that ends before the file's size says it should is an I O error too, and so is a first cluster outside the data area. The test called files bad builds a disk with each of these faults on purpose. Even a read-only file system has to distrust its input.</p>
   </div>
 </section>
 

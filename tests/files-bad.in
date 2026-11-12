@@ -1,0 +1,20 @@
+\ files-bad.in: an app disk broken on purpose (files-bad.app/.corrupt, tools/fat-corrupt.py): errors, never a hang
+create buf 100 allot
+variable fid
+: lines  ( -- n ior )  0 begin  buf 100 fid @ read-line ?dup if nip nip exit then  nip  while 1+ repeat 0 ;
+: bytes  ( -- n ior )  0 begin  buf 100 fid @ read-file ?dup if nip exit then  dup while +  repeat drop 0 ;
+s" ok.txt" r/o open-file . fid !  lines . .  fid @ close-file .
+\ a chain that ends before the file does
+s" cut.txt" r/o open-file . fid !  lines . .  fid @ close-file .
+s" cut.txt" r/o open-file . fid !  bytes . .  fid @ close-file .
+include cut.fs
+\ a chain that loops, and one that runs into a free cluster
+s" loop.txt" r/o open-file . fid !  lines . .  fid @ close-file .
+s" free.txt" r/o open-file . fid !  bytes . .  fid @ close-file .
+\ first clusters that are not in the data area
+s" zero.txt" r/o open-file . .
+s" one.txt" r/o open-file . .
+s" far.txt" r/o open-file . .
+\ a line of 255 characters, then CR LF: the error is on line 2
+include crlf.fs
+dir

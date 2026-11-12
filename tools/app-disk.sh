@@ -4,7 +4,8 @@
 # ones and the top-level build and tests directories. It is FAT32 (64 MiB,
 # sparse) unless DIR holds a file named .fat16 (then FAT16 with 512-byte
 # clusters, so files span many). The OS reads app.fs from it at boot and never
-# writes it (DECISIONS.md #99).
+# writes it (DECISIONS.md #99). A file named .corrupt in DIR lists ways to
+# break the disk after (tools/fat-corrupt.py), for tests of hostile disks.
 set -e
 img=$1
 dir=$2
@@ -22,3 +23,5 @@ for f in "$dir"/*; do
         *) mcopy -s -Q -i "$img" "$f" ::/ ;;
     esac
 done
+[ -e "$dir/.corrupt" ] && python3 "$(dirname "$0")/fat-corrupt.py" "$img" "$dir/.corrupt"
+exit 0
