@@ -154,6 +154,11 @@ A running log of choices that [docs/brief.md](docs/brief.md) leaves open. Add ne
 | 148 | 2026-11-12 | Numbers take a sign before or after the base prefix (`-$10`, `$-10`), but only one. | The standard writes `$-10`; `-$10` was already accepted and tests use it. |
 | 149 | 2026-11-12 | Interpreted `S"` alternates between two 256-byte buffers. | The standard's minimum; more would cost every task's buffers. |
 | 150 | 2026-11-12 | On the app disk, a cluster chain that ends before the file's size, or a first cluster outside the data area, is -37. A chain that loops within the file's size is not detected: the data repeats, bounded by the size. | Every read ends; telling a loop from a legitimate chain costs a walk of the chain. |
+| 151 | 2026-11-12 | Release 1.0 on a Graviton EC2 instance on 2026-12-01, with MUD combat (phase 2B); plan in [docs/release-plan.md](docs/release-plan.md). Milestone 11 (Fargate) is skipped, out of milestone order: go straight to milestone 12. | The user's call: EC2 is the target, and Fargate's emulated QEMU is slow (TD-9, TD-25). If the ENA driver slips, the launch date slips. |
+| 152 | 2026-11-12 | Agents run the AWS CLI themselves, under a profile the user logs in to: one region, t4g instances only, every resource tagged `os4`, instances terminated at the end of each session. The user keeps a billing alarm. | The user's call: debugging ENA needs quick boot-and-read cycles on the EC2 serial console. |
+| 153 | 2026-11-12 | TD-36: after a device request times out, reset the device and start it again (the full fix), not the partial fix that only stops a late answer being taken as the next request's. | The user's call: on EBS and ENA a late write into a reused buffer is real data corruption. |
+| 154 | 2026-11-12 | TD-42: one failed-login budget shared by every login (a token bucket, as for challenge ACKs), plus a short delay after each wrong password. | The user's call: guessing must be bounded across connections before players log in over the internet; an attacker can slow real logins, but not guess quickly. |
+| 155 | 2026-11-12 | The user area grows from 512 to 1024 bytes per task. | The user's call: after defect 46 apps had 7 user cells left, too few for combat. |
 
 ## Open questions (from the brief)
 

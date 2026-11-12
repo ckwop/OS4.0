@@ -162,8 +162,8 @@ Each milestone is done when its acceptance test passes in the Docker image.
 | 9b | Applications: an app is files on a read-only FAT app disk, `app.fs` its entry point; apps live in their own repositories and build against a versioned `os4` image | Done |
 | 9c | The course: narrated lectures on how the base is put together (`docs/course`), code tours (`.tours`), checked against the code by `make test` | Done |
 | 10 | MUD engine (in its own repository, `os4-mud`, as the first application). Phase 1: rooms, items, mobs and doors from area files on the app disk; players, passwords, inventories, credits, wearing on the data disk; say mode; colour. Phase 2 (combat, experience, mob scripts, shops, building) is parked | Phase 1 done |
-| 11 | Fargate deployment | Not started |
-| 12 | EC2 AMI | Not started |
+| 11 | Fargate deployment | Skipped (DECISIONS.md #151) |
+| 12 | EC2 AMI: the 1.0 release, due 2026-12-01 ([docs/release-plan.md](docs/release-plan.md)) | Not started |
 | 13 | x86-64 port | Not started |
 
 The verification track ([docs/verification.md](docs/verification.md)) runs beside these and strengthens the base. Its roadmap runs in phases. Foundations come first (proof speed, footprints). Then what players reach comes before the MUD launches (V2, V6's stopped tasks, V10, V3), and the network before milestone 11 (V4). The rest removes trust.
