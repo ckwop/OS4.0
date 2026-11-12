@@ -18,6 +18,8 @@ consistently.
 - **App**: using the base for an app (the MUD) showed it.
 - **Hardening**: deliberate review against a threat list (RFCs, an attacker
   model), with tests written alongside.
+- **Differential testing**: the same input run in gforth and in OS 4.0,
+  and every difference read against the standard.
 
 **Tests catch it?** asks whether the test suite as it stood would have
 failed. "Repro" means a test can show the bug once you know it is there, and
@@ -112,6 +114,21 @@ test written for it, seen failing on the old code; none would have failed
 the suite as it stood. The proofs written that day (`RecordSeq.lean`,
 `FindConn.lean`, `NewConn.lean`, `Arp.lean`) found nothing new: they
 confirm code the contracts had already been read against.
+
+On 2026-11-12 seven more (44 to 50). Hardening found four: 44 and 45 by
+asking what holds wherever a task is stopped; 47 and 50 by app disks broken
+on purpose (`tools/fat-corrupt.py`), where a file's data ran out before its
+size or a line filled the buffer just after its CR. A proof audit found 46:
+fixing the proofs over the moved user offsets showed the user area full,
+which would have stopped the MUD from booting. The first systematic
+differential run against gforth found two (48 and 49), both where the
+standard asks for more than the tests did: the sign after a base prefix,
+and two transient buffers for `S"`. It agreed on everything else tried:
+division and mixed precision at the extremes, shifts, comparisons, loops
+crossing min-int, pictured output in bases 2 to 36, `compare`, `/string`,
+`move` and `fill`. Each fails a test written for it, seen failing on the
+old code. A late virtio answer turned up again too, but that is defect 21,
+still open as TD-36.
 
 They are also a different kind of bug. Hardening and the app found bugs in
 behaviour: what the OS does with a packet or a keystroke. The proofs found
