@@ -47,9 +47,9 @@ variable (B : Box)
 vectors `'type` and `'bye`, which say what TYPE and BYE run; and `term-conn`,
 the connection a network session's terminal sends on. -/
 def userSupp (a : Cell) : Prop :=
-  ((a - (B.p + 8)).toNat < 8 ∨ (a - (B.p + 352)).toNat < 16) ∨
-    ((a - (B.p + 176)).toNat < 8 ∨ (a - (B.p + 144)).toNat < 8 ∨ (a - (B.p + 440)).toNat < 8 ∨
-      (a - (B.p + 336)).toNat < 8)
+  ((a - (B.p + 8)).toNat < 8 ∨ (a - (B.p + 360)).toNat < 16) ∨
+    ((a - (B.p + 176)).toNat < 8 ∨ (a - (B.p + 144)).toNat < 8 ∨ (a - (B.p + 448)).toNat < 8 ∨
+      (a - (B.p + 344)).toNat < 8)
 /-- The bytes beyond the user area it rests on: `current`, the wordlist's
 cell, and each header's link and length byte; and every byte outside the
 task's own memory that nothing else writes, which is what makes keeping the
@@ -209,7 +209,7 @@ def R (B : Box) : Nat → List Cell → Prop
   | 27, ds => At B 1 ds ∧ ∀ x, ds.head? = some x → x ≠ 0
   | 29, ds => ∃ xt t, ds = xt :: t ∧ B.Allowed xt
   | 31, _ | 32, _ | 44, _ => False
-  | 16, ds => ds.head? = some (B.p + 240)
+  | 16, ds => ds.head? = some (B.p + 248)
   | 18, ds => ds.head? = some 18446744073709551602
   | 42, ds => ds.head? = some (B.p + 8)
   | 43, ds => ds.head? = some 0
@@ -384,7 +384,7 @@ theorem two_store (s : S) (a : Cell) (t : List Cell) (hds : s.ds = a :: t) :
     rw [wr_far _ _ _ _ (by bv_omega)]
 
 /-- The support misses `errname`'s two cells. -/
-theorem Box.supp_errname (hB : B.Ok) : ∀ a, B.supp a → 16 ≤ (a - (B.p + 240)).toNat := by
+theorem Box.supp_errname (hB : B.Ok) : ∀ a, B.supp a → 16 ≤ (a - (B.p + 248)).toNat := by
   intro a ha
   rcases ha with h | h
   · simp only [Box.userSupp] at h
@@ -393,7 +393,7 @@ theorem Box.supp_errname (hB : B.Ok) : ∀ a, B.supp a → 16 ≤ (a - (B.p + 24
     bv_omega
 
 theorem k16 (hB : B.Ok) : KeepsE (Q B) B.Inv 16 (.call Words.«2!») := by
-  have at16 : ∀ s : S, R B 16 s.ds → ∃ t, s.ds = (B.p + 240) :: t := by
+  have at16 : ∀ s : S, R B 16 s.ds → ∃ t, s.ds = (B.p + 248) :: t := by
     intro s hr
     simp only [R] at hr
     rcases hd : s.ds with _ | ⟨a, t⟩ <;> rw [hd] at hr <;> simp at hr
@@ -409,7 +409,7 @@ theorem k16 (hB : B.Ok) : KeepsE (Q B) B.Inv 16 (.call Words.«2!») := by
     exact fun a ha => ((two_store s _ t ht).2 fl hs a (Box.supp_errname hB a ha)).trans (hI a ha)
 
 /-- `errname` pushes its address. -/
-theorem errname_ok (s s' : S) (h : Words.«errname#2» s = .ok s') : s'.ds = (s.up + 240) :: s.ds := by
+theorem errname_ok (s s' : S) (h : Words.«errname#2» s = .ok s') : s'.ds = (s.up + 248) :: s.ds := by
   rcases s with ⟨ds, rs, m, u, e⟩
   simp [forth] at h
   subst h

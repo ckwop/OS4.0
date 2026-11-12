@@ -25,8 +25,8 @@ runs the word named is the dumper's word, as for `hdump`. -/
 structure Box.Term (B : Box) : Prop where
   type : dispatch (rd B.m0 (B.p + 144) 8) = Words.«console-type» ∨
     dispatch (rd B.m0 (B.p + 144) 8) = Words.«telnet-type»
-  bye : dispatch (rd B.m0 (B.p + 440) 8) = Prim.bye ∨
-    dispatch (rd B.m0 (B.p + 440) 8) = Words.«end-session»
+  bye : dispatch (rd B.m0 (B.p + 448) 8) = Prim.bye ∨
+    dispatch (rd B.m0 (B.p + 448) 8) = Words.«end-session»
 
 section
 variable {B : Box}
@@ -50,19 +50,19 @@ theorem type_err (s : S) (fl : Fail) (h : Words.«type» s = .error fl) :
   split at h <;> simp_all
 
 theorem bye_err (s : S) (fl : Fail) (h : Words.«bye#2» s = .error fl) :
-    dispatch (rd s.mem (s.up + 440) 8) s = .error fl := by
+    dispatch (rd s.mem (s.up + 448) 8) s = .error fl := by
   rcases s with ⟨ds, rs, m, u, e⟩
   simp only [Words.«bye#2», Words.«bye#2».code, Words.«'bye», Words.«'bye».code, thread, run, forth,
     List.getElem?_cons_succ, List.getElem?_cons_zero, List.length_cons, List.length_nil] at h
-  rw [BitVec.add_comm 440 u] at h
+  rw [BitVec.add_comm 448 u] at h
   split at h <;> simp_all
 
 theorem bye_ok (s s' : S) (h : Words.«bye#2» s = .ok s') :
-    dispatch (rd s.mem (s.up + 440) 8) s = .ok s' := by
+    dispatch (rd s.mem (s.up + 448) 8) s = .ok s' := by
   rcases s with ⟨ds, rs, m, u, e⟩
   simp only [Words.«bye#2», Words.«bye#2».code, Words.«'bye», Words.«'bye».code, thread, run, forth,
     List.getElem?_cons_succ, List.getElem?_cons_zero, List.length_cons, List.length_nil] at h
-  rw [BitVec.add_comm 440 u] at h
+  rw [BitVec.add_comm 448 u] at h
   split at h <;> simp_all
 
 /-! ## The words the vectors may hold -/
@@ -78,7 +78,7 @@ theorem eof_frame (W) : Frame W Words.«eof» := uvar_frame rfl W
 
 /-- `end-session`: store true in `eof`, which the support misses. -/
 theorem end_session_keeps (hB : B.Ok) : B.Keeps Words.«end-session» := by
-  refine (thread_keeps_at (F := fun pc s => pc = 2 → ∃ t, s.ds = (B.p + 424) :: t)
+  refine (thread_keeps_at (F := fun pc s => pc = 2 → ∃ t, s.ds = (B.p + 432) :: t)
     (fun _ h => absurd h (by decide)) ?_).1
   simp only [Words.«end-session».code, forall_getElem?_cons, forall_getElem?_nil, and_true]
   refine ⟨gk (nk (pushConst_frame _ _)) (fun _ _ _ _ _ _ h => absurd h (by decide)),

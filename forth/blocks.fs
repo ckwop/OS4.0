@@ -80,16 +80,18 @@ variable unsynced     \ a buffer was UPDATEd, or a sync failed, since the last s
 \ task's count for it is above 0. A task stopped between PIN and LOAD's CATCH
 \ (the watchdog can stop it anywhere) keeps the pin only until its top level
 \ catches the error and runs UNPIN-ALL, as it frees its semaphores: a global
-\ count would have kept it pinned for good (TD-43).
-#buffers user-cells my-pins               \ this task's LOADs reading from each buffer
-: 'pin   ( i -- addr )  cells my-pins + ;
-: pin    ( i -- )  1 swap 'pin +! ;
-: unpin  ( i -- )  -1 swap 'pin +! ;
-: unpin-all  ( -- )  my-pins #buffers cells 0 fill ;
+\ count would have kept it pinned for good (TD-43). A count is a byte, so the
+\ pins take one cell of the user area, which apps share (defect 46); LOADs
+\ nested 255 deep on one buffer would overflow it, so PIN refuses with -5.
+#buffers aligned 1 cells / user-cells my-pins  \ this task's LOADs reading from each buffer
+: 'pin   ( i -- c-addr )  my-pins + ;
+: pin    ( i -- )  'pin dup c@ 1+  dup 255 > if -5 throw then  swap c! ;
+: unpin  ( i -- )  'pin dup c@ 1-  swap c! ;
+: unpin-all  ( -- )  my-pins #buffers 0 fill ;
 unpin-all
 : pinned?  ( i -- flag )  \ some task is LOADing from buffer i
   'pin up@ -  main-task begin                       ( offset task )
-    2dup + @ if  2drop true exit  then
+    2dup + c@ if  2drop true exit  then
     task-link up@ - + @  dup main-task =
   until 2drop false ;
 

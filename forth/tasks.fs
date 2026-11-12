@@ -34,7 +34,7 @@ user next-free                                    \ the next task in the pool's 
   r@ task-s0 >user @ 16 cells +    r@ task-rlimit field!
   1 r@ task-status field!  0 r@ task-wake field!
   0 r@ handler field!  0 r@ blk field!  0 r@ state field!  0 r@ pooled field!
-  r@ my-pins >user #buffers cells 0 fill
+  r@ my-pins >user #buffers 0 fill
   r@ task-name >user 2!
   main-task r@ task-link field!
   r@ last-task link-of !
@@ -71,7 +71,7 @@ create task-thread  ' run-task ,                 \ where a started task begins
   tuck !  tuck cell+ !  r@ task-sp field!   \ xt on top; x below it (unused when cells is 2)
   task-thread  r@ task-r0 >user @  1 cells -  tuck !  r@ task-rp field!
   0 r@ handler field!  0 r@ task-wake field!  0 r@ task-status field!
-  0 r@ blk field!  r@ my-pins >user #buffers cells 0 fill   \ nothing left from its last work (TD-43)
+  0 r@ blk field!  r@ my-pins >user #buffers 0 fill   \ nothing left from its last work (TD-43)
   r> drop ;
 : start       ( xt task -- )    \ run xt in task, from empty stacks
   0 -rot 2 (start) ;

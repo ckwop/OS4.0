@@ -66,8 +66,8 @@ theorem searchList_chain (nt u a : Cell) (s r : List Cell) (m : Mem) (p : Cell) 
 /-! ## FIND-NAME with one wordlist -/
 
 /-- The user-area cells that hold the search order (`#order`, `context`). -/
-abbrev uOrder : Cell := 352
-abbrev uContext : Cell := 360
+abbrev uOrder : Cell := 360
+abbrev uContext : Cell := 368
 
 /-- The cell `current` keeps the compilation wordlist in. -/
 noncomputable abbrev currentA : Cell := wordAddr "current" + 8
