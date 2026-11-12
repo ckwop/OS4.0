@@ -23,8 +23,13 @@ empty-buffers  ok
 34 mark  save-buffers  empty-buffers  34 34 index   34 \ screen 34
  ok
 \ emptying the buffers while a LOAD reads one leaves that one alone (defect 38)  ok
-: pins. ( -- ) #buffers 0 do i 'pins @ . loop ;  ok
+: pins. ( -- ) #buffers 0 do i pinned? . loop ;  ok
 40 wipe  0 >line \ empty-buffers and flush during a load  ok
 1 >line empty-buffers flush  1 2 + .  ok
 save-buffers  40 load  pins. 3 0 0 0 0 0 0 0 0  ok
 : load-many ( -- ) 9 0 do 40 load loop ;  load-many  pins.  41 block drop  42 block drop 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0 0  ok
+\ a LOAD stopped between its pin and its catch keeps no pin once the error is caught (TD-43)  ok
+41 block drop  last-buf @ pin  1 0 / division by zero
+empty-buffers  41 buf-of . -1  ok
+\ the pins leave apps room for seven user variables (defect 46)  ok
+/user next-user @ - 1 cells / . 7  ok

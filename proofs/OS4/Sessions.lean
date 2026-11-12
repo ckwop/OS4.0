@@ -53,16 +53,16 @@ theorem rd_wr_user0 {u c : Cell} (h : Outside u c) (m : Mem) (v : Cell) :
 
 /-- What the session writes before its work leaves the door's count alone. -/
 theorem work_keeps {u c : Cell} (h : Outside u c) (m : Mem) (v : Cell) :
-    rd (wr (wr (wr (wr (wr m (424#64 + u) 8 0#64) (440#64 + u) 8 (wordAddr "end-session")) (u + 8#64) 8 0#64)
-      u 8 10#64) (312#64 + u) 8 v) c 8 = rd m c 8 := by
+    rd (wr (wr (wr (wr (wr m (432#64 + u) 8 0#64) (448#64 + u) 8 (wordAddr "end-session")) (u + 8#64) 8 0#64)
+      u 8 10#64) (320#64 + u) 8 v) c 8 = rd m c 8 := by
   rw [rd_wr_user h _ _ _ (by decide), rd_wr_user0 h, rd_wr_user' h _ _ _ (by decide),
     rd_wr_user h _ _ _ (by decide), rd_wr_user h _ _ _ (by decide)]
 
 /-- And so does what it writes after, putting the terminal and `'bye` back. -/
 theorem cleanup_keeps {u c : Cell} (h : Outside u c) (m : Mem) (v : Cell) :
-    rd (wr (wr (wr (wr (wr (wr m (336#64 + u) 8 0#64) (144#64 + u) 8 (wordAddr "console-type"))
+    rd (wr (wr (wr (wr (wr (wr m (344#64 + u) 8 0#64) (144#64 + u) 8 (wordAddr "console-type"))
       (152#64 + u) 8 (wordAddr "console-key")) (160#64 + u) 8 (wordAddr "console-key?"))
-      (312#64 + u) 8 0#64) (440#64 + u) 8 v) c 8 = rd m c 8 := by
+      (320#64 + u) 8 0#64) (448#64 + u) 8 v) c 8 = rd m c 8 := by
   rw [rd_wr_user h _ _ _ (by decide), rd_wr_user h _ _ _ (by decide), rd_wr_user h _ _ _ (by decide),
     rd_wr_user h _ _ _ (by decide), rd_wr_user h _ _ _ (by decide), rd_wr_user h _ _ _ (by decide)]
 
@@ -74,13 +74,13 @@ theorem session_rest :
 
 /-- The state when the session's work starts. -/
 noncomputable abbrev atWork (door conn : Cell) (s r : List Cell) (m : Mem) (u : Cell) (e : Nat) : S :=
-  let m1 := wr (wr (wr (wr m (424 + u) 8 0) (440 + u) 8 (wordAddr "end-session")) (u + 8) 8 0) u 8 10
-  ⟨rd m (door + 8) 8 :: conn :: s, rd m (440 + u) 8 :: door :: conn :: r,
-   wr m1 (312 + u) 8 (rd m1 (wordAddr "session-idle" + 8) 8), u, e⟩
+  let m1 := wr (wr (wr (wr m (432 + u) 8 0) (448 + u) 8 (wordAddr "end-session")) (u + 8) 8 0) u 8 10
+  ⟨rd m (door + 8) 8 :: conn :: s, rd m (448 + u) 8 :: door :: conn :: r,
+   wr m1 (320 + u) 8 (rd m1 (wordAddr "session-idle" + 8) 8), u, e⟩
 
 /-- The state when FAREWELL starts, after the work threw n. -/
 noncomputable abbrev atFarewell (n door conn : Cell) (s r : List Cell) (m : Mem) (u : Cell) (f : Fail) : S :=
-  ⟨n :: (List.range (s.length + 1 + 1)).map (junk f.ext), rd m (440 + u) 8 :: door :: conn :: r, f.mem, u, f.ext⟩
+  ⟨n :: (List.range (s.length + 1 + 1)).map (junk f.ext), rd m (448 + u) 8 :: door :: conn :: r, f.mem, u, f.ext⟩
 
 /-- However the session's work ends, unless it never does or ends the run,
 SESSION comes to CLOSE-CONNECTION (`session_rest`) with the connection on

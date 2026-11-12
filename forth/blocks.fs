@@ -67,7 +67,6 @@ variable data-disk
 #buffers b/buf * reserve constant buffers
 create buf-blocks  #buffers cells allot   \ the block in each buffer, or -1
 create buf-dirty   #buffers cells allot   \ true once UPDATEd
-create buf-pins    #buffers cells allot   \ LOADs reading from it
 user last-buf                             \ the buffer this task's BLOCK or BUFFER returned last
 variable next-buf                         \ where the search for a free one starts
 variable unsynced     \ a buffer was UPDATEd, or a sync failed, since the last sync that finished
@@ -75,16 +74,32 @@ variable unsynced     \ a buffer was UPDATEd, or a sync failed, since the last s
 : buf    ( i -- addr )  b/buf * buffers + ;
 : 'blk   ( i -- addr )  cells buf-blocks + ;
 : 'dirty ( i -- addr )  cells buf-dirty + ;
-: 'pins  ( i -- addr )  cells buf-pins + ;
-: pin    ( i -- )  1 swap 'pins +! ;
-: unpin  ( i -- )  -1 swap 'pins +! ;
+
+\ Pins: a LOAD pins the buffer it reads from, so that no other block takes it.
+\ Each task counts its own pins, in its user area; a buffer is pinned while any
+\ task's count for it is above 0. A task stopped between PIN and LOAD's CATCH
+\ (the watchdog can stop it anywhere) keeps the pin only until its top level
+\ catches the error and runs UNPIN-ALL, as it frees its semaphores: a global
+\ count would have kept it pinned for good (TD-43). A count is a byte, so the
+\ pins take one cell of the user area, which apps share (defect 46); LOADs
+\ nested 255 deep on one buffer would overflow it, so PIN refuses with -5.
+#buffers aligned 1 cells / user-cells my-pins  \ this task's LOADs reading from each buffer
+: 'pin   ( i -- c-addr )  my-pins + ;
+: pin    ( i -- )  'pin dup c@ 1+  dup 255 > if -5 throw then  swap c! ;
+: unpin  ( i -- )  'pin dup c@ 1-  swap c! ;
+: unpin-all  ( -- )  my-pins #buffers 0 fill ;
+unpin-all
+: pinned?  ( i -- flag )  \ some task is LOADing from buffer i
+  'pin up@ -  main-task begin                       ( offset task )
+    2dup + c@ if  2drop true exit  then
+    task-link up@ - + @  dup main-task =
+  until 2drop false ;
 
 \ A buffer a LOAD is reading from keeps its block and its pin: emptying it would
-\ leave its LOAD's UNPIN to drive the count below zero, and the buffer, never
-\ again unpinned, out of use for good (defect 38).
+\ leave the LOAD reading a buffer another block may take (defect 38).
 : (empty-buffers)  ( -- )
-  #buffers 0 do  i 'pins @ 0= if  -1 i 'blk !  0 i 'dirty !  then  loop ;
-buf-pins #buffers cells 0 fill  (empty-buffers)
+  #buffers 0 do  i pinned? 0= if  -1 i 'blk !  0 i 'dirty !  then  loop ;
+(empty-buffers)
 
 : buf-of  ( u -- i | -1 )  \ the buffer holding block u
   #buffers 0 do  dup i 'blk @ = if drop i unloop exit then  loop drop -1 ;
@@ -97,7 +112,7 @@ buf-pins #buffers cells 0 fill  (empty-buffers)
 : victim  ( -- i )  \ the next unpinned buffer, round robin, written back first
   #buffers 0 do
     next-buf @ 1+ #buffers mod  dup next-buf !
-    dup 'pins @ 0= if  dup write-buf unloop exit  then drop
+    dup pinned? 0= if  dup write-buf unloop exit  then drop
   loop -260 throw ;
 
 : (buffer)  ( u -- addr )

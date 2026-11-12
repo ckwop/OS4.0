@@ -17,3 +17,7 @@ variable grabs  ok
 task grabber  ' grabby ' restarting grabber start-with  ok
 grabber: stack underflow
 1500 ms grabs @ .  dict-owner @ 0= . 2 -1  ok
+\ a pooled task, reused, starts with BLK clear (TD-43)  ok
+variable seen  -1 seen !  ok
+: dirty ( x -- ) drop 42 blk ! ;  : look ( x -- ) drop blk @ seen ! ;  ok
+0 ' dirty spawn drop  100 ms  0 ' look spawn drop  100 ms  seen @ . 0  ok

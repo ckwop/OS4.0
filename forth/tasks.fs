@@ -34,6 +34,7 @@ user next-free                                    \ the next task in the pool's 
   r@ task-s0 >user @ 16 cells +    r@ task-rlimit field!
   1 r@ task-status field!  0 r@ task-wake field!
   0 r@ handler field!  0 r@ blk field!  0 r@ state field!  0 r@ pooled field!
+  r@ my-pins >user #buffers 0 fill
   r@ task-name >user 2!
   main-task r@ task-link field!
   r@ last-task link-of !
@@ -56,7 +57,7 @@ variable free-tasks                                \ pooled tasks with nothing t
 
 : report  ( n -- )  task-name 2@ type ." : " .error ;
 : retire  ( -- )  \ give up what this task holds and sleep for good
-  unclaim  release-all  0 state !
+  unclaim  release-all  unpin-all  0 state !
   pooled @ if  free-tasks @ next-free !  up@ free-tasks !  then   \ back to the pool
   begin stop again ;
 : run-task  ( i*x xt -- )  \ a task's whole life: run xt, report how it ended, sleep
@@ -70,6 +71,7 @@ create task-thread  ' run-task ,                 \ where a started task begins
   tuck !  tuck cell+ !  r@ task-sp field!   \ xt on top; x below it (unused when cells is 2)
   task-thread  r@ task-r0 >user @  1 cells -  tuck !  r@ task-rp field!
   0 r@ handler field!  0 r@ task-wake field!  0 r@ task-status field!
+  0 r@ blk field!  r@ my-pins >user #buffers 0 fill   \ nothing left from its last work (TD-43)
   r> drop ;
 : start       ( xt task -- )    \ run xt in task, from empty stacks
   0 -rot 2 (start) ;
@@ -101,7 +103,7 @@ variable max-workers  64 max-workers !
 variable restarts                                 \ how often a system task has been restarted
 : restarting  ( xt -- )  \ run xt for ever
   begin
-    dup catch ?dup if  ['] report catch if drop then  unclaim release-all  then
+    dup catch ?dup if  ['] report catch if drop then  unclaim release-all unpin-all  then
     1 restarts +!  1000 ms
   again ;
 

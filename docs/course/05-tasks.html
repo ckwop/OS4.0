@@ -245,7 +245,7 @@
   <h2>Giving a task work</h2>
   <div data-step="1">
     <pre class="code" data-src="forth/tasks.fs">: <span class="w">retire</span>  ( -- )  <span class="c">\ give up what this task holds and sleep for good</span>
-  unclaim  release-all  0 state !
+  unclaim  release-all  unpin-all  0 state !
   pooled @ if  free-tasks @ next-free !  up@ free-tasks !  then   <span class="c">\ back to the pool</span>
   begin stop again ;
 : <span class="w">run-task</span>  ( i*x xt -- )  <span class="c">\ a task's whole life: run xt, report how it ended, sleep</span>
@@ -348,7 +348,7 @@
     <div>
       <pre class="code" data-src="forth/tasks.fs" data-step="1">: <span class="w">restarting</span>  ( xt -- )  <span class="c">\ run xt for ever</span>
   begin
-    dup catch ?dup if  ['] report catch if drop then  unclaim release-all  then
+    dup catch ?dup if  ['] report catch if drop then  unclaim release-all unpin-all  then
     1 restarts +!  1000 ms
   again ;</pre>
       <div class="src"><a href="../../forth/tasks.fs" data-ref="forth/tasks.fs:restarting">forth/tasks.fs › restarting</a></div>

@@ -27,11 +27,11 @@ open OS4
 
 /-- The connection a network session's terminal sends on: its `term-conn`,
 which is part of the setting. -/
-def Box.conn (B : Box) : Cell := rd B.m0 (B.p + 336) 8
+def Box.conn (B : Box) : Cell := rd B.m0 (B.p + 344) 8
 
 /-- The bytes a sending word leaves alone: the setting's, and the task's
 `cur-conn`, which says which connection SEND works on. -/
-def Box.prot (B : Box) (a : Cell) : Prop := B.supp a ∨ (a - (B.p + 328)).toNat < 8
+def Box.prot (B : Box) (a : Cell) : Prop := B.supp a ∨ (a - (B.p + 336)).toNat < 8
 
 /-- What the session's terminal rests on: no other task or device writes the
 protected bytes; the connection's record (`/conn`, 12488 bytes) misses them;
@@ -50,7 +50,7 @@ structure Box.Guards (B : Box) (P : Cell → Prop) (pre : S → Prop) (f : Sem) 
   err : ∀ s fl, s.up = B.p → pre s → f s = .error fl → ∀ a, P a → fl.mem a = s.mem a
 
 /-- `cur-conn` holds the session's connection. -/
-def OnConn (B : Box) (s : S) : Prop := rd s.mem (B.p + 328) 8 = B.conn
+def OnConn (B : Box) (s : S) : Prop := rd s.mem (B.p + 336) 8 = B.conn
 
 /-! ## The invariant, one instruction at a time -/
 
@@ -111,7 +111,7 @@ theorem not_writes {regs : List Reg} {ρ : Env} {a : Cell}
 apart from `cur-conn`. -/
 theorem Box.prot_user {B : Box} (hB : B.Ok) {off : Cell}
     (h : (16 ≤ off.toNat ∧ off.toNat + 8 ≤ 144) ∨ (152 ≤ off.toNat ∧ off.toNat + 8 ≤ 176) ∨
-      (184 ≤ off.toNat ∧ off.toNat + 8 ≤ 328)) :
+      (184 ≤ off.toNat ∧ off.toNat + 8 ≤ 336)) :
     ∀ a, B.prot a → 8 ≤ (a - (B.p + off)).toNat := by
   intro a ha
   rcases ha with ha | ha
@@ -297,7 +297,7 @@ variable {B : Box}
 store, a count for `stop-until`, and the code it throws. -/
 def ioR (B : Box) : Nat → S → Prop
   | 1, s => ∃ t, s.ds = B.p :: t
-  | 2, s => ∃ t, s.ds = (B.p + 328) :: B.p :: t
+  | 2, s => ∃ t, s.ds = (B.p + 336) :: B.p :: t
   | 3, s => ∃ t, s.ds = B.conn :: B.p :: t
   | 4, s => ∃ t, s.ds = (B.conn + 160) :: B.p :: t
   | 8, s => (∃ t, s.ds = 0 :: t) ∨ ∃ x t, s.ds = x :: x :: t
@@ -308,7 +308,7 @@ def ioR (B : Box) : Nat → S → Prop
   | 15, s => ∃ x t, s.ds = x :: t
   | _, _ => True
 
-theorem onConn_of {s0 s : S} (hp : OnConn B s0) (hn : Nm B B.prot s0 s) : rd s.mem (B.p + 328) 8 = B.conn := by
+theorem onConn_of {s0 s : S} (hp : OnConn B s0) (hn : Nm B B.prot s0 s) : rd s.mem (B.p + 336) 8 = B.conn := by
   rw [rd_congr s.mem s0.mem 8 _ fun i hi => hn.2 _ (Or.inr (by bv_omega))]
   exact hp
 
@@ -460,13 +460,13 @@ and its parts; the ring offset under its mask for the store into the
 transmit ring; the code after a failed wait, which it throws again. -/
 def sendR (B : Box) : Nat → S → Prop
   | 10, s => ∃ t, s.ds = 18446744073709551347 :: t
-  | 18, s => ∃ t, s.ds = (B.p + 328) :: t
+  | 18, s => ∃ t, s.ds = (B.p + 336) :: t
   | 19, s => ∃ t, s.ds = B.conn :: t
   | 21, s => ∃ t, s.ds = wordAddr "io-wait" :: t
   | 22, s => (∃ t, s.ds = 0 :: t) ∨ ∃ x t, s.ds = x :: t ∧ x ≠ 0
   | 23, s => (∃ t, s.ds = 0 :: t) ∨ ∃ x t, s.ds = x :: x :: t ∧ x ≠ 0
   | 24, s => ∃ x t, s.ds = x :: t ∧ x ≠ 0
-  | 25, s => ∃ x t, s.ds = (B.p + 328) :: x :: t ∧ x ≠ 0
+  | 25, s => ∃ x t, s.ds = (B.p + 336) :: x :: t ∧ x ≠ 0
   | 26, s => ∃ x t, s.ds = B.conn :: x :: t ∧ x ≠ 0
   | 27, s => ∃ x t, s.ds = x :: t ∧ x ≠ 0
   | 40, s => ∃ w t, s.ds = w :: t
@@ -479,12 +479,12 @@ def sendR (B : Box) : Nat → S → Prop
   | 47, s => ∃ z w t, s.ds = 8192 :: z :: w :: t
   | 48, s => ∃ z w t, s.ds = (8192 - 1) :: z :: w :: t
   | 49, s => ∃ y w t, s.ds = y :: w :: t ∧ y.toNat < 8192
-  | 50, s => ∃ y w t, s.ds = (B.p + 328) :: y :: w :: t ∧ y.toNat < 8192
+  | 50, s => ∃ y w t, s.ds = (B.p + 336) :: y :: w :: t ∧ y.toNat < 8192
   | 51, s => ∃ y w t, s.ds = B.conn :: y :: w :: t ∧ y.toNat < 8192
   | 52, s => ∃ y w t, s.ds = (B.conn + 4296) :: y :: w :: t ∧ y.toNat < 8192
   | 53, s => ∃ y w t, s.ds = (y + (B.conn + 4296)) :: w :: t ∧ y.toNat < 8192
   | 56, s => ∃ x t, s.ds = x :: t
-  | 57, s => ∃ x t, s.ds = (B.p + 328) :: x :: t
+  | 57, s => ∃ x t, s.ds = (B.p + 336) :: x :: t
   | 58, s => ∃ x t, s.ds = B.conn :: x :: t
   | 59, s => ∃ x t, s.ds = (B.conn + 72) :: x :: t
   | _, _ => True
@@ -506,7 +506,7 @@ theorem send_guards (hB : B.Ok) (hN : B.Net) [Runs "(arp-request)" Words.«(arp-
   · refine hft Words.«io-start».foot hN.quiet
       (fun s _ _ => ⟨Nat.zero_le _, fun a ha => not_writes ?_⟩) fun _ _ _ _ _ _ _ => trivial
     simp only [List.forall_mem_cons, List.not_mem_nil, false_imp_iff, implies_true, and_true]
-    exact ⟨_, _, rfl, rfl, by simpa using Box.prot_user hB (off := 320) (by decide) a ha⟩
+    exact ⟨_, _, rfl, rfl, by simpa using Box.prot_user hB (off := 328) (by decide) a ha⟩
   · exact hn (Prim.dup_frame _) fun _ _ _ _ _ _ => trivial
   · exact hz (fun _ _ _ _ => trivial) fun _ _ _ _ _ _ => trivial
   · exact hn (uvar_frame rfl _) fun _ _ _ _ _ _ => trivial
@@ -645,7 +645,7 @@ theorem send_guards (hB : B.Ok) (hN : B.Net) [Runs "(arp-request)" Words.«(arp-
   · refine hft Words.«io-start».foot hN.quiet
       (fun s _ _ => ⟨Nat.zero_le _, fun a ha => not_writes ?_⟩) fun _ _ _ _ _ _ _ => trivial
     simp only [List.forall_mem_cons, List.not_mem_nil, false_imp_iff, implies_true, and_true]
-    exact ⟨_, _, rfl, rfl, by simpa using Box.prot_user hB (off := 320) (by decide) a ha⟩
+    exact ⟨_, _, rfl, rfl, by simpa using Box.prot_user hB (off := 328) (by decide) a ha⟩
   · exact hn (Prim.over_frame _) fun _ _ _ _ _ _ => trivial
   · exact hn (min_frame _) fun _ _ _ _ _ _ => trivial
   · exact hn (Prim.dup_frame _) fun _ _ _ _ _ _ => trivial
@@ -662,7 +662,7 @@ theorem send_guards (hB : B.Ok) (hN : B.Net) [Runs "(arp-request)" Words.«(arp-
   · exact hn (uvar_frame rfl _) fun s s' _ hr h _ => by
       obtain ⟨w, t, ht⟩ := hr
       rw [uvar_ok rfl s s' h]
-      exact ⟨s.up + 328, w, t, by simp only [ht]⟩
+      exact ⟨s.up + 336, w, t, by simp only [ht]⟩
   · exact hn (Prim.fetch_frame _) fun s s' _ hr h _ => by
       obtain ⟨x, w, t, ht⟩ := hr
       obtain ⟨a, t', hds, rfl⟩ := fetch_ok h
@@ -785,10 +785,10 @@ variable {B : Box}
 /-- What `telnet-type` needs of its stack: the connection it puts in
 `cur-conn`, and the connection again for TCP output. -/
 def telAt (B : Box) : Nat → List Cell → Prop
-  | 1, ds => ∃ t, ds = (B.p + 336) :: t
+  | 1, ds => ∃ t, ds = (B.p + 344) :: t
   | 2, ds => ∃ t, ds = B.conn :: t
-  | 3, ds => ∃ t, ds = (B.p + 328) :: B.conn :: t
-  | 37, ds => ∃ t, ds = (B.p + 328) :: t
+  | 3, ds => ∃ t, ds = (B.p + 336) :: B.conn :: t
+  | 37, ds => ∃ t, ds = (B.p + 336) :: t
   | 38, ds => ∃ t, ds = B.conn :: t
   | _, _ => True
 
@@ -852,7 +852,7 @@ theorem telnet_type_keeps (hB : B.Ok) (hN : B.Net) [Runs "(arp-request)" Words.�
       rw [ht, List.cons.injEq] at hds
       obtain ⟨rfl, rfl⟩ := hds
       refine ⟨fun hp => absurd hp.1 (by decide), t, ?_⟩
-      have : rd s.mem (B.p + 336) 8 = B.conn := by
+      have : rd s.mem (B.p + 344) 8 = B.conn := by
         unfold Box.conn
         exact rd_congr s.mem B.m0 8 _ fun i hi =>
           (hn.2 _ (Or.inl (Or.inr (by bv_omega)))).trans (hI0 _ (Or.inl (Or.inr (by bv_omega))))
@@ -865,7 +865,7 @@ theorem telnet_type_keeps (hB : B.Ok) (hN : B.Net) [Runs "(arp-request)" Words.�
     · obtain ⟨t, ht⟩ := hr.2
       refine ⟨by simp [ht], fun a ha => not_writes ?_⟩
       simp only [ht, List.forall_mem_cons, List.not_mem_nil, false_imp_iff, implies_true, and_true]
-      exact ⟨_, _, rfl, rfl, by simpa using Box.supp_apart hB (off := 328) (by decide) a ha⟩
+      exact ⟨_, _, rfl, rfl, by simpa using Box.supp_apart hB (off := 336) (by decide) a ha⟩
     · obtain ⟨t, ht⟩ := hr.2
       rcases s with ⟨ds, rs, m, u, e⟩
       simp only at ht
@@ -912,7 +912,7 @@ theorem telnet_type_keeps (hB : B.Ok) (hN : B.Net) [Runs "(arp-request)" Words.�
       · rw [uvar_ok rfl s s' h]; exact ⟨s.ds, by simp only [hn.1]⟩
   -- 37-38: TCP output, for the connection `cur-conn` holds
   · exact hn (Prim.fetch_frame _) fun s s' hn hr h _ => by
-      have hc : rd s.mem (B.p + 328) 8 = B.conn := hr.1 ⟨by decide, by decide⟩
+      have hc : rd s.mem (B.p + 336) 8 = B.conn := hr.1 ⟨by decide, by decide⟩
       obtain ⟨t, ht⟩ := hr.2
       obtain ⟨a, t', hds, rfl⟩ := fetch_ok h
       rw [ht, List.cons.injEq] at hds
